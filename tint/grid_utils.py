@@ -47,15 +47,15 @@ def get_grid_alt(grid_size, alt_meters=1500):
     return np.int(np.round(alt_meters/grid_size[0]))
 
 
-def get_vert_projection(grid, thresh=40):
+def get_vert_projection(grid, thresh=40, z_min=None, z_max=None):
     """ Returns boolean vertical projection from grid. """
-    return np.any(grid > thresh, axis=0)
+    return np.any(grid[z_min:z_max,:,:] > thresh, axis=0)
 
 
-def get_filtered_frame(grid, min_size, thresh):
+def get_filtered_frame(grid, min_size, thresh, z_min=None, z_max=None):
     """ Returns a labeled frame from gridded radar data. Smaller objects
     are removed and the rest are labeled. """
-    echo_height = get_vert_projection(grid, thresh)
+    echo_height = get_vert_projection(grid, thresh, z_min, z_max)
     labeled_echo = ndimage.label(echo_height)[0]
     frame = clear_small_echoes(labeled_echo, min_size)
     return frame
@@ -82,6 +82,14 @@ def extract_grid_data(grid_obj, field, grid_size, params):
     masked.data[masked.data == masked.fill_value] = 0
     gs_alt = params['GS_ALT']
     raw = masked.data[get_grid_alt(grid_size, gs_alt), :, :]
+    z_min = get_grid_alt(grid_size, params['MIN_LEVEL'])
+    z_max = get_grid_alt(grid_size, params['MAX_LEVEL'])
+    # Correct z_max to make indexing inclusive of endpoint
+    if z_max == (grid_obj.z['data'].size - 1):
+        z_max = None
+    else:
+        z_max += 1
     frame = get_filtered_frame(masked.data, min_size,
-                               params['FIELD_THRESH'])
+                               params['FIELD_THRESH'],
+                               z_min, z_max)
     return raw, frame

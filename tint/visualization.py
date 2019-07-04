@@ -85,7 +85,7 @@ def full_domain(tobj, grids, tmp_dir, vmin=-8, vmax=64,
 
     for nframe, grid in enumerate(grids):
         fig_grid = plt.figure(figsize=(10, 8))
-        print('Frame:', nframe)
+        print('Frame:', nframe, end='\r')
         display = pyart.graph.GridMapDisplay(grid)
         ax = fig_grid.add_subplot(111, projection=projection)
         transform = projection._as_mpl_transform(ax)

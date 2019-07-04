@@ -30,6 +30,7 @@ MAX_DISPARITY = 999
 MAX_FLOW_MAG = 50
 MAX_SHIFT_DISP = 15
 GS_ALT = 1500
+LEVELS = np.array([[0, 20000]])
 
 """
 Tracking Parameter Guide
@@ -63,6 +64,9 @@ MAX_SHIFT_DISP : meters per second
 GS_ALT : meters
     Altitude in meters at which to perform phase correlation for global shift
     calculation. See correct_shift in tint.matching.
+LEVELS : n x 2 numpy array, meters
+    Each row represents range of vertical levels over which to identify objects.
+    Objects will then by matched across the different vertical level ranges.
 """
 
 
@@ -111,7 +115,8 @@ class Cell_tracks(object):
                        'MAX_SHIFT_DISP': MAX_SHIFT_DISP,
                        'ISO_THRESH': ISO_THRESH,
                        'ISO_SMOOTH': ISO_SMOOTH,
-                       'GS_ALT': GS_ALT}
+                       'GS_ALT': GS_ALT,
+                       'LEVELS': LEVELS,}
 
         self.field = field
         self.grid_size = None
