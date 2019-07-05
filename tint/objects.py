@@ -26,8 +26,6 @@ def get_object_center(obj_id, labeled_image):
 def get_obj_extent(labeled_image, obj_label):
     """ Takes in labeled image and finds the radius, area, and center of the
     given object. """
-    import pdb
-    pdb.set_trace()
     obj_index = np.argwhere(labeled_image == obj_label)
 
     xlength = np.max(obj_index[:, 0]) - np.min(obj_index[:, 0]) + 1
