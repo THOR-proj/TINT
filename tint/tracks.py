@@ -176,13 +176,15 @@ class Cell_tracks(object):
         else:
             newRain = False
 
-        raw2, frame2 = extract_grid_data(grid_obj2, self.field, self.grid_size,
+        raw2, frames2 = extract_grid_data(grid_obj2, self.field, self.grid_size,
                                          self.params)
+        frame2 = frames2[self.params['TRACK_INTERVAL']]
 
         while grid_obj2 is not None:
             grid_obj1 = grid_obj2
             raw1 = raw2
             frame1 = frame2
+            frames1 = frames2
 
             try:
                 grid_obj2 = next(grids)
@@ -191,10 +193,11 @@ class Cell_tracks(object):
 
             if grid_obj2 is not None:
                 self.record.update_scan_and_time(grid_obj1, grid_obj2)
-                raw2, frame2 = extract_grid_data(grid_obj2,
+                raw2, frames2 = extract_grid_data(grid_obj2,
                                                  self.field,
                                                  self.grid_size,
                                                  self.params)
+                frame2 = frames2[self.params['TRACK_INTERVAL']]
             else:
                 # setup to write final scan
                 self.__save()
@@ -235,7 +238,7 @@ class Cell_tracks(object):
                     self.counter
                 )
 
-            obj_props = get_object_prop(frame1, grid_obj1, self.field,
+            obj_props = get_object_prop(frames1, grid_obj1, self.field,
                                         self.record, self.params)
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,

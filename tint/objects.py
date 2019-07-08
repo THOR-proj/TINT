@@ -150,9 +150,10 @@ def single_max(obj_ind, raw, params):
     return True
 
 
-def get_object_prop(image1, grid1, field, record, params):
+def get_object_prop(images, grid1, field, record, params):
     """ Returns dictionary of object properties for all objects found in
-    image1, Where image1 is a labelled (filtered) frame. """
+    each levels of images, where images are the labelled (filtered) 
+    frames. """
     id1 = []
     center = []
     grid_x = []
@@ -163,8 +164,9 @@ def get_object_prop(image1, grid1, field, record, params):
     field_max = []
     max_height = []
     volume = []
-    nobj = np.max(image1)
-
+    nobj = np.max(images)
+    levels = images.shape[0]
+    
     unit_dim = record.grid_size
     unit_alt = unit_dim[0]/1000
     unit_area = (unit_dim[1]*unit_dim[2])/(1000**2)
@@ -172,33 +174,48 @@ def get_object_prop(image1, grid1, field, record, params):
 
     raw3D = grid1.fields[field]['data'].data # Complete dataset
 
-    import pdb
-    pdb.set_trace()
-
     for obj in np.arange(nobj) + 1:
-        obj_index = np.argwhere(image1 == obj)
         id1.append(obj)
+        # Create sublists that will store properties for each vertical
+        # frame.        
+        center_obj = []
+        grid_x_obj = []
+        grid_y_obj = []
+        area_obj = []
+        longitude_obj = [] 
+        latitude_obj = []        
+        for i in range(levels):        
+            
+            # Get objects in images[i], i.e. the frame at i-th level
+            obj_index = np.argwhere(images[i] == obj)
+            
+            # 2D frame stats
+            center_obj.append(np.median(obj_index, axis=0))
+            # Caclulate mean x and y indices and round to three decimal places
+            this_centroid = np.round(np.mean(obj_index, axis=0), 3)
+            grid_x_obj.append(this_centroid[1])
+            grid_y_obj.append(this_centroid[0])
+            area_obj.append(obj_index.shape[0] * unit_area)
 
-        # 2D frame stats
-        center.append(np.median(obj_index, axis=0))
-        # Caclulate mean x and y indices and round to three decimal places
-        this_centroid = np.round(np.mean(obj_index, axis=0), 3)
-        grid_x.append(this_centroid[1])
-        grid_y.append(this_centroid[0])
-        area.append(obj_index.shape[0] * unit_area)
+            rounded = np.round(this_centroid).astype('i')
+            # Convert mean indices to mean position in grid cartesian coords.
+            cent_met = np.array([grid1.y['data'][rounded[0]],
+                                 grid1.x['data'][rounded[1]]])
 
-        rounded = np.round(this_centroid).astype('i')
-        # Convert mean indices to mean position in grid cartesian coords.
-        cent_met = np.array([grid1.y['data'][rounded[0]],
-                             grid1.x['data'][rounded[1]]])
+            projparams = grid1.get_projparams()
+            lon, lat = pyart.core.transforms.cartesian_to_geographic(cent_met[1],
+                                                                     cent_met[0],
+                                                                     projparams)
 
-        projparams = grid1.get_projparams()
-        lon, lat = pyart.core.transforms.cartesian_to_geographic(cent_met[1],
-                                                                 cent_met[0],
-                                                                 projparams)
-
-        longitude.append(np.round(lon[0], 4))
-        latitude.append(np.round(lat[0], 4))
+            longitude_obj.append(np.round(lon[0], 4))
+            latitude_obj.append(np.round(lat[0], 4))
+        
+        center.append(center_obj)
+        grid_x.append(grid_x_obj)
+        grid_y.append(grid_y_obj)
+        area.append(area_obj)
+        longitude.append(longitude_obj)
+        latitude.append(latitude_obj)
 
         # raw 3D grid stats
         # Get data for all vertical levels for each 2D index corresponding to
@@ -214,19 +231,22 @@ def get_object_prop(image1, grid1, field, record, params):
         volume.append(np.sum(filtered_slices) * unit_vol)
 
     # cell isolation
-    isolation = check_isolation(raw3D, image1, record.grid_size, params)
+    isolation = check_isolation(
+        raw3D, images[params['TRACK_INTERVAL']], record.grid_size, params
+    )
 
     objprop = {'id1': id1,
-               'center': center,
-               'grid_x': grid_x,
-               'grid_y': grid_y,
-               'area': area,
+               'center': np.array(center),
+               'grid_x': np.array(grid_x),
+               'grid_y': np.array(grid_y),
+               'area': np.array(area),
                'field_max': field_max,
                'max_height': max_height,
                'volume': volume,
-               'lon': longitude,
-               'lat': latitude,
-               'isolated': isolation}
+               'lon': np.array(longitude),
+               'lat': np.array(latitude),
+               'isolated': isolation,
+               'levels': levels}
     return objprop
 
 
@@ -238,20 +258,21 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     scan_num = [record.scan] * nobj
     uid = current_objects['uid']
 
-    new_tracks = pd.DataFrame({
-        'scan': scan_num,
-        'uid': uid,
-        'time': record.time,
-        'grid_x': obj_props['grid_x'],
-        'grid_y': obj_props['grid_y'],
-        'lon': obj_props['lon'],
-        'lat': obj_props['lat'],
-        'area': obj_props['area'],
-        'vol': obj_props['volume'],
-        'max': obj_props['field_max'],
-        'max_alt': obj_props['max_height'],
-        'isolated': obj_props['isolated']
-    })
+    new_tracks_dict = {'scan': scan_num,
+                       'uid': uid,
+                       'time': record.time,
+                       'vol': obj_props['volume'],
+                       'max': obj_props['field_max'],
+                       'max_alt': obj_props['max_height'],
+                       'isolated': obj_props['isolated']}
+
+    for prop in ['grid_x', 'grid_y', 'lon', 'lat', 'area']:
+        for i in range(obj_props['levels']):
+            name = prop + '_lvl_' + str(i)
+            new_tracks_dict.update({name: obj_props[prop][:,i].tolist()})
+  
+    new_tracks = pd.DataFrame(new_tracks_dict)
+    
     new_tracks.set_index(['scan', 'uid'], inplace=True)
     tracks = old_tracks.append(new_tracks)
     return tracks

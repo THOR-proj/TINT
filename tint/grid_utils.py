@@ -166,4 +166,4 @@ def extract_grid_data(grid_obj, field, grid_size, params):
     [frames_con, frames] = get_connected_components(frames)
 
     # For now, return just the highest frame.
-    return raw, frames_con[-1]
+    return raw, frames_con
