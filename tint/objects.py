@@ -112,7 +112,8 @@ def check_isolation(raw, filtered, grid_size, params):
     are not connected to any other objects by pixels greater than ISO_THRESH,
     and have at most one peak. """
     nobj = np.max(filtered)
-    min_size = params['MIN_SIZE'] / np.prod(grid_size[1:]/1000)
+    track_int = params['TRACK_INTERVAL']
+    min_size = params['MIN_SIZE'][track_int] / np.prod(grid_size[1:]/1000)
     iso_filtered = get_filtered_frame(raw,
                                       min_size,
                                       params['ISO_THRESH'])
@@ -151,7 +152,7 @@ def single_max(obj_ind, raw, params):
 
 def get_object_prop(image1, grid1, field, record, params):
     """ Returns dictionary of object properties for all objects found in
-    image1. """
+    image1, Where image1 is a labelled (filtered) frame. """
     id1 = []
     center = []
     grid_x = []
@@ -169,7 +170,10 @@ def get_object_prop(image1, grid1, field, record, params):
     unit_area = (unit_dim[1]*unit_dim[2])/(1000**2)
     unit_vol = (unit_dim[0]*unit_dim[1]*unit_dim[2])/(1000**3)
 
-    raw3D = grid1.fields[field]['data'].data
+    raw3D = grid1.fields[field]['data'].data # Complete dataset
+
+    import pdb
+    pdb.set_trace()
 
     for obj in np.arange(nobj) + 1:
         obj_index = np.argwhere(image1 == obj)
@@ -177,12 +181,14 @@ def get_object_prop(image1, grid1, field, record, params):
 
         # 2D frame stats
         center.append(np.median(obj_index, axis=0))
+        # Caclulate mean x and y indices and round to three decimal places
         this_centroid = np.round(np.mean(obj_index, axis=0), 3)
         grid_x.append(this_centroid[1])
         grid_y.append(this_centroid[0])
         area.append(obj_index.shape[0] * unit_area)
 
         rounded = np.round(this_centroid).astype('i')
+        # Convert mean indices to mean position in grid cartesian coords.
         cent_met = np.array([grid1.y['data'][rounded[0]],
                              grid1.x['data'][rounded[1]]])
 
@@ -195,9 +201,13 @@ def get_object_prop(image1, grid1, field, record, params):
         latitude.append(np.round(lat[0], 4))
 
         # raw 3D grid stats
+        # Get data for all vertical levels for each 2D index corresponding to
+        # the object. 
         obj_slices = [raw3D[:, ind[0], ind[1]] for ind in obj_index]
         field_max.append(np.max(obj_slices))
-        filtered_slices = [obj_slice > params['FIELD_THRESH']
+        # For now just use FIELD_THRESH at the tracking level
+        track_int = params['TRACK_INTERVAL']
+        filtered_slices = [obj_slice > params['FIELD_THRESH'][track_int]
                            for obj_slice in obj_slices]
         heights = [np.arange(raw3D.shape[0])[ind] for ind in filtered_slices]
         max_height.append(np.max(np.concatenate(heights)) * unit_alt)

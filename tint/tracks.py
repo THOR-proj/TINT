@@ -20,10 +20,10 @@ from .objects import init_current_objects, update_current_objects
 from .objects import get_object_prop, write_tracks
 
 # Tracking Parameter Defaults
-FIELD_THRESH = 32
+FIELD_THRESH = [32]
 ISO_THRESH = 8
 ISO_SMOOTH = 3
-MIN_SIZE = 8
+MIN_SIZE = [8]
 SEARCH_MARGIN = 4000
 FLOW_MARGIN = 10000
 MAX_DISPARITY = 999
@@ -31,6 +31,7 @@ MAX_FLOW_MAG = 50
 MAX_SHIFT_DISP = 15
 GS_ALT = 1500
 LEVELS = np.array([[0, 20000]])
+TRACK_INTERVAL = 0
 
 """
 Tracking Parameter Guide
@@ -67,6 +68,9 @@ GS_ALT : meters
 LEVELS : n x 2 numpy array, meters
     Each row represents range of vertical levels over which to identify objects.
     Objects will then by matched across the different vertical level ranges.
+TRACK_INTERVAL: integer
+    Index i corresponding to the interval given in levels over which to track
+    across time. 
 """
 
 
@@ -116,7 +120,8 @@ class Cell_tracks(object):
                        'ISO_THRESH': ISO_THRESH,
                        'ISO_SMOOTH': ISO_SMOOTH,
                        'GS_ALT': GS_ALT,
-                       'LEVELS': LEVELS,}
+                       'LEVELS': LEVELS,
+                       'TRACK_INTERVAL': TRACK_INTERVAL}
 
         self.field = field
         self.grid_size = None

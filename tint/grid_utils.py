@@ -45,8 +45,8 @@ def get_radar_info(grid_obj):
 
 
 def get_grid_alt(grid_size, alt_meters=1500):
-    """ Returns z-index closest to alt_meters. """
-    return np.int(np.round(alt_meters/grid_size[0]))
+    """ Returns next z-index above alt_meters. """
+    return np.int(np.ceil(alt_meters/grid_size[0]))
 
 
 def get_vert_projection(grid, thresh=40, z_min=None, z_max=None):
@@ -80,11 +80,9 @@ def get_level_indices(grid_obj, grid_size, levels):
     of levels given by a two element array. """
     [z_min, z_max] = [get_grid_alt(grid_size, level) 
                       for level in levels]
-    # Correct z_max to make indexing inclusive of level endpoints
-    if z_max == (grid_obj.nz - 1):
-        z_max = None
-    else:
-        z_max += 1
+    # Correct z_max for if larger than grid height
+    if z_max > (grid_obj.nz - 1):
+        z_max = None   
     return z_min, z_max
 
 def get_connected_components(frames):
@@ -144,10 +142,6 @@ def extract_grid_data(grid_obj, field, grid_size, params):
     """ Returns filtered grid frame and raw grid slice at global shift
     altitude. """
     
-    #import pdb
-    #pdb.set_trace()
-
-    min_size = params['MIN_SIZE'] / np.prod(grid_size[1:]/1000)
     masked = grid_obj.fields[field]['data']
     masked.data[masked.data == masked.fill_value] = 0
     gs_alt = params['GS_ALT']
@@ -158,16 +152,18 @@ def extract_grid_data(grid_obj, field, grid_size, params):
 
     # Calculate frames for each level interval
     for i in range(0, frames.shape[0]):
+        min_size = params['MIN_SIZE'][i] / np.prod(grid_size[1:]/1000)
         [z_min, z_max] = get_level_indices(
             grid_obj, grid_size, params['LEVELS'][i,:]
         ) 
         frames[i] = get_filtered_frame(
             masked.data, min_size,
-            params['FIELD_THRESH'],
+            params['FIELD_THRESH'][i],
             z_min, z_max
         )   
 
     # Calculate connected components between frames
     [frames_con, frames] = get_connected_components(frames)
 
+    # For now, return just the highest frame.
     return raw, frames_con[-1]
