@@ -61,7 +61,7 @@ class Tracer(object):
             if self.persist or (uid in self.current.index):
                 ax.plot(tracer.lon, tracer.lat, self.cell_color[uid])
 
-def full_domain(tobj, grids, tmp_dir, vmin=-8, vmax=64,
+def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 cmap=None, alt=None, isolated_only=False,
                 tracers=False, persist=False,
                 projection=None, **kwargs):
@@ -80,12 +80,17 @@ def full_domain(tobj, grids, tmp_dir, vmin=-8, vmax=64,
     lon = np.arange(round(radar_lon-5,2),round(radar_lon+5,2), 1)
     lat = np.arange(round(radar_lat-5,2),round(radar_lat+5,2), 1)
 
+    # Consider just the track data at the tracking interval
+    tobj.tracks = tobj.tracks.xs(tobj.params['TRACK_INTERVAL'], 
+                                 level='level')
+    tobj.tracks = tobj.tracks.reset_index(level=['time'])
+
     nframes = tobj.tracks.index.levels[0].max() + 1
     print('Animating', nframes, 'frames')
 
     for nframe, grid in enumerate(grids):
         fig_grid = plt.figure(figsize=(10, 8))
-        print('Frame:', nframe, end='\r')
+        print('Plotting Frame:', nframe, end='   \r')
         display = pyart.graph.GridMapDisplay(grid)
         ax = fig_grid.add_subplot(111, projection=projection)
         transform = projection._as_mpl_transform(ax)
@@ -110,23 +115,23 @@ def full_domain(tobj, grids, tmp_dir, vmin=-8, vmax=64,
 
 
         plt.savefig(tmp_dir + '/frame_' + str(nframe).zfill(3) + '.png',
-                    bbox_inches = 'tight', dpi=300)
+                    bbox_inches = 'tight', dpi=dpi)
         plt.close()
         del grid, display, ax
         gc.collect()
 
 
-def lagrangian_view(tobj, grids, tmp_dir, uid=None, vmin=-8, vmax=64,
+def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
                     cmap=None, alt=None, box_rad=.1, projection=None):
 
     if uid is None:
         print("Please specify 'uid' keyword argument.")
         return
     stepsize = 0.05
-    title_font = 18
-    axes_font = 16
-    mpl.rcParams['xtick.labelsize'] = 16
-    mpl.rcParams['ytick.labelsize'] = 16
+    title_font = 10
+    axes_font = 8
+    mpl.rcParams['xtick.labelsize'] = 8
+    mpl.rcParams['ytick.labelsize'] = 8
 
     field = tobj.field
     grid_size = tobj.grid_size
@@ -139,6 +144,8 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, vmin=-8, vmax=64,
         projection = ccrs.PlateCarree()
         
     cell = tobj.tracks.xs(uid, level='uid')
+    cell = cell.xs(tobj.params['TRACK_INTERVAL'] ,level='level')
+    cell = cell.reset_index(level=['time'])
 
     nframes = len(cell)
     print('Animating', nframes, 'frames')
@@ -148,7 +155,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, vmin=-8, vmax=64,
         if nframe not in cell.index:
             continue
 
-        print('Frame:', cell_frame)
+        print('Plotting frame:', cell_frame, end='    \r')
         cell_frame += 1
 
         row = cell.loc[nframe]
@@ -170,7 +177,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, vmin=-8, vmax=64,
         xlim = (tx_met + np.array([-25000, 25000]))/1000
         ylim = (ty_met + np.array([-25000, 25000]))/1000
 
-        fig = plt.figure(figsize=(20, 15))
+        fig = plt.figure(figsize=(14, 10.5))
 
         fig.suptitle('Cell ' + uid + ' Scan ' + str(nframe), fontsize=22)
         plt.axis('off')
@@ -250,7 +257,8 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, vmin=-8, vmax=64,
         ax.set_ylabel('Maximum ' + field, fontsize=axes_font)
 
         # plot and save figure
-        fig.savefig(tmp_dir + '/frame_' + str(nframe).zfill(3) + '.png')
+        fig.savefig(tmp_dir + '/frame_' + str(nframe).zfill(3) + '.png', 
+                    dpi=dpi)
         plt.close()
         del grid, display
         gc.collect()
@@ -268,9 +276,21 @@ def make_mp4_from_frames(tmp_dir, dest_dir, basename, fps):
     except FileNotFoundError:
         print('Make sure ffmpeg is installed properly.')
 
+def make_gif_from_frames(tmp_dir, dest_dir, basename, fps):
+    print("Creating GIF - may take a few minutes.")    
+    os.chdir(tmp_dir)
+    delay = round(100/fps)
+    
+    command = "convert -delay {} frame_*.png -loop 0 {}.gif"
+    os.system(command.format(str(delay), basename))
+    try:
+        shutil.move(basename + '.gif', dest_dir)
+    except FileNotFoundError:
+        print('Make sure Image Magick is installed properly.')
 
-def animate(tobj, grids, outfile_name, style='full', fps=1, keep_frames=False,
-            **kwargs):
+
+def animate(tobj, grids, outfile_name, style='full', fps=1, 
+            keep_frames=False, dpi=100, **kwargs):
     """
     Creates gif animation of tracked cells.
 
@@ -316,18 +336,17 @@ def animate(tobj, grids, outfile_name, style='full', fps=1, keep_frames=False,
     tmp_dir = tempfile.mkdtemp()
 
     try:
-        anim_func(tobj, grids, tmp_dir, **kwargs)
+        anim_func(tobj, grids, tmp_dir, dpi=dpi, **kwargs)
         if len(os.listdir(tmp_dir)) == 0:
             print('Grid generator is empty.')
             return
-        make_mp4_from_frames(tmp_dir, dest_dir, basename, fps)
+        make_gif_from_frames(tmp_dir, dest_dir, basename, fps)
         if keep_frames:
             frame_dir = os.path.join(dest_dir, basename + '_frames')
             shutil.copytree(tmp_dir, frame_dir)
             os.chdir(dest_dir)
     finally:
         shutil.rmtree(tmp_dir)
-
 
 def embed_mp4_as_gif(filename):
     """ Makes a temporary gif version of an mp4 using ffmpeg for embedding in

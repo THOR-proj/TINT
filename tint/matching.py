@@ -225,6 +225,7 @@ def locate_all_objects(image1, image2, global_shift, current_objects, record,
                                       search_box, obj1_extent)
         obj_match = save_obj_match(obj_id1, objs_found, disparity, obj_match,
                                    params)
+
     return obj_match
 
 

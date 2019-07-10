@@ -17,11 +17,12 @@ from .helpers import Record, Counter
 from .phase_correlation import get_global_shift
 from .matching import get_pairs
 from .objects import init_current_objects, update_current_objects
-from .objects import get_object_prop, write_tracks
+from .objects import get_object_prop, write_tracks 
+from .objects import post_tracks, get_system_tracks
 
 # Tracking Parameter Defaults
 FIELD_THRESH = [32]
-ISO_THRESH = 8
+ISO_THRESH = [8]
 ISO_SMOOTH = 3
 MIN_SIZE = [8]
 SEARCH_MARGIN = 4000
@@ -153,6 +154,7 @@ class Cell_tracks(object):
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
 
+
     def get_tracks(self, grids):
         """ Obtains tracks given a list of pyart grid objects. This is the
         primary method of the tracks class. This method makes use of all of the
@@ -176,7 +178,7 @@ class Cell_tracks(object):
         else:
             newRain = False
 
-        raw2, frames2 = extract_grid_data(grid_obj2, self.field, self.grid_size,
+        raw2, frames2, cores2 = extract_grid_data(grid_obj2, self.field, self.grid_size,
                                          self.params)
         frame2 = frames2[self.params['TRACK_INTERVAL']]
 
@@ -185,6 +187,7 @@ class Cell_tracks(object):
             raw1 = raw2
             frame1 = frame2
             frames1 = frames2
+            cores1 = cores2
 
             try:
                 grid_obj2 = next(grids)
@@ -193,10 +196,10 @@ class Cell_tracks(object):
 
             if grid_obj2 is not None:
                 self.record.update_scan_and_time(grid_obj1, grid_obj2)
-                raw2, frames2 = extract_grid_data(grid_obj2,
-                                                 self.field,
-                                                 self.grid_size,
-                                                 self.params)
+                raw2, frames2, cores2 = extract_grid_data(grid_obj2,
+                                                          self.field,
+                                                          self.grid_size,
+                                                          self.params)
                 frame2 = frames2[self.params['TRACK_INTERVAL']]
             else:
                 # setup to write final scan
@@ -208,7 +211,8 @@ class Cell_tracks(object):
 
             if np.max(frame1) == 0:
                 newRain = True
-                print('No cells found in scan', self.record.scan)
+                print('No cells found in scan', 
+                      self.record.scan, end='      \r')
                 self.current_objects = None
                 continue
 
@@ -238,13 +242,18 @@ class Cell_tracks(object):
                     self.counter
                 )
 
-            obj_props = get_object_prop(frames1, grid_obj1, self.field,
+            obj_props = get_object_prop(frames1, cores1, grid_obj1, self.field,
                                         self.record, self.params)
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,
                                        self.current_objects, obj_props)
-            del grid_obj1, raw1, frame1, global_shift, pairs, obj_props
+            del grid_obj1, raw1, frame1, frames1, cores1, 
+            del global_shift, pairs, obj_props
             # scan loop end
+
+        self.tracks = post_tracks(self.tracks)
+        self = get_system_tracks(self)
+          
         self.__load()
         time_elapsed = datetime.datetime.now() - start_time
         print('\n')

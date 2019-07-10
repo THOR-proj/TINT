@@ -11,7 +11,7 @@ import pandas as pd
 import pyart
 from scipy import ndimage
 
-from .grid_utils import get_filtered_frame
+from .grid_utils import get_filtered_frame, get_level_indices
 
 
 def get_object_center(obj_id, labeled_image):
@@ -107,16 +107,15 @@ def attach_last_heads(frame1, frame2, current_objects):
     return current_objects
 
 
-def check_isolation(raw, filtered, grid_size, params):
+def check_isolation(raw, filtered, grid_size, params, level):
     """ Returns list of booleans indicating object isolation. Isolated objects
     are not connected to any other objects by pixels greater than ISO_THRESH,
     and have at most one peak. """
     nobj = np.max(filtered)
-    track_int = params['TRACK_INTERVAL']
-    min_size = params['MIN_SIZE'][track_int] / np.prod(grid_size[1:]/1000)
+    min_size = params['MIN_SIZE'][level] / np.prod(grid_size[1:]/1000)
     iso_filtered = get_filtered_frame(raw,
                                       min_size,
-                                      params['ISO_THRESH'])
+                                      params['ISO_THRESH'][level])
     nobj_iso = np.max(iso_filtered)
     iso = np.empty(nobj, dtype='bool')
 
@@ -150,7 +149,7 @@ def single_max(obj_ind, raw, params):
     return True
 
 
-def get_object_prop(images, grid1, field, record, params):
+def get_object_prop(images, cores, grid1, field, record, params):
     """ Returns dictionary of object properties for all objects found in
     each levels of images, where images are the labelled (filtered) 
     frames. """
@@ -158,12 +157,19 @@ def get_object_prop(images, grid1, field, record, params):
     center = []
     grid_x = []
     grid_y = []
-    area = []
+    proj_area = []
     longitude = []
     latitude = []
     field_max = []
     max_height = []
     volume = []
+    level = []
+    isolation = []
+    n_cores = []
+    semi_major = []
+    semi_minor = []
+    orientation = []
+    eccentricity = []
     nobj = np.max(images)
     levels = images.shape[0]
     
@@ -173,29 +179,23 @@ def get_object_prop(images, grid1, field, record, params):
     unit_vol = (unit_dim[0]*unit_dim[1]*unit_dim[2])/(1000**3)
 
     raw3D = grid1.fields[field]['data'].data # Complete dataset
-
-    for obj in np.arange(nobj) + 1:
-        id1.append(obj)
-        # Create sublists that will store properties for each vertical
-        # frame.        
-        center_obj = []
-        grid_x_obj = []
-        grid_y_obj = []
-        area_obj = []
-        longitude_obj = [] 
-        latitude_obj = []        
-        for i in range(levels):        
+              
+    for i in range(levels):
+        for obj in np.arange(nobj) + 1:
+            id1.append(obj)        
             
             # Get objects in images[i], i.e. the frame at i-th level
             obj_index = np.argwhere(images[i] == obj)
-            
+   
             # 2D frame stats
-            center_obj.append(np.median(obj_index, axis=0))
+            level.append(i)
+            n_cores.append(len(set(cores[i,obj_index[:,0],obj_index[:,1]])))
+            center.append(np.median(obj_index, axis=0))
             # Caclulate mean x and y indices and round to three decimal places
             this_centroid = np.round(np.mean(obj_index, axis=0), 3)
-            grid_x_obj.append(this_centroid[1])
-            grid_y_obj.append(this_centroid[0])
-            area_obj.append(obj_index.shape[0] * unit_area)
+            grid_x.append(this_centroid[1])
+            grid_y.append(this_centroid[0])
+            proj_area.append(obj_index.shape[0] * unit_area)
 
             rounded = np.round(this_centroid).astype('i')
             # Convert mean indices to mean position in grid cartesian coords.
@@ -207,72 +207,163 @@ def get_object_prop(images, grid1, field, record, params):
                                                                      cent_met[0],
                                                                      projparams)
 
-            longitude_obj.append(np.round(lon[0], 4))
-            latitude_obj.append(np.round(lat[0], 4))
+            longitude.append(np.round(lon[0], 4))
+            latitude.append(np.round(lat[0], 4))
         
-        center.append(center_obj)
-        grid_x.append(grid_x_obj)
-        grid_y.append(grid_y_obj)
-        area.append(area_obj)
-        longitude.append(longitude_obj)
-        latitude.append(latitude_obj)
+            # raw 3D grid stats
+            # Get data for all vertical levels for each 2D index corresponding to
+            # the object at the current level itnerval. 
+            [z_min, z_max] = get_level_indices(
+                grid1, record.grid_size, params['LEVELS'][i,:]
+            )
+            raw3D_i = raw3D[z_min:z_max,:,:]
+            obj_slices = [raw3D_i[:, ind[0], ind[1]] for ind in obj_index]
+            field_max.append(np.max(obj_slices))
+            filtered_slices = [obj_slice > params['FIELD_THRESH'][i]
+                               for obj_slice in obj_slices]
+            heights = [np.arange(raw3D_i.shape[0])[ind] for ind in filtered_slices]
+            max_height.append(np.max(np.concatenate(heights)) * unit_alt)
+            
+            # Note volume isn't necessarily consistent with proj_area.
+            # proj_area is calculated from boolean vertical projection,
+            # whereas volume doesn't perform vertical projection.
+            volume.append(np.sum(filtered_slices) * unit_vol)
 
-        # raw 3D grid stats
-        # Get data for all vertical levels for each 2D index corresponding to
-        # the object. 
-        obj_slices = [raw3D[:, ind[0], ind[1]] for ind in obj_index]
-        field_max.append(np.max(obj_slices))
-        # For now just use FIELD_THRESH at the tracking level
-        track_int = params['TRACK_INTERVAL']
-        filtered_slices = [obj_slice > params['FIELD_THRESH'][track_int]
-                           for obj_slice in obj_slices]
-        heights = [np.arange(raw3D.shape[0])[ind] for ind in filtered_slices]
-        max_height.append(np.max(np.concatenate(heights)) * unit_alt)
-        volume.append(np.sum(filtered_slices) * unit_vol)
-
-    # cell isolation
-    isolation = check_isolation(
-        raw3D, images[params['TRACK_INTERVAL']], record.grid_size, params
-    )
+        # cell isolation
+        isolation += check_isolation(
+            raw3D[z_min:z_max, :,:], images[i].squeeze(), 
+            record.grid_size, params, i
+        ).tolist()
 
     objprop = {'id1': id1,
-               'center': np.array(center),
-               'grid_x': np.array(grid_x),
-               'grid_y': np.array(grid_y),
-               'area': np.array(area),
+               'center': center,
+               'grid_x': grid_x,
+               'grid_y': grid_y,
+               'proj_area': proj_area,
                'field_max': field_max,
                'max_height': max_height,
                'volume': volume,
-               'lon': np.array(longitude),
-               'lat': np.array(latitude),
+               'lon': longitude,
+               'lat': latitude,
                'isolated': isolation,
-               'levels': levels}
+               'level': level,
+               'n_cores': n_cores}
     return objprop
 
 
 def write_tracks(old_tracks, record, current_objects, obj_props):
     """ Writes all cell information to tracks dataframe. """
-    print('Writing tracks for scan', record.scan)
+    print('Writing tracks for scan', record.scan, end='      \r')
 
-    nobj = len(obj_props['id1'])
-    scan_num = [record.scan] * nobj
-    uid = current_objects['uid']
+    nobj = len(current_objects['uid'])
+    nlvl = max(obj_props['level'])+1
+    scan_num = [record.scan] * nobj * nlvl
+    uid = current_objects['uid'].tolist() * nlvl
 
-    new_tracks_dict = {'scan': scan_num,
-                       'uid': uid,
-                       'time': record.time,
-                       'vol': obj_props['volume'],
-                       'max': obj_props['field_max'],
-                       'max_alt': obj_props['max_height'],
-                       'isolated': obj_props['isolated']}
-
-    for prop in ['grid_x', 'grid_y', 'lon', 'lat', 'area']:
-        for i in range(obj_props['levels']):
-            name = prop + '_lvl_' + str(i)
-            new_tracks_dict.update({name: obj_props[prop][:,i].tolist()})
-  
-    new_tracks = pd.DataFrame(new_tracks_dict)
-    
-    new_tracks.set_index(['scan', 'uid'], inplace=True)
+    new_tracks = pd.DataFrame({
+        'scan': scan_num,
+        'uid': uid,
+        'time': record.time,
+        'grid_x': obj_props['grid_x'],
+        'grid_y': obj_props['grid_y'],
+        'lon': obj_props['lon'],
+        'lat': obj_props['lat'],
+        'proj_area': obj_props['proj_area'],
+        'vol': obj_props['volume'],
+        'max': obj_props['field_max'],
+        'max_alt': obj_props['max_height'],
+        'isolated': obj_props['isolated'],
+        'level': obj_props['level'],
+        'n_cores': obj_props['n_cores']
+    })
+   
+    new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
+    new_tracks.sort_index(inplace=True)
     tracks = old_tracks.append(new_tracks)
     return tracks
+
+def post_tracks(tracks):
+    """ Calculate additional tracks data from final tracks dataframe. """
+    # Calculate velocity        
+    tmp_tracks = tracks[['grid_x','grid_y']]
+    tmp_tracks = tmp_tracks.groupby(
+        level=['uid', 'level'], as_index=False, group_keys=False
+    )
+    tmp_tracks = tmp_tracks.rolling(window=2, center=False,)
+    tmp_tracks = tmp_tracks.apply(lambda x: x[1] - x[0])*1000/(10*60)
+    tmp_tracks = tmp_tracks.rename(
+        columns={'grid_x': 'u', 'grid_y': 'v'}
+    )
+    tracks = tracks.merge(tmp_tracks, left_index=True, right_index=True)
+    # Sort multi-index again as levels will be jumbled after rolling etc.
+    tracks = tracks.sort_index()  
+
+    # Calculate vertical displacement        
+    tmp_tracks = tracks[['grid_x','grid_y']]
+    tmp_tracks = tmp_tracks.groupby(
+        level=['uid', 'scan', 'time'], as_index=False, group_keys=False
+    )
+    tmp_tracks = tmp_tracks.rolling(window=2, center=False,).apply(lambda x: x[1] - x[0])
+    tmp_tracks = tmp_tracks.rename(
+        columns={'grid_x': 'x_vert_disp', 'grid_y': 'y_vert_disp'}
+    )
+    tracks = tracks.merge(tmp_tracks, left_index=True, right_index=True)
+    tracks = tracks.sort_index()
+
+    return tracks
+
+def get_system_tracks(tracks_obj):
+    """ Calculate system tracks """
+    # Get position and velocity at tracking level.        
+    system_tracks = tracks_obj.tracks[['grid_x', 'grid_y', 
+                                       'lon', 'lat', 'u', 'v']]
+    system_tracks = system_tracks.xs(
+        tracks_obj.params['TRACK_INTERVAL'], level='level'
+    )
+
+    # Get number of cores at lowest interval assuming this is first
+    # interval in list.
+    n_cores = tracks_obj.tracks[['n_cores']]
+    n_cores = n_cores.xs(0, level='level')
+    system_tracks = system_tracks.merge(n_cores, left_index=True, 
+                                        right_index=True)
+    
+    # Calculate total tilt.
+    tilt = tracks_obj.tracks[['x_vert_disp', 'y_vert_disp']]
+    tilt = tilt.sum(level=['scan', 'time', 'uid'])
+
+    system_tracks = system_tracks.merge(tilt, left_index=True, 
+                                        right_index=True)
+    
+    # Calculate magnitude of tilt.
+    tilt_mag = np.sqrt((system_tracks['x_vert_disp'] ** 2 
+                        + system_tracks['y_vert_disp'] ** 2))
+    tilt_mag = tilt_mag.rename('tilt_mag')
+    system_tracks = system_tracks.merge(
+        tilt_mag, left_index=True, right_index=True
+    )
+    
+    # Calculate tilt direction
+    vel_dir = np.arctan2(system_tracks['v'], system_tracks['u'])
+    vel_dir = np.rad2deg(vel_dir)
+    vel_dir = vel_dir.rename('vel_dir')
+    
+    tilt_dir = np.arctan2(
+        system_tracks['y_vert_disp'], system_tracks['x_vert_disp']
+    )
+    tilt_dir = tilt_dir.rename('tilt_dir')
+    tilt_dir = np.rad2deg(tilt_dir)
+        
+    sys_rel_tilt_dir = np.mod(tilt_dir - vel_dir + 180, 360)-180
+    sys_rel_tilt_dir = sys_rel_tilt_dir.rename('sys_rel_tilt_dir')
+
+    for var in [vel_dir, tilt_dir, sys_rel_tilt_dir]:
+        system_tracks = system_tracks.merge(
+            var, left_index=True, right_index=True
+        )
+    
+    system_tracks = system_tracks.sort_index()
+    tracks_obj.system_tracks = system_tracks 
+
+    return tracks_obj
+     
