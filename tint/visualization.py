@@ -58,10 +58,12 @@ class Tracer(object):
         for uid, group in self.history.groupby(level='uid'):
             self._check_uid(uid)
             tracer = group[['lon', 'lat']]
-            if self.persist or (uid in self.current.index):
+            if (self.persist or 
+                (uid in self.current.reset_index(level=['time']).index)):
                 ax.plot(tracer.lon, tracer.lat, self.cell_color[uid])
 
 def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
+                start_datetime = None, end_datetime = None,
                 cmap=None, alt=None, isolated_only=False,
                 tracers=False, persist=False,
                 projection=None, **kwargs):
@@ -83,14 +85,67 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
     # Consider just the track data at the tracking interval
     tobj.tracks = tobj.tracks.xs(tobj.params['TRACK_INTERVAL'], 
                                  level='level')
-    tobj.tracks = tobj.tracks.reset_index(level=['time'])
 
-    nframes = tobj.tracks.index.levels[0].max() + 1
-    print('Animating', nframes, 'frames')
+    time_ind = tobj.tracks.index.get_level_values('time')    
+    
+    # Restrict tracks data to start and end datetime arguments
+    if start_datetime != None:
+        cond = (time_ind >= start_datetime)
+        tobj.tracks = tobj.tracks[cond]
+        time_ind = tobj.tracks.index.get_level_values('time')
+    else:
+        start_datetime = time_ind[0]
+        time_ind = tobj.tracks.index.get_level_values('time')    
+    if end_datetime != None:
+        cond = (time_ind <= end_datetime)
+        tobj.tracks = tobj.tracks[cond]
+        time_ind = tobj.tracks.index.get_level_values('time')    
+    else:
+        end_datetime = time_ind[-1]
+        time_ind = tobj.tracks.index.get_level_values('time')
+    
+    # Create index of scan numbers so times can be easily
+    # retrieved for a given scan number.
+    scan_ind = tobj.tracks.index.get_level_values('scan')     
 
-    for nframe, grid in enumerate(grids):
+    print('Animating from ', str(start_datetime),
+          ' to ', str(end_datetime), '.')
+
+    # Get first scan number
+    #nframe = tobj.tracks.index.get_level_values('scan').min()
+    # Restrict start and end times to where objects are present.    
+    #track_start = tobj.tracks.index.get_level_values('time').min()
+    #track_end = tobj.tracks.index.get_level_values('time').max()
+
+    for counter, grid in enumerate(grids):
+        
+        grid_time = np.datetime64(grid.metadata['start_time'])
+
+        if grid_time > end_datetime:
+            del grid
+            print('Reached ', str(end_datetime), '.\n', 'Breaking Loop.')
+            break
+        elif grid_time < start_datetime:
+            print('Current grid earlier than ', str(start_datetime),
+                  '.\n', 'Moving to next grid.')
+            continue
+        
+        
+        #cond = (time_ind[scan_ind == nframe][0] < grid_time 
+        #        or 
+        #while time_ind[scan_ind == nframe][0] < np.datetime64(
+        #    grid.metadata['start_time']
+        #):
+        #    info_msg = ('Current grid occurs after initial object frame at ' 
+        #                + str(time_ind[scan_ind == nframe][0])
+        #                + '.\n' + 'Moving to next frame.')
+        #   print(info_msg)
+        #    nframe += 1
+        
         fig_grid = plt.figure(figsize=(10, 8))
-        print('Plotting Frame:', nframe, end='   \r')
+        print('Plotting scan at ', 
+              grid.metadata['start_time'], end='   \r')
+        
         display = pyart.graph.GridMapDisplay(grid)
         ax = fig_grid.add_subplot(111, projection=projection)
         transform = projection._as_mpl_transform(ax)
@@ -99,10 +154,18 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                           vmin=vmin, vmax=vmax, mask_outside=False,
                           cmap=cmap, transform=projection, ax=ax, **kwargs)
 
-        if nframe in tobj.tracks.index.levels[0]:
-            frame_tracks = tobj.tracks.loc[nframe]
+        #if cell.iloc[nframe].time > np.datetime64(
+        #    grid.metadata['start_time']
+        #)
+        if grid_time in time_ind:
 
+            nframe = scan_ind[time_ind == grid_time][0]
+            frame_tracks = tobj.tracks.loc[nframe]
+            frame_tracks = frame_tracks.reset_index(level=['time'])
+            
             if tracers:
+                #import pdb
+                #pdb.set_trace()
                 tracer.update(nframe)
                 tracer.plot(ax)
 
@@ -113,8 +176,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 y = frame_tracks['lat'].iloc[ind]
                 ax.text(x, y, uid, transform=projection, fontsize=20)
 
-
-        plt.savefig(tmp_dir + '/frame_' + str(nframe).zfill(3) + '.png',
+        plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
                     bbox_inches = 'tight', dpi=dpi)
         plt.close()
         del grid, display, ax
@@ -122,6 +184,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
 
 
 def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
+                    start_datetime=None, end_datetime=None,
                     cmap=None, alt=None, box_rad=.1, projection=None):
 
     if uid is None:
@@ -149,16 +212,40 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
 
     nframes = len(cell)
     print('Animating', nframes, 'frames')
-    cell_frame = 0
-
-    for nframe, grid in enumerate(grids):
-        if nframe not in cell.index:
+    nframe = 0
+        
+    for grid in grids:
+        if nframe >= nframes:
+            info_msg = ('Object died at ' 
+                        + str(cell.iloc[nframe-1].time)
+                        + '.\n' + 'Ending loop.')
+            print(info_msg)
+            del grid
+            gc.collect()
+            break        
+        elif cell.iloc[nframe].time > np.datetime64(
+            grid.metadata['start_time']
+        ):
+            info_msg = ('Object not yet initiated at ' 
+                        + grid.metadata['start_time']
+                        + '.\n' + 'Moving to next grid.') 
+            print(info_msg)
             continue
+        while cell.iloc[nframe].time < np.datetime64(
+            grid.metadata['start_time']
+        ):
+            
+            info_msg = ('Current grid occurs after object frame at' 
+                        + str(cell.iloc[nframe].time)
+                        + '.\n' + 'Moving to next object frame.')
+            print(info_msg)
+            nframe += 1
+             
+        print('Plotting frame at ', 
+              grid.metadata['start_time'], 
+              end='    \r')
 
-        print('Plotting frame:', cell_frame, end='    \r')
-        cell_frame += 1
-
-        row = cell.loc[nframe]
+        row = cell.iloc[nframe]
         display = pyart.graph.GridMapDisplay(grid)
 
         # Box Size
@@ -250,7 +337,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         # Plot
         ax = fig.add_subplot(3, 2, (5, 6))
         ax.plot(plttime, max_field, color='b', linewidth=3)
-        ax.axvline(x=plttime[nframe], linewidth=4, color='r')
+        ax.axvline(x=plttime.iloc[nframe], linewidth=4, color='r')
         ax.set_title('Time Series', fontsize=title_font)
         ax.set_xlabel('Time (UTC) \n Lagrangian Viewer Time',
                        fontsize=axes_font)
@@ -260,6 +347,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         fig.savefig(tmp_dir + '/frame_' + str(nframe).zfill(3) + '.png', 
                     dpi=dpi)
         plt.close()
+        nframe += 1
         del grid, display
         gc.collect()
 
@@ -277,7 +365,7 @@ def make_mp4_from_frames(tmp_dir, dest_dir, basename, fps):
         print('Make sure ffmpeg is installed properly.')
 
 def make_gif_from_frames(tmp_dir, dest_dir, basename, fps):
-    print("Creating GIF - may take a few minutes.")    
+    print("Creating GIF - may take a few minutes.       ")    
     os.chdir(tmp_dir)
     delay = round(100/fps)
     
@@ -290,6 +378,7 @@ def make_gif_from_frames(tmp_dir, dest_dir, basename, fps):
 
 
 def animate(tobj, grids, outfile_name, style='full', fps=1, 
+            start_datetime = None, end_datetime = None, 
             keep_frames=False, dpi=100, **kwargs):
     """
     Creates gif animation of tracked cells.
@@ -336,7 +425,10 @@ def animate(tobj, grids, outfile_name, style='full', fps=1,
     tmp_dir = tempfile.mkdtemp()
 
     try:
-        anim_func(tobj, grids, tmp_dir, dpi=dpi, **kwargs)
+        anim_func(tobj, grids, tmp_dir, dpi=dpi,
+                  start_datetime=start_datetime, 
+                  end_datetime=end_datetime,
+                  **kwargs)
         if len(os.listdir(tmp_dir)) == 0:
             print('Grid generator is empty.')
             return
