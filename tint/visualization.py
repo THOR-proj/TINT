@@ -122,11 +122,11 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
 
         if grid_time > end_datetime:
             del grid
-            print('Reached {}.\n' 
-                  + 'Breaking loop.'.format(str(end_datetime)))
+            print('\nReached {}.\n'.format(str(end_datetime)) 
+                  + 'Breaking loop.', flush=True)
             break
         elif grid_time < start_datetime:
-            print('Current grid earlier than {}.\n'
+            print('\nCurrent grid earlier than {}.\n'
                   + 'Moving to next grid.'.format(str(start_datetime)))
             continue
                 
@@ -168,7 +168,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
 
 def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
                     start_datetime=None, end_datetime=None,
-                    cmap=None, alt=None, box_rad=.1, projection=None):
+                    cmap=None, alt=None, box_rad=.2, projection=None):
 
     if uid is None:
         print("Please specify 'uid' keyword argument.")
@@ -210,8 +210,9 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         elif cell.iloc[nframe].time > np.datetime64(
             grid.metadata['start_time']
         ):
-            info_msg = ('Object not yet initiated at {}.\n' 
-                        + 'Moving to next grid.'.format(grid_time)) 
+            info_msg = ('Object not yet initiated at '
+                        + '{}.\n'.format(grid_time) 
+                        + 'Moving to next grid.') 
             print(info_msg)
             continue
         while cell.iloc[nframe].time < np.datetime64(grid_time):
@@ -357,7 +358,7 @@ def make_gif_from_frames(tmp_dir, dest_dir, basename, fps):
         print('Make sure Image Magick is installed properly.')
 
 
-def animate(tobj, grids, outfile_name, style='full', fps=1, 
+def animate(tobj, grids, outfile_name, style='full', fps=2, 
             start_datetime = None, end_datetime = None, 
             keep_frames=False, dpi=100, **kwargs):
     """

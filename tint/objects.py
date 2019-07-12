@@ -253,7 +253,8 @@ def get_object_prop(images, cores, grid1, field, record, params):
 
 def write_tracks(old_tracks, record, current_objects, obj_props):
     """ Writes all cell information to tracks dataframe. """
-    print('Writing tracks for scan', record.scan, end='      \r')
+    print('Writing tracks for scan {}.'.format(str(record.scan)), 
+          end='    \r', flush=True)
 
     nobj = len(current_objects['uid'])
     nlvl = max(obj_props['level'])+1
@@ -282,35 +283,45 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     tracks = old_tracks.append(new_tracks)
     return tracks
 
-def post_tracks(tracks):
+def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
     # Calculate velocity        
-    tmp_tracks = tracks[['grid_x','grid_y']]
+    tmp_tracks = tracks_obj.tracks[['grid_x','grid_y']]
     tmp_tracks = tmp_tracks.groupby(
         level=['uid', 'level'], as_index=False, group_keys=False
     )
-    tmp_tracks = tmp_tracks.rolling(window=2, center=False,)
-    tmp_tracks = tmp_tracks.apply(lambda x: x[1] - x[0])*1000/(10*60)
+    tmp_tracks = tmp_tracks.rolling(window=2, center=False)
+    # Calculate centred difference.
+    dt = tracks_obj.record.interval.total_seconds()
+    # Get x,y grid sizes. 
+    # Use negative index incase grid two dimensional.     
+    dx = tracks_obj.record.grid_size[-2:]
+    tmp_tracks = tmp_tracks.apply(lambda x: x[1] - x[0]) * dx / dt
     tmp_tracks = tmp_tracks.rename(
         columns={'grid_x': 'u', 'grid_y': 'v'}
     )
-    tracks = tracks.merge(tmp_tracks, left_index=True, right_index=True)
+    tracks_obj.tracks = tracks_obj.tracks.merge(
+        tmp_tracks, left_index=True, right_index=True
+    )
     # Sort multi-index again as levels will be jumbled after rolling etc.
-    tracks = tracks.sort_index()  
+    tracks_obj.tracks = tracks_obj.tracks.sort_index()  
 
     # Calculate vertical displacement        
-    tmp_tracks = tracks[['grid_x','grid_y']]
+    tmp_tracks = tracks_obj.tracks[['grid_x','grid_y']]
     tmp_tracks = tmp_tracks.groupby(
         level=['uid', 'scan', 'time'], as_index=False, group_keys=False
     )
-    tmp_tracks = tmp_tracks.rolling(window=2, center=False,).apply(lambda x: x[1] - x[0])
+    tmp_tracks = tmp_tracks.rolling(window=2, center=False,)
+    tmp_tracks = tmp_tracks.apply(lambda x: x[1] - x[0])
     tmp_tracks = tmp_tracks.rename(
         columns={'grid_x': 'x_vert_disp', 'grid_y': 'y_vert_disp'}
     )
-    tracks = tracks.merge(tmp_tracks, left_index=True, right_index=True)
-    tracks = tracks.sort_index()
+    tracks_obj.tracks = tracks_obj.tracks.merge(
+        tmp_tracks, left_index=True, right_index=True
+    )
+    tracks_obj.tracks = tracks_obj.tracks.sort_index()
 
-    return tracks
+    return tracks_obj
 
 def get_system_tracks(tracks_obj):
     """ Calculate system tracks """

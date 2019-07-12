@@ -211,8 +211,9 @@ class Cell_tracks(object):
 
             if np.max(frame1) == 0:
                 newRain = True
-                print('No cells found in scan', 
-                      self.record.scan, end='      \r')
+                print('No objects found in scan ' 
+                      + str(self.record.scan) + '.', end='    \r',
+                      flush=True)
                 self.current_objects = None
                 continue
 
@@ -251,11 +252,11 @@ class Cell_tracks(object):
             del global_shift, pairs, obj_props
             # scan loop end
 
-        self.tracks = post_tracks(self.tracks)
+        self = post_tracks(self)
         self = get_system_tracks(self)
           
         self.__load()
         time_elapsed = datetime.datetime.now() - start_time
         print('\n')
-        print('time elapsed', np.round(time_elapsed.seconds/60, 1), 'minutes')
+        print('Time elapsed:', np.round(time_elapsed.seconds/60, 1), 'minutes')
         return
