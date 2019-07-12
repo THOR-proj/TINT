@@ -18,6 +18,7 @@ import matplotlib as mpl
 from IPython.display import display, Image
 from matplotlib import pyplot as plt
 import cartopy.crs as ccrs
+import copy
 
 import pyart
 
@@ -67,55 +68,53 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 cmap=None, alt=None, isolated_only=False,
                 tracers=False, persist=False,
                 projection=None, **kwargs):
+
+    # Create a copy of tobj for use by this function
+    f_tobj = copy.deepcopy(tobj)
+
+    # Consider just the track data at the tracking interval.
+    f_tobj.tracks = f_tobj.tracks.xs(f_tobj.params['TRACK_INTERVAL'], 
+                                 level='level')
+
     grid_size = tobj.grid_size
     if cmap is None:
         cmap = pyart.graph.cm_colorblind.HomeyerRainbow
     if alt is None:
-        alt = tobj.params['GS_ALT']
+        alt = f_tobj.params['GS_ALT']
     if projection is None:
         projection=ccrs.PlateCarree()
     if tracers:
-        tracer = Tracer(tobj, persist)
+        tracer = Tracer(f_tobj, persist)
 
-    radar_lon = tobj.radar_info['radar_lon']
-    radar_lat = tobj.radar_info['radar_lat']
+    radar_lon = f_tobj.radar_info['radar_lon']
+    radar_lat = f_tobj.radar_info['radar_lat']
     lon = np.arange(round(radar_lon-5,2),round(radar_lon+5,2), 1)
     lat = np.arange(round(radar_lat-5,2),round(radar_lat+5,2), 1)
 
-    # Consider just the track data at the tracking interval
-    tobj.tracks = tobj.tracks.xs(tobj.params['TRACK_INTERVAL'], 
-                                 level='level')
-
-    time_ind = tobj.tracks.index.get_level_values('time')    
+    time_ind = f_tobj.tracks.index.get_level_values('time')    
     
     # Restrict tracks data to start and end datetime arguments
     if start_datetime != None:
         cond = (time_ind >= start_datetime)
-        tobj.tracks = tobj.tracks[cond]
-        time_ind = tobj.tracks.index.get_level_values('time')
+        f_tobj.tracks = f_tobj.tracks[cond]
+        time_ind = f_tobj.tracks.index.get_level_values('time')
     else:
         start_datetime = time_ind[0]
-        time_ind = tobj.tracks.index.get_level_values('time')    
+        time_ind = f_tobj.tracks.index.get_level_values('time')    
     if end_datetime != None:
         cond = (time_ind <= end_datetime)
-        tobj.tracks = tobj.tracks[cond]
-        time_ind = tobj.tracks.index.get_level_values('time')    
+        f_tobj.tracks = f_tobj.tracks[cond]
+        time_ind = f_tobj.tracks.index.get_level_values('time')    
     else:
         end_datetime = time_ind[-1]
-        time_ind = tobj.tracks.index.get_level_values('time')
+        time_ind = f_tobj.tracks.index.get_level_values('time')
     
-    # Create index of scan numbers so times can be easily
-    # retrieved for a given scan number.
-    scan_ind = tobj.tracks.index.get_level_values('scan')     
+    # Create index of scan numbers so scans can be easily
+    # retrieved for a given time.
+    scan_ind = f_tobj.tracks.index.get_level_values('scan')     
 
-    print('Animating from ', str(start_datetime),
-          ' to ', str(end_datetime), '.')
-
-    # Get first scan number
-    #nframe = tobj.tracks.index.get_level_values('scan').min()
-    # Restrict start and end times to where objects are present.    
-    #track_start = tobj.tracks.index.get_level_values('time').min()
-    #track_end = tobj.tracks.index.get_level_values('time').max()
+    print('Animating from {} to {}.'.format(str(start_datetime), 
+                                            str(end_datetime)))
 
     for counter, grid in enumerate(grids):
         
@@ -123,28 +122,17 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
 
         if grid_time > end_datetime:
             del grid
-            print('Reached ', str(end_datetime), '.\n', 'Breaking Loop.')
+            print('Reached {}.\n' 
+                  + 'Breaking loop.'.format(str(end_datetime)))
             break
         elif grid_time < start_datetime:
-            print('Current grid earlier than ', str(start_datetime),
-                  '.\n', 'Moving to next grid.')
+            print('Current grid earlier than {}.\n'
+                  + 'Moving to next grid.'.format(str(start_datetime)))
             continue
-        
-        
-        #cond = (time_ind[scan_ind == nframe][0] < grid_time 
-        #        or 
-        #while time_ind[scan_ind == nframe][0] < np.datetime64(
-        #    grid.metadata['start_time']
-        #):
-        #    info_msg = ('Current grid occurs after initial object frame at ' 
-        #                + str(time_ind[scan_ind == nframe][0])
-        #                + '.\n' + 'Moving to next frame.')
-        #   print(info_msg)
-        #    nframe += 1
-        
+                
         fig_grid = plt.figure(figsize=(10, 8))
-        print('Plotting scan at ', 
-              grid.metadata['start_time'], end='   \r')
+        print('Plotting scan at {}.'.format(grid_time), 
+              end='\r', flush=True)
         
         display = pyart.graph.GridMapDisplay(grid)
         ax = fig_grid.add_subplot(111, projection=projection)
@@ -154,18 +142,13 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                           vmin=vmin, vmax=vmax, mask_outside=False,
                           cmap=cmap, transform=projection, ax=ax, **kwargs)
 
-        #if cell.iloc[nframe].time > np.datetime64(
-        #    grid.metadata['start_time']
-        #)
         if grid_time in time_ind:
 
             nframe = scan_ind[time_ind == grid_time][0]
-            frame_tracks = tobj.tracks.loc[nframe]
+            frame_tracks = f_tobj.tracks.loc[nframe]
             frame_tracks = frame_tracks.reset_index(level=['time'])
             
             if tracers:
-                #import pdb
-                #pdb.set_trace()
                 tracer.update(nframe)
                 tracer.plot(ax)
 
@@ -215,6 +198,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
     nframe = 0
         
     for grid in grids:
+        grid_time = grid.metadata['start_time']        
         if nframe >= nframes:
             info_msg = ('Object died at ' 
                         + str(cell.iloc[nframe-1].time)
@@ -226,24 +210,20 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         elif cell.iloc[nframe].time > np.datetime64(
             grid.metadata['start_time']
         ):
-            info_msg = ('Object not yet initiated at ' 
-                        + grid.metadata['start_time']
-                        + '.\n' + 'Moving to next grid.') 
+            info_msg = ('Object not yet initiated at {}.\n' 
+                        + 'Moving to next grid.'.format(grid_time)) 
             print(info_msg)
             continue
-        while cell.iloc[nframe].time < np.datetime64(
-            grid.metadata['start_time']
-        ):
+        while cell.iloc[nframe].time < np.datetime64(grid_time):
             
-            info_msg = ('Current grid occurs after object frame at' 
-                        + str(cell.iloc[nframe].time)
-                        + '.\n' + 'Moving to next object frame.')
-            print(info_msg)
+            info_msg = ('Current grid at {}.\n'
+                        + 'Object initialises at {}.\n'
+                        + 'Moving to next object frame.') 
+            print(info_msg.format(grid_data, str(cell.iloc[nframe].time)))
             nframe += 1
              
-        print('Plotting frame at ', 
-              grid.metadata['start_time'], 
-              end='    \r')
+        print('Plotting frame at {}'.format(grid_time),
+              end='\r', flush=True)
 
         row = cell.iloc[nframe]
         display = pyart.graph.GridMapDisplay(grid)
@@ -365,7 +345,7 @@ def make_mp4_from_frames(tmp_dir, dest_dir, basename, fps):
         print('Make sure ffmpeg is installed properly.')
 
 def make_gif_from_frames(tmp_dir, dest_dir, basename, fps):
-    print("Creating GIF - may take a few minutes.       ")    
+    print('\nCreating GIF - may take a few minutes.', flush=True)
     os.chdir(tmp_dir)
     delay = round(100/fps)
     
