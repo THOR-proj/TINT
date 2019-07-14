@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pyart
 from scipy import ndimage
+from skimage.measure import regionprops
 
 from .grid_utils import get_filtered_frame, get_level_indices
 
@@ -181,6 +182,10 @@ def get_object_prop(images, cores, grid1, field, record, params):
     raw3D = grid1.fields[field]['data'].data # Complete dataset
               
     for i in range(levels):
+
+        # Caclulate ellipse fit properties
+        ski_props = regionprops(images[i], cache=True)
+
         for obj in np.arange(nobj) + 1:
             id1.append(obj)        
             
@@ -209,10 +214,15 @@ def get_object_prop(images, cores, grid1, field, record, params):
 
             longitude.append(np.round(lon[0], 4))
             latitude.append(np.round(lat[0], 4))
+
+            semi_major.append(ski_props[obj-1].major_axis_length)
+            semi_minor.append(ski_props[obj-1].minor_axis_length)
+            eccentricity.append(ski_props[obj-1].eccentricity)
+            # Negative sign corrects for descending indexing convention 
+            # in "y axis". Note orientation given between -pi/2 and pi/2.
+            orientation.append(-np.rad2deg(ski_props[obj-1].orientation))
         
             # raw 3D grid stats
-            # Get data for all vertical levels for each 2D index corresponding to
-            # the object at the current level itnerval. 
             [z_min, z_max] = get_level_indices(
                 grid1, record.grid_size, params['LEVELS'][i,:]
             )
@@ -247,7 +257,11 @@ def get_object_prop(images, cores, grid1, field, record, params):
                'lat': latitude,
                'isolated': isolation,
                'level': level,
-               'n_cores': n_cores}
+               'n_cores': n_cores,
+               'semi_major': semi_major,
+               'semi_minor': semi_minor,
+               'eccentricity': eccentricity,
+               'orientation': orientation}
     return objprop
 
 
@@ -275,7 +289,11 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'max_alt': obj_props['max_height'],
         'isolated': obj_props['isolated'],
         'level': obj_props['level'],
-        'n_cores': obj_props['n_cores']
+        'n_cores': obj_props['n_cores'],
+        'semi_major': obj_props['semi_major'],
+        'semi_minor': obj_props['semi_minor'],
+        'eccentricity': obj_props['eccentricity'],
+        'orientation': obj_props['orientation']
     })
    
     new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
@@ -285,6 +303,7 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
 
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
+    print('Calculating additional tracks properties.', flush=True)
     # Calculate velocity        
     tmp_tracks = tracks_obj.tracks[['grid_x','grid_y']]
     tmp_tracks = tmp_tracks.groupby(
@@ -325,6 +344,8 @@ def post_tracks(tracks_obj):
 
 def get_system_tracks(tracks_obj):
     """ Calculate system tracks """
+    print('Calculating system tracks.', flush=True)
+    
     # Get position and velocity at tracking level.        
     system_tracks = tracks_obj.tracks[['grid_x', 'grid_y', 
                                        'lon', 'lat', 'u', 'v']]
@@ -332,12 +353,14 @@ def get_system_tracks(tracks_obj):
         tracks_obj.params['TRACK_INTERVAL'], level='level'
     )
 
-    # Get number of cores at lowest interval assuming this is first
+    # Get number of cores and ellipse fit properties 
+    # at lowest interval assuming this is first
     # interval in list.
-    n_cores = tracks_obj.tracks[['n_cores']]
-    n_cores = n_cores.xs(0, level='level')
-    system_tracks = system_tracks.merge(n_cores, left_index=True, 
-                                        right_index=True)
+    for prop in ['n_cores', 'semi_major', 'semi_minor', 
+                 'eccentricity', 'orientation']:
+        prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
+        system_tracks = system_tracks.merge(prop_lvl_0, left_index=True, 
+                                            right_index=True)
     
     # Calculate total tilt.
     tilt = tracks_obj.tracks[['x_vert_disp', 'y_vert_disp']]
