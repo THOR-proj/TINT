@@ -62,7 +62,6 @@ def get_filtered_frame(grid, min_size, thresh, z_min=None, z_max=None):
     frame = clear_small_echoes(labeled_echo, min_size)
     return frame
 
-
 def clear_small_echoes(label_image, min_size):
     """ Takes in binary image and clears objects less than min_size. """
     flat_image = pd.Series(label_image.flatten())

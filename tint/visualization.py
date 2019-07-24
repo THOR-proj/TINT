@@ -17,6 +17,7 @@ import tempfile
 import matplotlib as mpl
 from IPython.display import display, Image
 from matplotlib import pyplot as plt
+from matplotlib import rcParams
 import cartopy.crs as ccrs
 import copy
 
@@ -118,7 +119,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
 
     for counter, grid in enumerate(grids):
         
-        grid_time = np.datetime64(grid.metadata['start_time'])
+        grid_time = np.datetime64(grid.time['units'][15:])
 
         if grid_time > end_datetime:
             del grid
@@ -129,8 +130,15 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
             print('\nCurrent grid earlier than {}.\n'
                   + 'Moving to next grid.'.format(str(start_datetime)))
             continue
-                
+
         fig_grid = plt.figure(figsize=(10, 8))
+
+        # Initialise fonts
+        rcParams.update({'font.family' : 'serif'})
+        rcParams.update({'font.serif': 'Liberation Serif'})
+        rcParams.update({'mathtext.fontset' : 'dejavuserif'}) 
+        rcParams.update({'font.size': 12})
+                
         print('Plotting scan at {}.'.format(grid_time), 
               end='\r', flush=True)
         
@@ -157,7 +165,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                     continue
                 x = frame_tracks['lon'].iloc[ind]
                 y = frame_tracks['lat'].iloc[ind]
-                ax.text(x, y, uid, transform=projection, fontsize=20)
+                ax.text(x, y, uid, transform=projection, fontsize=12)
 
         plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
                     bbox_inches = 'tight', dpi=dpi)
@@ -174,10 +182,10 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         print("Please specify 'uid' keyword argument.")
         return
     stepsize = 0.05
-    title_font = 10
-    axes_font = 8
-    mpl.rcParams['xtick.labelsize'] = 8
-    mpl.rcParams['ytick.labelsize'] = 8
+    title_font = 12
+    axes_font = 10
+    mpl.rcParams['xtick.labelsize'] = 10
+    mpl.rcParams['ytick.labelsize'] = 10
 
     field = tobj.field
     grid_size = tobj.grid_size
@@ -188,17 +196,24 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         alt = tobj.params['GS_ALT']
     if projection is None:
         projection = ccrs.PlateCarree()
+
+    low = tobj.params['LEVELS'][0].mean()/1000
+    high = tobj.params['LEVELS'][-1].mean()/1000
         
     cell = tobj.tracks.xs(uid, level='uid')
-    cell = cell.xs(tobj.params['TRACK_INTERVAL'] ,level='level')
     cell = cell.reset_index(level=['time'])
+    
+    n_lvl = tobj.params['LEVELS'].shape[0]
+    cell_low = cell.xs(0, level='level')
+    cell_high = cell.xs(n_lvl-1, level='level')
+    cell = cell.xs(tobj.params['TRACK_INTERVAL'] ,level='level')
 
     nframes = len(cell)
     print('Animating', nframes, 'frames')
     nframe = 0
         
     for grid in grids:
-        grid_time = grid.metadata['start_time']        
+        grid_time = np.datetime64(grid.time['units'][15:])        
         if nframe >= nframes:
             info_msg = ('Object died at ' 
                         + str(cell.iloc[nframe-1].time)
@@ -207,15 +222,13 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
             del grid
             gc.collect()
             break        
-        elif cell.iloc[nframe].time > np.datetime64(
-            grid.metadata['start_time']
-        ):
+        elif cell.iloc[nframe].time > grid_time:
             info_msg = ('Object not yet initiated at '
                         + '{}.\n'.format(grid_time) 
                         + 'Moving to next grid.') 
             print(info_msg)
             continue
-        while cell.iloc[nframe].time < np.datetime64(grid_time):
+        while cell.iloc[nframe].time < grid_time:
             
             info_msg = ('Current grid at {}.\n'
                         + 'Object initialises at {}.\n'
@@ -227,27 +240,40 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
               end='\r', flush=True)
 
         row = cell.iloc[nframe]
+        row_low = cell_low.iloc[nframe]
+        row_high = cell_high.iloc[nframe]
         display = pyart.graph.GridMapDisplay(grid)
 
         # Box Size
         tx = np.int(np.round(row['grid_x']))
         ty = np.int(np.round(row['grid_y']))
-        tx_met = grid.x['data'][tx]
-        ty_met = grid.y['data'][ty]
+        tx_low = row_low['grid_x']/1000
+        tx_high = row_high['grid_x']/1000
+        ty_low = row_low['grid_y']/1000
+        ty_high = row_high['grid_y']/1000
+        #tx_met = grid.x['data'][tx]
+        #ty_met = grid.y['data'][ty]
+        tx_met = tx
+        ty_met = ty
         lat = row['lat']
         lon = row['lon']
         box_rad_met = box_rad 
         box = np.array([-1*box_rad_met, box_rad_met])
         
-
         lvxlim = (lon) + box
         lvylim = (lat) + box
         xlim = (tx_met + np.array([-25000, 25000]))/1000
         ylim = (ty_met + np.array([-25000, 25000]))/1000
 
-        fig = plt.figure(figsize=(14, 10.5))
+        fig = plt.figure(figsize=(12, 10))
 
-        fig.suptitle('Cell ' + uid + ' Scan ' + str(nframe), fontsize=22)
+        # Initialise fonts
+        rcParams.update({'font.family' : 'serif'})
+        rcParams.update({'font.serif': 'Liberation Serif'})
+        rcParams.update({'mathtext.fontset' : 'dejavuserif'}) 
+        rcParams.update({'font.size': 12})
+
+        fig.suptitle('Cell ' + uid + ' Scan ' + str(nframe), fontsize=16)
         plt.axis('off')
 
         # Lagrangian View
@@ -255,7 +281,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
 
         display.plot_grid(field, level=get_grid_alt(grid_size, alt),
                           vmin=vmin, vmax=vmax, mask_outside=False,
-                          cmap=cmap, colorbar_flag=False,
+                          cmap=cmap, colorbar_flag=True,
                           ax=ax, projection=projection)
 
         display.plot_crosshairs(lon=lon, lat=lat, linestyle='--', 
@@ -268,9 +294,9 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         ax.set_yticks(np.arange(lvylim[0], lvylim[1], stepsize))
 
         ax.set_title('Top-Down View', fontsize=title_font)
-        ax.set_xlabel('Longitude of grid cell center\n [degree_E]',
+        ax.set_xlabel('Longitude of grid cell center [degree_E]',
                        fontsize=axes_font)
-        ax.set_ylabel('Latitude of grid cell center\n [degree_N]',
+        ax.set_ylabel('Latitude of grid cell center [degree_N]',
                        fontsize=axes_font)
 
         # Latitude Cross Section
@@ -280,7 +306,8 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
                                     colorbar_flag=False, edges=False,
                                     vmin=vmin, vmax=vmax, mask_outside=False,
                                     cmap=cmap,
-                                    ax=ax)
+                                    ax=ax)      
+        ax.plot([tx_low, tx_high], [low, high], '--b', linewidth=2.0)
 
         ax.set_xlim(xlim[0], xlim[1])
         ax.set_xticks(np.arange(xlim[0], xlim[1], 6))
@@ -301,6 +328,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
                                      vmin=vmin, vmax=vmax, mask_outside=False,
                                      cmap=cmap,
                                      ax=ax)
+        ax.plot([ty_low, ty_high], [low, high], '--b', linewidth=2.0)
         ax.set_xlim(ylim[0], ylim[1])
         ax.set_xticks(np.arange(ylim[0], ylim[1], 6))
         ax.set_xticklabels(np.round(np.arange(ylim[0], ylim[1], 6), 2))
@@ -323,6 +351,8 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         ax.set_xlabel('Time (UTC) \n Lagrangian Viewer Time',
                        fontsize=axes_font)
         ax.set_ylabel('Maximum ' + field, fontsize=axes_font)
+    
+        plt.tight_layout()
 
         # plot and save figure
         fig.savefig(tmp_dir + '/frame_' + str(nframe).zfill(3) + '.png', 

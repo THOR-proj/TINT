@@ -5,6 +5,7 @@ tint.objects
 Functions for managing and recording object properties.
 
 """
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -152,7 +153,7 @@ def single_max(obj_ind, raw, params):
 
 def get_object_prop(images, cores, grid1, field, record, params):
     """ Returns dictionary of object properties for all objects found in
-    each levels of images, where images are the labelled (filtered) 
+    each level of images, where images are the labelled (filtered) 
     frames. """
     id1 = []
     center = []
@@ -166,20 +167,27 @@ def get_object_prop(images, cores, grid1, field, record, params):
     volume = []
     level = []
     isolation = []
+    touch_border = []
     n_cores = []
     semi_major = []
     semi_minor = []
     orientation = []
     eccentricity = []
     nobj = np.max(images)
-    levels = images.shape[0]
+    [levels, rows, columns] = images.shape
     
     unit_dim = record.grid_size
+    if unit_dim[-2] != unit_dim[-1]:
+        warnings.warn('x and y grid scales unequal - metrics ' +
+                      'such as semi_major and semi_minor may be ' +
+                      'misleading.')
+    # These metrics are in km
     unit_alt = unit_dim[0]/1000
     unit_area = (unit_dim[1]*unit_dim[2])/(1000**2)
     unit_vol = (unit_dim[0]*unit_dim[1]*unit_dim[2])/(1000**3)
 
     raw3D = grid1.fields[field]['data'].data # Complete dataset
+    z_values = grid1.z['data']/1000
               
     for i in range(levels):
 
@@ -194,12 +202,31 @@ def get_object_prop(images, cores, grid1, field, record, params):
    
             # 2D frame stats
             level.append(i)
+
+            # Determine if object touches border of grid
+            t_border_rows = np.logical_or(obj_index[:,0] == 0,
+                                          obj_index[:,0] == rows-1)
+            t_border_columns = np.logical_or(obj_index[:,1] == 0,
+                                          obj_index[:,1] == columns-1)
+            t_border = np.logical_or(t_border_rows, t_border_columns)
+            t_border = np.any(t_border)
+            touch_border.append(t_border)
+            
             n_cores.append(len(set(cores[i,obj_index[:,0],obj_index[:,1]])))
             center.append(np.median(obj_index, axis=0))
             # Caclulate mean x and y indices and round to three decimal places
             this_centroid = np.round(np.mean(obj_index, axis=0), 3)
-            grid_x.append(this_centroid[1])
-            grid_y.append(this_centroid[0])
+            # Convert centroid index into grid units
+            # y component is zeroth index of this_centroid 
+            # x component is first index of this_centroid
+            # unit_dim is list [dz, dx, dy]   
+            g_y = this_centroid[0] * unit_dim[2]
+            g_y += grid1.y['data'][0]
+            g_x = this_centroid[1] * unit_dim[1]            
+            g_x += grid1.x['data'][0]
+            # Append to lists            
+            grid_x.append(g_x)
+            grid_y.append(g_y)
             proj_area.append(obj_index.shape[0] * unit_area)
 
             rounded = np.round(this_centroid).astype('i')
@@ -208,19 +235,22 @@ def get_object_prop(images, cores, grid1, field, record, params):
                                  grid1.x['data'][rounded[1]]])
 
             projparams = grid1.get_projparams()
-            lon, lat = pyart.core.transforms.cartesian_to_geographic(cent_met[1],
-                                                                     cent_met[0],
+            lon, lat = pyart.core.transforms.cartesian_to_geographic(g_x,
+                                                                     g_y,
                                                                      projparams)
 
-            longitude.append(np.round(lon[0], 4))
-            latitude.append(np.round(lat[0], 4))
+            longitude.append(np.round(lon[0], 5))
+            latitude.append(np.round(lat[0], 5))
 
-            semi_major.append(ski_props[obj-1].major_axis_length)
-            semi_minor.append(ski_props[obj-1].minor_axis_length)
-            eccentricity.append(ski_props[obj-1].eccentricity)
+            # Note semi_major, semi_minor are currently stored in `index' units
+            # This effectively assumes dx = dy
+            # Could probably convert to grid units using orientation, dx and dy 
+            semi_major.append(np.round(ski_props[obj-1].major_axis_length, 3))
+            semi_minor.append(np.round(ski_props[obj-1].minor_axis_length, 3))
+            eccentricity.append(np.round(ski_props[obj-1].eccentricity, 3))
             # Negative sign corrects for descending indexing convention 
             # in "y axis". Note orientation given between -pi/2 and pi/2.
-            orientation.append(-np.rad2deg(ski_props[obj-1].orientation))
+            orientation.append(np.round(-np.rad2deg(ski_props[obj-1].orientation), 3))
         
             # raw 3D grid stats
             [z_min, z_max] = get_level_indices(
@@ -231,8 +261,10 @@ def get_object_prop(images, cores, grid1, field, record, params):
             field_max.append(np.max(obj_slices))
             filtered_slices = [obj_slice > params['FIELD_THRESH'][i]
                                for obj_slice in obj_slices]
+
             heights = [np.arange(raw3D_i.shape[0])[ind] for ind in filtered_slices]
-            max_height.append(np.max(np.concatenate(heights)) * unit_alt)
+            max_height.append(np.max(np.concatenate(heights)) * unit_alt 
+                              + z_values[z_min])
             
             # Note volume isn't necessarily consistent with proj_area.
             # proj_area is calculated from boolean vertical projection,
@@ -256,6 +288,7 @@ def get_object_prop(images, cores, grid1, field, record, params):
                'lon': longitude,
                'lat': latitude,
                'isolated': isolation,
+               'touch_border': touch_border,
                'level': level,
                'n_cores': n_cores,
                'semi_major': semi_major,
@@ -288,6 +321,7 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'max': obj_props['field_max'],
         'max_alt': obj_props['max_height'],
         'isolated': obj_props['isolated'],
+        'touch_border': obj_props['touch_border'],
         'level': obj_props['level'],
         'n_cores': obj_props['n_cores'],
         'semi_major': obj_props['semi_major'],
@@ -304,6 +338,10 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
     print('Calculating additional tracks properties.', flush=True)
+    # Round max - for some reason works here but not in get_obj_props
+    # Likely a weird floating point storage issue
+    tracks_obj.tracks['max'] = np.round(tracks_obj.tracks['max'], 2)    
+    
     # Calculate velocity        
     tmp_tracks = tracks_obj.tracks[['grid_x','grid_y']]
     tmp_tracks = tmp_tracks.groupby(
@@ -315,7 +353,7 @@ def post_tracks(tracks_obj):
     # Get x,y grid sizes. 
     # Use negative index incase grid two dimensional.     
     dx = tracks_obj.record.grid_size[-2:]
-    tmp_tracks = tmp_tracks.apply(lambda x: x[1] - x[0]) * dx / dt
+    tmp_tracks = tmp_tracks.apply(lambda x: np.round(((x[1] - x[0])/dt), 3))
     tmp_tracks = tmp_tracks.rename(
         columns={'grid_x': 'u', 'grid_y': 'v'}
     )
@@ -331,7 +369,7 @@ def post_tracks(tracks_obj):
         level=['uid', 'scan', 'time'], as_index=False, group_keys=False
     )
     tmp_tracks = tmp_tracks.rolling(window=2, center=False,)
-    tmp_tracks = tmp_tracks.apply(lambda x: x[1] - x[0])
+    tmp_tracks = tmp_tracks.apply(lambda x: np.round((x[1] - x[0]), 3))
     tmp_tracks = tmp_tracks.rename(
         columns={'grid_x': 'x_vert_disp', 'grid_y': 'y_vert_disp'}
     )
@@ -361,6 +399,30 @@ def get_system_tracks(tracks_obj):
         prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
         system_tracks = system_tracks.merge(prop_lvl_0, left_index=True, 
                                             right_index=True)
+
+    # Calculate maximums
+    maximum = tracks_obj.tracks[['max']]
+    maximum = maximum.max(level=['scan', 'time', 'uid'])
+    system_tracks = system_tracks.merge(maximum, left_index=True, 
+                                        right_index=True)
+    
+    # Calculate maximum altitude
+    m_alt = tracks_obj.tracks[['max_alt']]
+    m_alt = m_alt.max(level=['scan', 'time', 'uid'])
+    system_tracks = system_tracks.merge(m_alt, left_index=True, 
+                                        right_index=True)
+
+    # Get touch_border for system
+    t_border = tracks_obj.tracks[['touch_border']]
+    t_border = t_border.sum(level=['scan', 'time', 'uid']).astype('bool')
+    system_tracks = system_tracks.merge(t_border, left_index=True, 
+                                        right_index=True)
+
+    # Get isolated for system
+    iso = tracks_obj.tracks[['isolated']]
+    iso = iso.prod(level=['scan', 'time', 'uid']).astype('bool')
+    system_tracks = system_tracks.merge(iso, left_index=True, 
+                                        right_index=True)
     
     # Calculate total tilt.
     tilt = tracks_obj.tracks[['x_vert_disp', 'y_vert_disp']]
@@ -370,8 +432,8 @@ def get_system_tracks(tracks_obj):
                                         right_index=True)
     
     # Calculate magnitude of tilt.
-    tilt_mag = np.sqrt((system_tracks['x_vert_disp'] ** 2 
-                        + system_tracks['y_vert_disp'] ** 2))
+    tilt_mag = np.round(np.sqrt((system_tracks['x_vert_disp'] ** 2 
+                        + system_tracks['y_vert_disp'] ** 2)), 3)
     tilt_mag = tilt_mag.rename('tilt_mag')
     system_tracks = system_tracks.merge(
         tilt_mag, left_index=True, right_index=True
@@ -381,15 +443,18 @@ def get_system_tracks(tracks_obj):
     vel_dir = np.arctan2(system_tracks['v'], system_tracks['u'])
     vel_dir = np.rad2deg(vel_dir)
     vel_dir = vel_dir.rename('vel_dir')
+    vel_dir = np.round(vel_dir, 3)
     
     tilt_dir = np.arctan2(
         system_tracks['y_vert_disp'], system_tracks['x_vert_disp']
     )
     tilt_dir = tilt_dir.rename('tilt_dir')
     tilt_dir = np.rad2deg(tilt_dir)
-        
+    tilt_dir = np.round(tilt_dir, 3)    
+    
     sys_rel_tilt_dir = np.mod(tilt_dir - vel_dir + 180, 360)-180
     sys_rel_tilt_dir = sys_rel_tilt_dir.rename('sys_rel_tilt_dir')
+    sys_rel_tilt_dir = np.round(sys_rel_tilt_dir, 3)
 
     for var in [vel_dir, tilt_dir, sys_rel_tilt_dir]:
         system_tracks = system_tracks.merge(

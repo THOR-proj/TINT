@@ -47,7 +47,7 @@ ISO_THRESH : units of 'field' attribute
 ISO_SMOOTH : pixels
     Gaussian smoothing parameter in peak detection preprocessing. See
     single_max in tint.objects.
-MIN_SIZE : square kilometers
+MIN_SIZE : square kilometers (but description says pixels?)
     The minimum size threshold in pixels for an object to be detected.
 SEARCH_MARGIN : meters
     The radius of the search box around the predicted object center.
