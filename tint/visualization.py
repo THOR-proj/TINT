@@ -73,6 +73,10 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
     # Create a copy of tobj for use by this function
     f_tobj = copy.deepcopy(tobj)
 
+    n_lvl = tobj.params['LEVELS'].shape[0]
+    tracks_low = f_tobj.tracks.xs(0, level='level')
+    tracks_high = f_tobj.tracks.xs(n_lvl-1, level='level')
+
     # Consider just the track data at the tracking interval.
     f_tobj.tracks = f_tobj.tracks.xs(f_tobj.params['TRACK_INTERVAL'], 
                                  level='level')
@@ -154,7 +158,11 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
 
             nframe = scan_ind[time_ind == grid_time][0]
             frame_tracks = f_tobj.tracks.loc[nframe]
+            frame_tracks_low = tracks_low.loc[nframe]
+            frame_tracks_high = tracks_high.loc[nframe]
             frame_tracks = frame_tracks.reset_index(level=['time'])
+            frame_tracks_low = frame_tracks_low.reset_index(level=['time'])
+            frame_tracks_high = frame_tracks_high.reset_index(level=['time'])
             
             if tracers:
                 tracer.update(nframe)
@@ -165,7 +173,12 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                     continue
                 x = frame_tracks['lon'].iloc[ind]
                 y = frame_tracks['lat'].iloc[ind]
+                x_low = frame_tracks_low['lon'].iloc[ind]
+                y_low = frame_tracks_low['lat'].iloc[ind]
+                x_high = frame_tracks_high['lon'].iloc[ind]
+                y_high = frame_tracks_high['lat'].iloc[ind]
                 ax.text(x, y, uid, transform=projection, fontsize=12)
+                ax.plot([x_low, x_high], [y_low, y_high], '--b', linewidth=2.0)
 
         plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
                     bbox_inches = 'tight', dpi=dpi)
@@ -174,15 +187,17 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         gc.collect()
 
 
-def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
+def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, 
+                    vmin=-8, vmax=64,
                     start_datetime=None, end_datetime=None,
-                    cmap=None, alt=None, box_rad=.2, projection=None):
+                    cmap=None, alt_low=None, alt_high=None, 
+                    box_rad=.75, projection=None):
 
     if uid is None:
         print("Please specify 'uid' keyword argument.")
         return
-    stepsize = 0.05
-    title_font = 12
+    stepsize = 0.2
+    title_font = 14
     axes_font = 10
     mpl.rcParams['xtick.labelsize'] = 10
     mpl.rcParams['ytick.labelsize'] = 10
@@ -192,8 +207,10 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
 
     if cmap is None:
         cmap = pyart.graph.cm_colorblind.HomeyerRainbow
-    if alt is None:
-        alt = tobj.params['GS_ALT']
+    if alt_low is None:
+        alt_low = tobj.params['GS_ALT']
+    if alt_high is None:
+        alt_high = tobj.params['GS_ALT']
     if projection is None:
         projection = ccrs.PlateCarree()
 
@@ -245,25 +262,29 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         display = pyart.graph.GridMapDisplay(grid)
 
         # Box Size
-        tx = np.int(np.round(row['grid_x']))
-        ty = np.int(np.round(row['grid_y']))
+        tx_met = np.int(np.round(row['grid_x']))
+        ty_met = np.int(np.round(row['grid_y']))
         tx_low = row_low['grid_x']/1000
         tx_high = row_high['grid_x']/1000
         ty_low = row_low['grid_y']/1000
         ty_high = row_high['grid_y']/1000
         #tx_met = grid.x['data'][tx]
         #ty_met = grid.y['data'][ty]
-        tx_met = tx
-        ty_met = ty
         lat = row['lat']
         lon = row['lon']
+        
+        lat_low = row_low['lat']
+        lat_high = row_high['lat']
+        lon_low = row_low['lon']
+        lon_high = row_high['lon']
+        
         box_rad_met = box_rad 
         box = np.array([-1*box_rad_met, box_rad_met])
         
         lvxlim = (lon) + box
         lvylim = (lat) + box
-        xlim = (tx_met + np.array([-25000, 25000]))/1000
-        ylim = (ty_met + np.array([-25000, 25000]))/1000
+        xlim = (tx_met + np.array([-75000, 75000]))/1000
+        ylim = (ty_met + np.array([-75000, 75000]))/1000
 
         fig = plt.figure(figsize=(12, 10))
 
@@ -273,34 +294,46 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         rcParams.update({'mathtext.fontset' : 'dejavuserif'}) 
         rcParams.update({'font.size': 12})
 
-        fig.suptitle('Cell ' + uid + ' Scan ' + str(nframe), fontsize=16)
+        fig.suptitle('Cell ' + uid + ' at ' + str(grid_time), fontsize=16)
         plt.axis('off')
 
         # Lagrangian View
-        ax = fig.add_subplot(3, 2, (1, 3), projection=projection)
+        alts = [alt_low, alt_high]
+        for i in range(len(alts)):
+            ax = fig.add_subplot(2, 2, 2*i+1, projection=projection)
 
-        display.plot_grid(field, level=get_grid_alt(grid_size, alt),
-                          vmin=vmin, vmax=vmax, mask_outside=False,
-                          cmap=cmap, colorbar_flag=True,
-                          ax=ax, projection=projection)
+            display.plot_grid(field, level=get_grid_alt(grid_size, alts[i]),
+                              vmin=vmin, vmax=vmax, mask_outside=False,
+                              cmap=cmap, colorbar_flag=True,
+                              ax=ax, projection=projection)
 
-        display.plot_crosshairs(lon=lon, lat=lat, linestyle='--', 
-                                color='k', linewidth=3, ax=ax)
+            display.plot_crosshairs(lon=lon, lat=lat, linestyle='--', 
+                                    color='k', linewidth=3, ax=ax)
 
-        ax.set_xlim(lvxlim[0], lvxlim[1])
-        ax.set_ylim(lvylim[0], lvylim[1])
+            ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
 
-        ax.set_xticks(np.arange(lvxlim[0], lvxlim[1], stepsize))
-        ax.set_yticks(np.arange(lvylim[0], lvylim[1], stepsize))
+            ax.set_xlim(lvxlim[0], lvxlim[1])
+            ax.set_ylim(lvylim[0], lvylim[1])
 
-        ax.set_title('Top-Down View', fontsize=title_font)
-        ax.set_xlabel('Longitude of grid cell center [degree_E]',
-                       fontsize=axes_font)
-        ax.set_ylabel('Latitude of grid cell center [degree_N]',
-                       fontsize=axes_font)
+            ax.set_xticks(np.arange(lvxlim[0], lvxlim[1], stepsize))
+            ax.set_yticks(np.arange(lvylim[0], lvylim[1], stepsize))
+            
+            ax.set_xticklabels(
+                np.round(np.arange(lvxlim[0], lvxlim[1], stepsize), 1)
+            )
+            ax.set_yticklabels(
+                np.round(np.arange(lvylim[0], lvylim[1], stepsize), 1)
+            )
 
+            ax.set_title('Altitude {} km'.format(alts[i]), 
+                         fontsize=title_font)
+            ax.set_xlabel('Longitude of grid cell center [degree_E]',
+                           fontsize=axes_font)
+            ax.set_ylabel('Latitude of grid cell center [degree_N]',
+                           fontsize=axes_font)
+                                      
         # Latitude Cross Section
-        ax = fig.add_subplot(3, 2, 2)
+        ax = fig.add_subplot(2, 2, 2)
         display.plot_latitude_slice(field, lon=lon, lat=lat,
                                     title_flag=False,
                                     colorbar_flag=False, edges=False,
@@ -310,18 +343,18 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
         ax.plot([tx_low, tx_high], [low, high], '--b', linewidth=2.0)
 
         ax.set_xlim(xlim[0], xlim[1])
-        ax.set_xticks(np.arange(xlim[0], xlim[1], 6))
-        ax.set_xticklabels(np.round((np.arange(xlim[0], xlim[1], 6)),
-                                     2))
+        ax.set_xticks(np.arange(xlim[0], xlim[1], 25))
+        ax.set_xticklabels(
+            np.round((np.arange(xlim[0], xlim[1], 25)), 1)
+        )
 
         ax.set_title('Latitude Cross Section', fontsize=title_font)
         ax.set_xlabel('East West Distance From Origin (km)' + '\n',
                        fontsize=axes_font)
         ax.set_ylabel('Distance Above Origin (km)', fontsize=axes_font)
-        ax.set_aspect(aspect=1.3)
 
         # Longitude Cross Section
-        ax = fig.add_subplot(3, 2, 4)
+        ax = fig.add_subplot(2, 2, 4)
         display.plot_longitude_slice(field, lon=lon, lat=lat,
                                      title_flag=False,
                                      colorbar_flag=False, edges=False,
@@ -330,27 +363,13 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, vmin=-8, vmax=64,
                                      ax=ax)
         ax.plot([ty_low, ty_high], [low, high], '--b', linewidth=2.0)
         ax.set_xlim(ylim[0], ylim[1])
-        ax.set_xticks(np.arange(ylim[0], ylim[1], 6))
-        ax.set_xticklabels(np.round(np.arange(ylim[0], ylim[1], 6), 2))
+        ax.set_xticks(np.arange(ylim[0], ylim[1], 25))
+        ax.set_xticklabels(np.round(np.arange(ylim[0], ylim[1], 25), 1))
 
         ax.set_title('Longitudinal Cross Section', fontsize=title_font)
         ax.set_xlabel('North South Distance From Origin (km)',
                        fontsize=axes_font)
         ax.set_ylabel('Distance Above Origin (km)', fontsize=axes_font)
-        ax.set_aspect(aspect=1.3)
-
-        # Time Series Statistic
-        max_field = cell['max']
-        plttime = cell['time']
-
-        # Plot
-        ax = fig.add_subplot(3, 2, (5, 6))
-        ax.plot(plttime, max_field, color='b', linewidth=3)
-        ax.axvline(x=plttime.iloc[nframe], linewidth=4, color='r')
-        ax.set_title('Time Series', fontsize=title_font)
-        ax.set_xlabel('Time (UTC) \n Lagrangian Viewer Time',
-                       fontsize=axes_font)
-        ax.set_ylabel('Maximum ' + field, fontsize=axes_font)
     
         plt.tight_layout()
 

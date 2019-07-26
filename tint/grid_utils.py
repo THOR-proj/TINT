@@ -59,6 +59,7 @@ def get_filtered_frame(grid, min_size, thresh, z_min=None, z_max=None):
     are removed and the rest are labeled. """
     echo_height = get_vert_projection(grid, thresh, z_min, z_max)
     labeled_echo = ndimage.label(echo_height)[0]
+    # May need to do this elsewhere for system stuff.
     frame = clear_small_echoes(labeled_echo, min_size)
     return frame
 

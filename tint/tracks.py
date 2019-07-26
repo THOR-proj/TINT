@@ -30,6 +30,7 @@ FLOW_MARGIN = 10000
 MAX_DISPARITY = 999
 MAX_FLOW_MAG = 50
 MAX_SHIFT_DISP = 15
+BOUNDARY_GRID_CELLS = set()
 GS_ALT = 1500
 LEVELS = np.array([[0, 20000]])
 TRACK_INTERVAL = 0
@@ -39,39 +40,46 @@ Tracking Parameter Guide
 ------------------------
 
 FIELD_THRESH : units of 'field' attribute
-    The threshold used for object detection. Detected objects are connnected
-    pixels above this threshold.
+    The threshold used for object detection. Detected objects are 
+    connnected pixels above this threshold.
 ISO_THRESH : units of 'field' attribute
-    Used in isolated cell classification. Isolated cells must not be connected
-    to any other cell by contiguous pixels above this threshold.
+    Used in isolated cell classification. Isolated cells must not be 
+    connected to any other cell by contiguous pixels above this 
+    threshold.
 ISO_SMOOTH : pixels
     Gaussian smoothing parameter in peak detection preprocessing. See
     single_max in tint.objects.
-MIN_SIZE : square kilometers (but description says pixels?)
-    The minimum size threshold in pixels for an object to be detected.
+MIN_SIZE : square kilometers
+    The minimum size threshold in square kilometres for an object to be
+    detected. See extract_grid_data in grid_utils.
 SEARCH_MARGIN : meters
     The radius of the search box around the predicted object center.
 FLOW_MARGIN : meters
     The margin size around the object extent on which to perform phase
     correlation.
 MAX_DISPARITY : float
-    Maximum allowable disparity value. Larger disparity values are sent to
-    LARGE_NUM.
+    Maximum allowable disparity value. Larger disparity values are 
+    sent to LARGE_NUM.
 MAX_FLOW_MAG : meters per second
     Maximum allowable global shift magnitude. See get_global_shift in
     tint.phase_correlation.
 MAX_SHIFT_DISP : meters per second
-    Maximum magnitude of difference in meters per second for two shifts to be
-    considered in agreement. See correct_shift in tint.matching.
+    Maximum magnitude of difference in meters per second for 
+    two shifts to be considered in agreement. 
+    See correct_shift in tint.matching.
 GS_ALT : meters
-    Altitude in meters at which to perform phase correlation for global shift
-    calculation. See correct_shift in tint.matching.
+    Altitude in meters at which to perform phase correlation for 
+    global shift calculation. See correct_shift in tint.matching.
 LEVELS : n x 2 numpy array, meters
-    Each row represents range of vertical levels over which to identify objects.
-    Objects will then by matched across the different vertical level ranges.
+    Each row represents range of vertical levels over which to 
+    identify objects. Objects will then by matched across the 
+    different vertical level ranges.
 TRACK_INTERVAL: integer
-    Index i corresponding to the interval given in levels over which to track
-    across time. 
+    Index i corresponding to the interval given in levels over 
+    which to track across time.
+BOUNDARY_GRID_CELLS: set
+    Set of tuples of grid indices for the boundary of the in range area. 
+    Use empty set to ignore this test. 
 """
 
 
@@ -122,8 +130,9 @@ class Cell_tracks(object):
                        'ISO_SMOOTH': ISO_SMOOTH,
                        'GS_ALT': GS_ALT,
                        'LEVELS': LEVELS,
-                       'TRACK_INTERVAL': TRACK_INTERVAL}
-
+                       'TRACK_INTERVAL': TRACK_INTERVAL,
+                       'BOUNDARY_GRID_CELLS': BOUNDARY_GRID_CELLS}
+                       
         self.field = field
         self.grid_size = None
         self.radar_info = None

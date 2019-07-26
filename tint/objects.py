@@ -130,8 +130,7 @@ def check_isolation(raw, filtered, grid_size, params, level):
         else:
             iso[objects - 1] = False
     return iso
-
-
+    
 def single_max(obj_ind, raw, params):
     """ Returns True if object has at most one peak. """
     max_proj = np.max(raw, axis=0)
@@ -149,7 +148,12 @@ def single_max(obj_ind, raw, params):
             if maxima > 1:
                 return False
     return True
-
+    
+def get_border_indices(obj_ind, b_ind):
+    """ Determine the indices that intersect the range boundary of 
+    the radar. """    
+     
+    return b_ind
 
 def get_object_prop(images, cores, grid1, field, record, params):
     """ Returns dictionary of object properties for all objects found in
@@ -167,6 +171,9 @@ def get_object_prop(images, cores, grid1, field, record, params):
     volume = []
     level = []
     isolation = []
+    # This will be true if any part of the object overlaps the border
+    # Instead why don't we actually count the number of pixels that 
+    # overlap the border?
     touch_border = []
     n_cores = []
     semi_major = []
@@ -181,7 +188,7 @@ def get_object_prop(images, cores, grid1, field, record, params):
         warnings.warn('x and y grid scales unequal - metrics ' +
                       'such as semi_major and semi_minor may be ' +
                       'misleading.')
-    # These metrics are in km
+    # These metrics are in km^[1, 2, 3] respectively
     unit_alt = unit_dim[0]/1000
     unit_area = (unit_dim[1]*unit_dim[2])/(1000**2)
     unit_vol = (unit_dim[0]*unit_dim[1]*unit_dim[2])/(1000**3)
@@ -202,16 +209,18 @@ def get_object_prop(images, cores, grid1, field, record, params):
    
             # 2D frame stats
             level.append(i)
-
-            # Determine if object touches border of grid
-            t_border_rows = np.logical_or(obj_index[:,0] == 0,
-                                          obj_index[:,0] == rows-1)
-            t_border_columns = np.logical_or(obj_index[:,1] == 0,
-                                          obj_index[:,1] == columns-1)
-            t_border = np.logical_or(t_border_rows, t_border_columns)
-            t_border = np.any(t_border)
-            touch_border.append(t_border)
+          
+            # Work out how many gridcells touch the border
+            obj_ind_list = obj_index.tolist()
+            obj_ind_set = set(
+                [tuple(obj_ind_list[i]) for i in range(len(obj_ind_list))]
+            )
+            b_intersect = obj_ind_set.intersection(
+                params['BOUNDARY_GRID_CELLS']
+            )
             
+            touch_border.append(len(b_intersect))            
+                     
             n_cores.append(len(set(cores[i,obj_index[:,0],obj_index[:,1]])))
             center.append(np.median(obj_index, axis=0))
             # Caclulate mean x and y indices and round to three decimal places
@@ -241,17 +250,22 @@ def get_object_prop(images, cores, grid1, field, record, params):
 
             longitude.append(np.round(lon[0], 5))
             latitude.append(np.round(lat[0], 5))
-
+             
+            # Try appending ellipse properties - append nan if except
             # Note semi_major, semi_minor are currently stored in `index' units
             # This effectively assumes dx = dy
-            # Could probably convert to grid units using orientation, dx and dy 
-            semi_major.append(np.round(ski_props[obj-1].major_axis_length, 3))
-            semi_minor.append(np.round(ski_props[obj-1].minor_axis_length, 3))
-            eccentricity.append(np.round(ski_props[obj-1].eccentricity, 3))
-            # Negative sign corrects for descending indexing convention 
-            # in "y axis". Note orientation given between -pi/2 and pi/2.
-            orientation.append(np.round(-np.rad2deg(ski_props[obj-1].orientation), 3))
-        
+            # Could probably convert to grid units using orientation, dx and dy'
+            attrs = ['major_axis_length', 'minor_axis_length', 
+                     'eccentricity', 'orientation']
+            lists = [semi_major, semi_minor, eccentricity, orientation]
+            for j in range(0, len(attrs)):
+                try:
+                    lists[j].append(
+                        np.round(ski_props[obj-1].eval(attrs)[j], 3)
+                    )
+                except:
+                    lists[j].append(np.nan)
+                             
             # raw 3D grid stats
             [z_min, z_max] = get_level_indices(
                 grid1, record.grid_size, params['LEVELS'][i,:]
@@ -294,7 +308,10 @@ def get_object_prop(images, cores, grid1, field, record, params):
                'semi_major': semi_major,
                'semi_minor': semi_minor,
                'eccentricity': eccentricity,
-               'orientation': orientation}
+               # Add orientation
+               # Negative sign corrects for descending indexing convention 
+               # in "y axis". Orientation given between -pi/2 and pi/2.
+               'orientation': np.round(-np.rad2deg(orientation), 3)}
     return objprop
 
 
@@ -400,10 +417,16 @@ def get_system_tracks(tracks_obj):
         system_tracks = system_tracks.merge(prop_lvl_0, left_index=True, 
                                             right_index=True)
 
-    # Calculate maximums
+    # Calculate system maximum
     maximum = tracks_obj.tracks[['max']]
     maximum = maximum.max(level=['scan', 'time', 'uid'])
     system_tracks = system_tracks.merge(maximum, left_index=True, 
+                                        right_index=True)
+                                        
+    # Calculate maximum area
+    proj_area = tracks_obj.tracks[['proj_area']]
+    proj_area = proj_area.max(level=['scan', 'time', 'uid'])
+    system_tracks = system_tracks.merge(proj_area, left_index=True, 
                                         right_index=True)
     
     # Calculate maximum altitude
@@ -414,7 +437,7 @@ def get_system_tracks(tracks_obj):
 
     # Get touch_border for system
     t_border = tracks_obj.tracks[['touch_border']]
-    t_border = t_border.sum(level=['scan', 'time', 'uid']).astype('bool')
+    t_border = t_border.max(level=['scan', 'time', 'uid'])
     system_tracks = system_tracks.merge(t_border, left_index=True, 
                                         right_index=True)
 

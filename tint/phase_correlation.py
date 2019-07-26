@@ -88,7 +88,7 @@ def fft_shift(fft_mat):
 
 
 def get_global_shift(im1, im2, params):
-    """ Returns standardazied global shift vector. im1 and im2 are full frames
+    """ Returns standardized global shift vector. im1 and im2 are full frames
     of raw DBZ values. """
     if im2 is None:
         return None

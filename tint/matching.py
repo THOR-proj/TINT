@@ -233,14 +233,31 @@ def match_pairs(obj_match, params):
     """ Matches objects into pairs given a disparity matrix and removes
     bad matches. Bad matches have a disparity greater than the maximum
     threshold. """
+    
+    import pdb
+    pdb.set_trace()
+    
+    # Create a list of sets, where the i-th set will store the objects 
+    # from image1 that have merged with objects in image2
+    # Maybe faster to use a 2D array?
+    obj_merge = [set() for i in range(obj_match.shape[1])]
+    
+    # Determine optimal pairs
     pairs = optimize.linear_sum_assignment(obj_match)
-
+  
     for id1 in pairs[0]:
         if obj_match[id1, pairs[1][id1]] > params['MAX_DISPARITY']:
-            pairs[1][id1] = -1  # -1 indicates the object has died
-
+            # Set to -1 if object has died (or merged) 
+            pairs[1][id1] = -1
+            # Find the closest object in image2 to object with id1 
+            id2 = np.argmin(obj_match[id1])
+            # If this object was in the search radius of object id1, 
+            # add object id1 to obj_merge[id2]. 
+            if obj_match[id1, id2] < LARGE_NUM:
+                obj_merge[id2].add(id1 + 1)
+                
     pairs = pairs[1] + 1  # ids in current_objects are 1-indexed
-    return pairs
+    return pairs, obj_merge
 
 
 def get_pairs(image1, image2, global_shift, current_objects, record, params):
@@ -262,5 +279,7 @@ def get_pairs(image1, image2, global_shift, current_objects, record, params):
                                    current_objects,
                                    record,
                                    params)
-    pairs = match_pairs(obj_match, params)
+      
+    pairs, obj_merge = match_pairs(obj_match, params)
+
     return pairs
