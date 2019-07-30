@@ -54,7 +54,7 @@ MIN_SIZE : square kilometers
     detected. See extract_grid_data in grid_utils.
 SEARCH_MARGIN : meters
     The radius of the search box around the predicted object center.
-FLOW_MARGIN : meters
+FLOW_MARGIN : meters 
     The margin size around the object extent on which to perform phase
     correlation.
 MAX_DISPARITY : float
@@ -101,7 +101,7 @@ class Cell_tracks(object):
         Contains the most recent grid object tracked. This is used for dynamic
         updates.
     counter : Counter
-        See Counter class.
+        See Counter class in helpers.py.
     record : Record
         See Record class.
     current_objects : dict
@@ -225,22 +225,22 @@ class Cell_tracks(object):
                       flush=True)
                 self.current_objects = None
                 continue
-
+                
             global_shift = get_global_shift(raw1, raw2, self.params)
-            pairs = get_pairs(frame1,
-                              frame2,
-                              global_shift,
-                              self.current_objects,
-                              self.record,
-                              self.params)
-
+            pairs, obj_merge_new = get_pairs(frame1,
+                                             frame2,
+                                             global_shift,
+                                             self.current_objects,
+                                             self.record,
+                                             self.params)
+                                                                                 
             if newRain:
                 # first nonempty scan after a period of empty scans
                 self.current_objects, self.counter = init_current_objects(
                     frame1,
                     frame2,
                     pairs,
-                    self.counter
+                    self.counter,
                 )
                 newRain = False
             else:
@@ -249,11 +249,14 @@ class Cell_tracks(object):
                     frame2,
                     pairs,
                     self.current_objects,
-                    self.counter
+                    self.counter,
+                    obj_merge
                 )
+            obj_merge = obj_merge_new
 
             obj_props = get_object_prop(frames1, cores1, grid_obj1, self.field,
-                                        self.record, self.params)
+                                        self.record, self.params, 
+                                        self.current_objects)
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,
                                        self.current_objects, obj_props)

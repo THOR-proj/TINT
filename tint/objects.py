@@ -43,7 +43,7 @@ def get_obj_extent(labeled_image, obj_label):
 
 def init_current_objects(first_frame, second_frame, pairs, counter):
     """ Returns a dictionary for objects with unique ids and their
-    corresponding ids in frame1 and frame1. This function is called when
+    corresponding ids in frame1 and frame2. This function is called when
     echoes are detected after a period of no echoes. """
     nobj = np.max(first_frame)
 
@@ -51,16 +51,23 @@ def init_current_objects(first_frame, second_frame, pairs, counter):
     uid = counter.next_uid(count=nobj)
     id2 = pairs
     obs_num = np.zeros(nobj, dtype='i')
-    origin = np.array(['-1']*nobj)
+    origin = np.array(['-1']*nobj) # What is origin for?
+    # Store uids of objects in frame1 that have merged with objects in
+    # frame 2. Store as uids.
+    mergers = [set() for i in range(len(uid))] 
+    #for i in range(len(uid)):
+    #    mergers[i] = set(uid[obj_merge[:,i]])
 
-    current_objects = {'id1': id1, 'uid': uid, 'id2': id2,
-                       'obs_num': obs_num, 'origin': origin}
+    current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
+                       'mergers': mergers, 'obs_num': obs_num, 
+                       'origin': origin}
     current_objects = attach_last_heads(first_frame, second_frame,
                                         current_objects)
     return current_objects, counter
 
 
-def update_current_objects(frame1, frame2, pairs, old_objects, counter):
+def update_current_objects(frame1, frame2, pairs, old_objects, 
+                           counter, old_obj_merge):
     """ Removes dead objects, updates living objects, and assigns new uids to
     new-born objects. """
     nobj = np.max(frame1)
@@ -68,6 +75,7 @@ def update_current_objects(frame1, frame2, pairs, old_objects, counter):
     uid = np.array([], dtype='str')
     obs_num = np.array([], dtype='i')
     origin = np.array([], dtype='str')
+    mergers = []
 
     for obj in np.arange(nobj) + 1:
         if obj in old_objects['id2']:
@@ -84,10 +92,20 @@ def update_current_objects(frame1, frame2, pairs, old_objects, counter):
             else:
                 uid = np.append(uid, counter.next_uid())
             obs_num = np.append(obs_num, 0)
-
+            
     id2 = pairs
-    current_objects = {'id1': id1, 'uid': uid, 'id2': id2,
-                       'obs_num': obs_num, 'origin': origin}
+    
+    mergers = [set() for i in range(len(uid))]
+    for i in range(len(uid)):
+        if uid[i] in old_objects['uid']:
+            old_i = int(np.argwhere(old_objects['uid']==uid[i]))
+            mergers[i] = set(old_objects['uid'][old_obj_merge[:,old_i]])
+            mergers[i]=mergers[i].union(old_objects['mergers'][old_i])
+        
+    current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
+                       'obs_num': obs_num, 'origin': origin,
+                       'mergers': mergers}
+
     current_objects = attach_last_heads(frame1, frame2, current_objects)
     return current_objects, counter
 
@@ -155,7 +173,8 @@ def get_border_indices(obj_ind, b_ind):
      
     return b_ind
 
-def get_object_prop(images, cores, grid1, field, record, params):
+def get_object_prop(images, cores, grid1, field, record, 
+                    params, current_objects):
     """ Returns dictionary of object properties for all objects found in
     each level of images, where images are the labelled (filtered) 
     frames. """
@@ -171,16 +190,14 @@ def get_object_prop(images, cores, grid1, field, record, params):
     volume = []
     level = []
     isolation = []
-    # This will be true if any part of the object overlaps the border
-    # Instead why don't we actually count the number of pixels that 
-    # overlap the border?
-    touch_border = []
-    n_cores = []
+    touch_border = [] # Counts number of pixels touching scan border.
+    n_cores = [] # Number of objects at lowest interval.
     semi_major = []
     semi_minor = []
     orientation = []
     eccentricity = []
     nobj = np.max(images)
+    mergers = []
     [levels, rows, columns] = images.shape
     
     unit_dim = record.grid_size
@@ -202,7 +219,9 @@ def get_object_prop(images, cores, grid1, field, record, params):
         ski_props = regionprops(images[i], cache=True)
 
         for obj in np.arange(nobj) + 1:
-            id1.append(obj)        
+            id1.append(obj)  
+            
+            mergers.append(current_objects['mergers'][obj-1])
             
             # Get objects in images[i], i.e. the frame at i-th level
             obj_index = np.argwhere(images[i] == obj)
@@ -218,7 +237,6 @@ def get_object_prop(images, cores, grid1, field, record, params):
             b_intersect = obj_ind_set.intersection(
                 params['BOUNDARY_GRID_CELLS']
             )
-            
             touch_border.append(len(b_intersect))            
                      
             n_cores.append(len(set(cores[i,obj_index[:,0],obj_index[:,1]])))
@@ -308,6 +326,7 @@ def get_object_prop(images, cores, grid1, field, record, params):
                'semi_major': semi_major,
                'semi_minor': semi_minor,
                'eccentricity': eccentricity,
+               'mergers': mergers,
                # Add orientation
                # Negative sign corrects for descending indexing convention 
                # in "y axis". Orientation given between -pi/2 and pi/2.
@@ -324,7 +343,7 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     nlvl = max(obj_props['level'])+1
     scan_num = [record.scan] * nobj * nlvl
     uid = current_objects['uid'].tolist() * nlvl
-
+    
     new_tracks = pd.DataFrame({
         'scan': scan_num,
         'uid': uid,
@@ -344,9 +363,10 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'semi_major': obj_props['semi_major'],
         'semi_minor': obj_props['semi_minor'],
         'eccentricity': obj_props['eccentricity'],
-        'orientation': obj_props['orientation']
+        'orientation': obj_props['orientation'],
+        'mergers': obj_props['mergers']
     })
-   
+     
     new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
     new_tracks.sort_index(inplace=True)
     tracks = old_tracks.append(new_tracks)
@@ -403,7 +423,8 @@ def get_system_tracks(tracks_obj):
     
     # Get position and velocity at tracking level.        
     system_tracks = tracks_obj.tracks[['grid_x', 'grid_y', 
-                                       'lon', 'lat', 'u', 'v']]
+                                       'lon', 'lat', 'u', 'v',
+                                       'mergers']]
     system_tracks = system_tracks.xs(
         tracks_obj.params['TRACK_INTERVAL'], level='level'
     )

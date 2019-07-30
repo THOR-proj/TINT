@@ -42,14 +42,17 @@ class Tracer(object):
         self.history = self.tobj.tracks.loc[:nframe]
         self.current = self.tobj.tracks.loc[nframe]
         if not self.persist:
+            mergers = set.union(*self.current['mergers'].values.tolist())
             dead_cells = [key for key in self.cell_color.keys()
-                          if key
-                          not in self.current.index.get_level_values('uid')]
+                          if (key
+                          not in self.current.index.get_level_values('uid')
+                          and key not in mergers)]
             self.color_stack.extend(self.cell_color[dead_cells])
             self.cell_color.drop(dead_cells, inplace=True)
 
     def _check_uid(self, uid):
-        if uid not in self.cell_color.keys():
+        mergers = set.union(*self.current['mergers'].values.tolist())
+        if ((uid not in self.cell_color.keys()) and (uid not in mergers)):
             try:
                 self.cell_color[uid] = self.color_stack.pop()
             except IndexError:
@@ -57,11 +60,13 @@ class Tracer(object):
                 self.cell_color[uid] = self.color_stack.pop()
 
     def plot(self, ax):
+        mergers = set.union(*self.current['mergers'].values.tolist())
         for uid, group in self.history.groupby(level='uid'):
             self._check_uid(uid)
             tracer = group[['lon', 'lat']]
-            if (self.persist or 
-                (uid in self.current.reset_index(level=['time']).index)):
+            if (self.persist
+                or (uid in self.current.reset_index(level=['time']).index)
+                or (uid in mergers)):
                 ax.plot(tracer.lon, tracer.lat, self.cell_color[uid])
 
 def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
@@ -177,7 +182,11 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 y_low = frame_tracks_low['lat'].iloc[ind]
                 x_high = frame_tracks_high['lon'].iloc[ind]
                 y_high = frame_tracks_high['lat'].iloc[ind]
-                ax.text(x, y, uid, transform=projection, fontsize=12)
+                mergers = list(frame_tracks['mergers'].iloc[ind])
+                mergers_str = ", ".join(mergers)
+                    
+                ax.text(x-.05, y+0.05, uid, transform=projection, fontsize=12)
+                ax.text(x+.05, y-0.05, mergers_str, transform=projection, fontsize=10)
                 ax.plot([x_low, x_high], [y_low, y_high], '--b', linewidth=2.0)
 
         plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
