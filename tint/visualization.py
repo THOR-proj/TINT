@@ -71,10 +71,10 @@ class Tracer(object):
 
 def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 start_datetime = None, end_datetime = None,
-                cmap=None, alt=None, isolated_only=False,
+                cmap=None, alt_low=None, alt_high=None, isolated_only=False,
                 tracers=False, persist=False,
                 projection=None, **kwargs):
-
+                
     # Create a copy of tobj for use by this function
     f_tobj = copy.deepcopy(tobj)
 
@@ -89,8 +89,10 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
     grid_size = tobj.grid_size
     if cmap is None:
         cmap = pyart.graph.cm_colorblind.HomeyerRainbow
-    if alt is None:
-        alt = f_tobj.params['GS_ALT']
+    if alt_low is None:
+        alt_low = f_tobj.params['GS_ALT']
+    if alt_high is None:
+        alt_high = f_tobj.params['GS_ALT']
     if projection is None:
         projection=ccrs.PlateCarree()
     if tracers:
@@ -140,7 +142,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                   + 'Moving to next grid.'.format(str(start_datetime)))
             continue
 
-        fig_grid = plt.figure(figsize=(10, 8))
+        fig_grid = plt.figure(figsize=(24, 10))
 
         # Initialise fonts
         rcParams.update({'font.family' : 'serif'})
@@ -152,42 +154,50 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
               end='\r', flush=True)
         
         display = pyart.graph.GridMapDisplay(grid)
-        ax = fig_grid.add_subplot(111, projection=projection)
-        transform = projection._as_mpl_transform(ax)
-        display.plot_crosshairs(lon=radar_lon, lat=radar_lat)
-        display.plot_grid(tobj.field, level=get_grid_alt(grid_size, alt),
-                          vmin=vmin, vmax=vmax, mask_outside=False,
-                          cmap=cmap, transform=projection, ax=ax, **kwargs)
+        
+        alts = [alt_low, alt_high]
+        
+        for i in [1,2]:
+        
+            ax = fig_grid.add_subplot(1, 2, i, projection=projection)
+            transform = projection._as_mpl_transform(ax)
+            display.plot_crosshairs(lon=radar_lon, lat=radar_lat)
+            display.plot_grid(tobj.field, level=get_grid_alt(grid_size, alts[i-1]),
+                              vmin=vmin, vmax=vmax, mask_outside=False,
+                              cmap=cmap, transform=projection, ax=ax, **kwargs)
 
-        if grid_time in time_ind:
+            if grid_time in time_ind:
 
-            nframe = scan_ind[time_ind == grid_time][0]
-            frame_tracks = f_tobj.tracks.loc[nframe]
-            frame_tracks_low = tracks_low.loc[nframe]
-            frame_tracks_high = tracks_high.loc[nframe]
-            frame_tracks = frame_tracks.reset_index(level=['time'])
-            frame_tracks_low = frame_tracks_low.reset_index(level=['time'])
-            frame_tracks_high = frame_tracks_high.reset_index(level=['time'])
-            
-            if tracers:
-                tracer.update(nframe)
-                tracer.plot(ax)
+                nframe = scan_ind[time_ind == grid_time][0]
+                system_vel = f_tobj.system_tracks.loc[nframe]
+                frame_tracks = f_tobj.tracks.loc[nframe]
+                frame_tracks_low = tracks_low.loc[nframe]
+                frame_tracks_high = tracks_high.loc[nframe]
+                frame_tracks = frame_tracks.reset_index(level=['time'])
+                frame_tracks_low = frame_tracks_low.reset_index(level=['time'])
+                frame_tracks_high = frame_tracks_high.reset_index(level=['time'])
+                
+                if tracers:
+                    tracer.update(nframe)
+                    tracer.plot(ax)
 
-            for ind, uid in enumerate(frame_tracks.index):
-                if isolated_only and not frame_tracks['isolated'].iloc[ind]:
-                    continue
-                x = frame_tracks['lon'].iloc[ind]
-                y = frame_tracks['lat'].iloc[ind]
-                x_low = frame_tracks_low['lon'].iloc[ind]
-                y_low = frame_tracks_low['lat'].iloc[ind]
-                x_high = frame_tracks_high['lon'].iloc[ind]
-                y_high = frame_tracks_high['lat'].iloc[ind]
-                mergers = list(frame_tracks['mergers'].iloc[ind])
-                mergers_str = ", ".join(mergers)
-                    
-                ax.text(x-.05, y+0.05, uid, transform=projection, fontsize=12)
-                ax.text(x+.05, y-0.05, mergers_str, transform=projection, fontsize=10)
-                ax.plot([x_low, x_high], [y_low, y_high], '--b', linewidth=2.0)
+                for ind, uid in enumerate(frame_tracks.index):
+                    if isolated_only and not frame_tracks['isolated'].iloc[ind]:
+                        continue
+                    x = frame_tracks['lon'].iloc[ind]
+                    y = frame_tracks['lat'].iloc[ind]
+                    [u, v] = [frame_tracks_low['u'].iloc[ind], frame_tracks_low['v'].iloc[ind]]
+                    x_low = frame_tracks_low['lon'].iloc[ind]
+                    y_low = frame_tracks_low['lat'].iloc[ind]
+                    x_high = frame_tracks_high['lon'].iloc[ind]
+                    y_high = frame_tracks_high['lat'].iloc[ind]
+                    mergers = list(frame_tracks['mergers'].iloc[ind])
+                    mergers_str = ", ".join(mergers)
+                        
+                    ax.text(x-.05, y+0.05, uid, transform=projection, fontsize=12)
+                    ax.text(x+.05, y-0.05, mergers_str, transform=projection, fontsize=10)
+                    ax.plot([x_low, x_high], [y_low, y_high], '--b', linewidth=2.0)
+                    ax.plot([x_low, x_low + u/30], [y_low, y_low + v/30], '--m', linewidth=2.0)
 
         plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
                     bbox_inches = 'tight', dpi=dpi)

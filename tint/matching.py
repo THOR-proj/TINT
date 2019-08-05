@@ -164,7 +164,8 @@ def get_disparity(obj_found, image2, search_box, obj1_extent):
         size_changed = get_sizeChange(target_extent['obj_area'],
                                       obj1_extent['obj_area'])
         change = np.append(change, size_changed)
-
+    # Note that merger of systems may create a sudden size change 
+    # that exaggerates cost function.
     disparity = dist_pred + change
     return disparity
 
@@ -205,17 +206,27 @@ def locate_all_objects(image1, image2, global_shift, current_objects, record,
 
     obj_match = np.full((nobj1, np.max((nobj1, nobj2))),
                         LARGE_NUM, dtype='f')
+    u_shift = []
+    v_shift = []
 
     for obj_id1 in np.arange(nobj1) + 1:
         obj1_extent = get_obj_extent(image1, obj_id1)
         shift = get_ambient_flow(obj1_extent, image1,
                                  image2, params, record.grid_size)
+         
         if shift is None:
             record.count_case(5)
             shift = global_shift
+            # Note in this case the object's u and v will be 
+            # global shift.
 
         shift = correct_shift(shift, current_objects, obj_id1,
                               global_shift, record, params)
+                              
+        shift_meters = shift * record.grid_size[1:]
+        [v, u] = shift_meters/record.interval.seconds
+        u_shift.append(u)
+        v_shift.append(v)
 
         search_box = predict_search_extent(obj1_extent, shift,
                                            params, record.grid_size)
@@ -226,7 +237,7 @@ def locate_all_objects(image1, image2, global_shift, current_objects, record,
         obj_match = save_obj_match(obj_id1, objs_found, disparity, obj_match,
                                    params)
 
-    return obj_match
+    return obj_match, u_shift, v_shift
 
 
 def match_pairs(obj_match, params):
@@ -270,15 +281,12 @@ def get_pairs(image1, image2, global_shift, current_objects, record, params):
         zero_pairs = np.zeros(nobj1)
         zero_obj_merge = np.zeros((nobj1, np.max((nobj1, nobj2))), 
                                   dtype=bool)
-        return zero_pairs, zero_obj_merge
+        return zero_pairs, zero_obj_merge, [np.nan] * nobj1, [np.nan] * nobj1
 
-    obj_match = locate_all_objects(image1,
-                                   image2,
-                                   global_shift,
-                                   current_objects,
-                                   record,
-                                   params)
+    obj_match, u_shift, v_shift = locate_all_objects(
+        image1, image2, global_shift, current_objects, record, params
+    )
     
     pairs, obj_merge = match_pairs(obj_match, params)
 
-    return pairs, obj_merge
+    return pairs, obj_merge, u_shift, v_shift

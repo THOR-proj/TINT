@@ -6,12 +6,14 @@ Functions for managing and recording object properties.
 
 """
 import warnings
+import copy
 
 import numpy as np
 import pandas as pd
 import pyart
 from scipy import ndimage
 from skimage.measure import regionprops
+from skimage.feature import peak_local_max
 
 from .grid_utils import get_filtered_frame, get_level_indices
 
@@ -173,7 +175,7 @@ def get_border_indices(obj_ind, b_ind):
      
     return b_ind
 
-def get_object_prop(images, cores, grid1, field, record, 
+def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record, 
                     params, current_objects):
     """ Returns dictionary of object properties for all objects found in
     each level of images, where images are the labelled (filtered) 
@@ -198,6 +200,7 @@ def get_object_prop(images, cores, grid1, field, record,
     eccentricity = []
     nobj = np.max(images)
     mergers = []
+    local_max = []
     [levels, rows, columns] = images.shape
     
     unit_dim = record.grid_size
@@ -212,14 +215,14 @@ def get_object_prop(images, cores, grid1, field, record,
 
     raw3D = grid1.fields[field]['data'].data # Complete dataset
     z_values = grid1.z['data']/1000
-              
+             
     for i in range(levels):
 
         # Caclulate ellipse fit properties
         ski_props = regionprops(images[i], cache=True)
 
         for obj in np.arange(nobj) + 1:
-            id1.append(obj)  
+            id1.append(obj)
             
             mergers.append(current_objects['mergers'][obj-1])
             
@@ -237,8 +240,8 @@ def get_object_prop(images, cores, grid1, field, record,
             b_intersect = obj_ind_set.intersection(
                 params['BOUNDARY_GRID_CELLS']
             )
-            touch_border.append(len(b_intersect))            
-                     
+            touch_border.append(len(b_intersect))
+            
             n_cores.append(len(set(cores[i,obj_index[:,0],obj_index[:,1]])))
             center.append(np.median(obj_index, axis=0))
             # Caclulate mean x and y indices and round to three decimal places
@@ -249,9 +252,9 @@ def get_object_prop(images, cores, grid1, field, record,
             # unit_dim is list [dz, dx, dy]   
             g_y = this_centroid[0] * unit_dim[2]
             g_y += grid1.y['data'][0]
-            g_x = this_centroid[1] * unit_dim[1]            
+            g_x = this_centroid[1] * unit_dim[1]
             g_x += grid1.x['data'][0]
-            # Append to lists            
+            # Append to lists    
             grid_x.append(g_x)
             grid_y.append(g_y)
             proj_area.append(obj_index.shape[0] * unit_area)
@@ -268,7 +271,7 @@ def get_object_prop(images, cores, grid1, field, record,
 
             longitude.append(np.round(lon[0], 5))
             latitude.append(np.round(lat[0], 5))
-             
+            
             # Try appending ellipse properties - append nan if except
             # Note semi_major, semi_minor are currently stored in `index' units
             # This effectively assumes dx = dy
@@ -279,7 +282,7 @@ def get_object_prop(images, cores, grid1, field, record,
             for j in range(0, len(attrs)):
                 try:
                     lists[j].append(
-                        np.round(ski_props[obj-1].eval(attrs)[j], 3)
+                        np.round(eval('ski_props[obj-1].' + attrs[j]), 3)
                     )
                 except:
                     lists[j].append(np.nan)
@@ -302,15 +305,47 @@ def get_object_prop(images, cores, grid1, field, record,
             # proj_area is calculated from boolean vertical projection,
             # whereas volume doesn't perform vertical projection.
             volume.append(np.sum(filtered_slices) * unit_vol)
+            
+            import pdb
+            pdb.set_trace()
+            
+            # Get local maxima
+            raw3D_i_filt = copy.deepcopy(raw3D_i)
+            raw3D_i_filt[:,images[i]!=obj] = 0
+            local_max_i = []
+            for k in range(raw3D_i.shape[0]):
+                local_max_i.append(peak_local_max(raw3D_i_filt[k]))
+                
+            local_max.append(local_max_i)
+            
+            # define updrafts starting from local maxima at lowest level 
+            updrafts = [[local_max_i[0][j]] for j in range(len(local_max_i[0]))]
 
+            for k in range(1,len(test)):
+                previous =  np.array([updrafts[i][k-1] for i in range(len(updrafts))])
+                current = local_max_i[k]
+
+                match = np.zeros((len(previous), len(current)))
+                for i in range(match.shape[0]):
+                    for j in range(match.shape[1]):
+                        match[i,j] = np.linalg.norm(previous[i]-current[j])
+
+                for i in range(match.shape[0]):
+                    minimum = np.argmin(match[i])
+                    updrafts[i].append(test1[minimum])
+
+            
+           
         # cell isolation
         isolation += check_isolation(
             raw3D[z_min:z_max, :,:], images[i].squeeze(), 
             record.grid_size, params, i
         ).tolist()
-
+ 
     objprop = {'id1': id1,
                'center': center,
+               'u_shift': u_shift * levels,
+               'v_shift': v_shift * levels ,
                'grid_x': grid_x,
                'grid_y': grid_y,
                'proj_area': proj_area,
@@ -330,7 +365,8 @@ def get_object_prop(images, cores, grid1, field, record,
                # Add orientation
                # Negative sign corrects for descending indexing convention 
                # in "y axis". Orientation given between -pi/2 and pi/2.
-               'orientation': np.round(-np.rad2deg(orientation), 3)}
+               'orientation': np.round(-np.rad2deg(orientation), 3),
+               'local_max': local_max}
     return objprop
 
 
@@ -364,7 +400,8 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'semi_minor': obj_props['semi_minor'],
         'eccentricity': obj_props['eccentricity'],
         'orientation': obj_props['orientation'],
-        'mergers': obj_props['mergers']
+        'mergers': obj_props['mergers'],
+        'local_max': obj_props['local_max'],
     })
      
     new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
@@ -384,13 +421,13 @@ def post_tracks(tracks_obj):
     tmp_tracks = tmp_tracks.groupby(
         level=['uid', 'level'], as_index=False, group_keys=False
     )
-    tmp_tracks = tmp_tracks.rolling(window=2, center=False)
+    tmp_tracks = tmp_tracks.rolling(window=5, center=True)
     # Calculate centred difference.
     dt = tracks_obj.record.interval.total_seconds()
     # Get x,y grid sizes. 
     # Use negative index incase grid two dimensional.     
     dx = tracks_obj.record.grid_size[-2:]
-    tmp_tracks = tmp_tracks.apply(lambda x: np.round(((x[1] - x[0])/dt), 3))
+    tmp_tracks = tmp_tracks.apply(lambda x: np.round(((x[4] - x[0])/(4*dt)), 3))
     tmp_tracks = tmp_tracks.rename(
         columns={'grid_x': 'u', 'grid_y': 'v'}
     )
@@ -405,7 +442,7 @@ def post_tracks(tracks_obj):
     tmp_tracks = tmp_tracks.groupby(
         level=['uid', 'scan', 'time'], as_index=False, group_keys=False
     )
-    tmp_tracks = tmp_tracks.rolling(window=2, center=False,)
+    tmp_tracks = tmp_tracks.rolling(window=2, center=False)
     tmp_tracks = tmp_tracks.apply(lambda x: np.round((x[1] - x[0]), 3))
     tmp_tracks = tmp_tracks.rename(
         columns={'grid_x': 'x_vert_disp', 'grid_y': 'y_vert_disp'}

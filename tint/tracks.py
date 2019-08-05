@@ -227,12 +227,10 @@ class Cell_tracks(object):
                 continue
                 
             global_shift = get_global_shift(raw1, raw2, self.params)
-            pairs, obj_merge_new = get_pairs(frame1,
-                                             frame2,
-                                             global_shift,
-                                             self.current_objects,
-                                             self.record,
-                                             self.params)
+            pairs, obj_merge_new, u_shift, v_shift = get_pairs(
+                frame1, frame2, global_shift, self.current_objects, 
+                self.record, self.params
+            )
                                                                                  
             if newRain:
                 # first nonempty scan after a period of empty scans
@@ -254,9 +252,10 @@ class Cell_tracks(object):
                 )
             obj_merge = obj_merge_new
 
-            obj_props = get_object_prop(frames1, cores1, grid_obj1, self.field,
-                                        self.record, self.params, 
-                                        self.current_objects)
+            obj_props = get_object_prop(
+                frames1, cores1, grid_obj1, u_shift, v_shift, self.field,
+                self.record, self.params, self.current_objects
+            )
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,
                                        self.current_objects, obj_props)
