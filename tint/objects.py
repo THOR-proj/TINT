@@ -171,9 +171,68 @@ def single_max(obj_ind, raw, params):
     
 def get_border_indices(obj_ind, b_ind):
     """ Determine the indices that intersect the range boundary of 
-    the radar. """    
+    the radar. """
      
     return b_ind
+    
+def identify_updrafts(raw3D, images, grid1, record, params):
+    """ Determine "updrafts" by looking for local maxima at each 
+    vertical level."""
+        
+    raw3D_filt = copy.deepcopy(raw3D)
+    #for i in range(images.shape[0]-1):
+    #    [z_min, z_max] = get_level_indices(
+    #        grid1, record.grid_size, params['LEVELS'][i,:]
+    #    )
+    #    raw3D_filt[z_min:z_max, images[i]!=obj] = 0
+    # For last level look for updrafts as far vertically as 
+    # data is available
+    #[z_min, z_max] = get_level_indices(
+    #        grid1, record.grid_size, params['LEVELS'][-1,:]
+    #    )
+    #raw3D_filt[z_min:, images[-1]!=obj] = 0
+    
+    # Get local maxima
+    local_max = []
+    for k in range(raw3D_filt.shape[0]):
+        local_max.append(peak_local_max(raw3D_filt[k]))
+        
+    # Define updrafts starting from local maxima at lowest level 
+    updrafts = [[local_max[0][j]] for j in range(len(local_max[0]))]
+    
+    # Find first level with no local_max
+    try:
+        max_height = [i for i in range(len(local_max))
+                      if local_max[i].tolist() == []][0]
+    except:
+        max_height = len(local_max)
+        
+    # Create a set to store indices of still 
+    # existing updrafts as we check each vertical 
+    # level of data.
+    current_inds = set(range(len(updrafts)))
+
+    for k in range(1,max_height):
+
+        previous =  np.array([updrafts[i][k-1] for i in current_inds])
+        current = local_max[k]
+
+        match = np.zeros((len(previous), len(current)))
+        for l in range(match.shape[0]):
+            for m in range(match.shape[1]):
+                match[l,m] = np.linalg.norm(previous[l]-current[m])
+
+        next_inds = copy.deepcopy(current_inds)
+        for l in range(match.shape[0]):
+            minimum = np.argmin(match[l])
+            field_value = raw3D_filt[k, previous[l,0], previous[l,1]]
+            if ((match[l,minimum] < 2) 
+                & (field_value > params['UPDRAFT_THRESH'])):
+                updrafts[list(current_inds)[l]].append(current[minimum])
+            else:
+                next_inds = next_inds - set([list(current_inds)[l]])
+        current_inds = next_inds
+    return updrafts   
 
 def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record, 
                     params, current_objects):
@@ -200,7 +259,7 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
     eccentricity = []
     nobj = np.max(images)
     mergers = []
-    local_max = []
+    updraft_list = []
     [levels, rows, columns] = images.shape
     
     unit_dim = record.grid_size
@@ -215,6 +274,11 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
 
     raw3D = grid1.fields[field]['data'].data # Complete dataset
     z_values = grid1.z['data']/1000
+             
+    all_updrafts = identify_updrafts(raw3D, images, grid1, record, params)
+             
+    import pdb
+    pdb.set_trace()
              
     for i in range(levels):
 
@@ -265,9 +329,8 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
                                  grid1.x['data'][rounded[1]]])
 
             projparams = grid1.get_projparams()
-            lon, lat = pyart.core.transforms.cartesian_to_geographic(g_x,
-                                                                     g_y,
-                                                                     projparams)
+            lon, lat = pyart.core.transforms.cartesian_to_geographic(
+                g_x, g_y, projparams)
 
             longitude.append(np.round(lon[0], 5))
             latitude.append(np.round(lat[0], 5))
@@ -306,67 +369,52 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
             # whereas volume doesn't perform vertical projection.
             volume.append(np.sum(filtered_slices) * unit_vol)
             
-            import pdb
-            pdb.set_trace()
+            # Calculate "updrafts" by tracking location of local maxima
+            # through ALL vertical levels. Only do this once. 
+            if i==0:
+                all_updrafts_0 = [all_updrafts[i][0].tolist() 
+                                  for i in range(len(all_updrafts))]
+                updraft_obj_inds = [i for i in range(len(all_updrafts_0)) 
+                                    if all_updrafts_0[i] 
+                                    in obj_index.tolist()]
+                updrafts_obj = [all_updrafts[i] for i in updraft_obj_inds]
+                updraft_list.append(updrafts_obj)
+            else:
+                updraft_list.append([])
             
-            # Get local maxima
-            raw3D_i_filt = copy.deepcopy(raw3D_i)
-            raw3D_i_filt[:,images[i]!=obj] = 0
-            local_max_i = []
-            for k in range(raw3D_i.shape[0]):
-                local_max_i.append(peak_local_max(raw3D_i_filt[k]))
-                
-            local_max.append(local_max_i)
-            
-            # define updrafts starting from local maxima at lowest level 
-            updrafts = [[local_max_i[0][j]] for j in range(len(local_max_i[0]))]
-
-            for k in range(1,len(test)):
-                previous =  np.array([updrafts[i][k-1] for i in range(len(updrafts))])
-                current = local_max_i[k]
-
-                match = np.zeros((len(previous), len(current)))
-                for i in range(match.shape[0]):
-                    for j in range(match.shape[1]):
-                        match[i,j] = np.linalg.norm(previous[i]-current[j])
-
-                for i in range(match.shape[0]):
-                    minimum = np.argmin(match[i])
-                    updrafts[i].append(test1[minimum])
-
-            
-           
         # cell isolation
         isolation += check_isolation(
             raw3D[z_min:z_max, :,:], images[i].squeeze(), 
             record.grid_size, params, i
         ).tolist()
  
-    objprop = {'id1': id1,
-               'center': center,
-               'u_shift': u_shift * levels,
-               'v_shift': v_shift * levels ,
-               'grid_x': grid_x,
-               'grid_y': grid_y,
-               'proj_area': proj_area,
-               'field_max': field_max,
-               'max_height': max_height,
-               'volume': volume,
-               'lon': longitude,
-               'lat': latitude,
-               'isolated': isolation,
-               'touch_border': touch_border,
-               'level': level,
-               'n_cores': n_cores,
-               'semi_major': semi_major,
-               'semi_minor': semi_minor,
-               'eccentricity': eccentricity,
-               'mergers': mergers,
-               # Add orientation
-               # Negative sign corrects for descending indexing convention 
-               # in "y axis". Orientation given between -pi/2 and pi/2.
-               'orientation': np.round(-np.rad2deg(orientation), 3),
-               'local_max': local_max}
+    objprop = {
+        'id1': id1,
+        'center': center,
+        'u_shift': u_shift * levels,
+        'v_shift': v_shift * levels ,
+        'grid_x': grid_x,
+        'grid_y': grid_y,
+        'proj_area': proj_area,
+        'field_max': field_max,
+        'max_height': max_height,
+        'volume': volume,
+        'lon': longitude,
+        'lat': latitude,
+        'isolated': isolation,
+        'touch_border': touch_border,
+        'level': level,
+        'n_cores': n_cores,
+        'semi_major': semi_major,
+        'semi_minor': semi_minor,
+        'eccentricity': eccentricity,
+        'mergers': mergers,
+        # Add orientation
+        # Negative sign corrects for descending indexing convention 
+        # in "y axis". Orientation given between -pi/2 and pi/2.
+        'orientation': np.round(-np.rad2deg(orientation), 3),
+        'updrafts': updraft_list,
+    }
     return objprop
 
 
@@ -401,7 +449,7 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'eccentricity': obj_props['eccentricity'],
         'orientation': obj_props['orientation'],
         'mergers': obj_props['mergers'],
-        'local_max': obj_props['local_max'],
+        'updrafts': obj_props['updrafts'],
     })
      
     new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
@@ -470,7 +518,7 @@ def get_system_tracks(tracks_obj):
     # at lowest interval assuming this is first
     # interval in list.
     for prop in ['n_cores', 'semi_major', 'semi_minor', 
-                 'eccentricity', 'orientation']:
+                 'eccentricity', 'orientation', 'updrafts']:
         prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
         system_tracks = system_tracks.merge(prop_lvl_0, left_index=True, 
                                             right_index=True)

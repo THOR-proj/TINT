@@ -34,6 +34,7 @@ BOUNDARY_GRID_CELLS = set()
 GS_ALT = 1500
 LEVELS = np.array([[0, 20000]])
 TRACK_INTERVAL = 0
+UPDRAFT_THRESH = 30
 
 """
 Tracking Parameter Guide
@@ -80,6 +81,9 @@ TRACK_INTERVAL: integer
 BOUNDARY_GRID_CELLS: set
     Set of tuples of grid indices for the boundary of the in range area. 
     Use empty set to ignore this test. 
+UPDRAFT_THRESH: float
+    Threshold used when tracking local maxima across vertical levels in order
+    to define "updrafts". 
 """
 
 
@@ -131,7 +135,8 @@ class Cell_tracks(object):
                        'GS_ALT': GS_ALT,
                        'LEVELS': LEVELS,
                        'TRACK_INTERVAL': TRACK_INTERVAL,
-                       'BOUNDARY_GRID_CELLS': BOUNDARY_GRID_CELLS}
+                       'BOUNDARY_GRID_CELLS': BOUNDARY_GRID_CELLS,
+                       'UPDRAFT_THRESH': UPDRAFT_THRESH}
                        
         self.field = field
         self.grid_size = None
