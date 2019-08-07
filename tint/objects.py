@@ -180,22 +180,12 @@ def identify_updrafts(raw3D, images, grid1, record, params):
     vertical level."""
         
     raw3D_filt = copy.deepcopy(raw3D)
-    #for i in range(images.shape[0]-1):
-    #    [z_min, z_max] = get_level_indices(
-    #        grid1, record.grid_size, params['LEVELS'][i,:]
-    #    )
-    #    raw3D_filt[z_min:z_max, images[i]!=obj] = 0
-    # For last level look for updrafts as far vertically as 
-    # data is available
-    #[z_min, z_max] = get_level_indices(
-    #        grid1, record.grid_size, params['LEVELS'][-1,:]
-    #    )
-    #raw3D_filt[z_min:, images[-1]!=obj] = 0
     
     # Get local maxima
     local_max = []
     for k in range(raw3D_filt.shape[0]):
-        local_max.append(peak_local_max(raw3D_filt[k]))
+        local_max.append(peak_local_max(raw3D_filt[k], 
+                         threshold_abs= params['UPDRAFT_THRESH']))
         
     # Define updrafts starting from local maxima at lowest level 
     updrafts = [[local_max[0][j]] for j in range(len(local_max[0]))]
@@ -226,13 +216,16 @@ def identify_updrafts(raw3D, images, grid1, record, params):
         for l in range(match.shape[0]):
             minimum = np.argmin(match[l])
             field_value = raw3D_filt[k, previous[l,0], previous[l,1]]
-            if ((match[l,minimum] < 2) 
-                & (field_value > params['UPDRAFT_THRESH'])):
+            if (match[l,minimum] < 2):
                 updrafts[list(current_inds)[l]].append(current[minimum])
             else:
                 next_inds = next_inds - set([list(current_inds)[l]])
         current_inds = next_inds
-    return updrafts   
+    
+    updrafts = [updrafts[i] for i in range(len(updrafts)) 
+                if len(updrafts[i])>1]
+    
+    return updrafts
 
 def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record, 
                     params, current_objects):
@@ -274,11 +267,8 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
 
     raw3D = grid1.fields[field]['data'].data # Complete dataset
     z_values = grid1.z['data']/1000
-             
+                        
     all_updrafts = identify_updrafts(raw3D, images, grid1, record, params)
-             
-    import pdb
-    pdb.set_trace()
              
     for i in range(levels):
 

@@ -100,8 +100,8 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
 
     radar_lon = f_tobj.radar_info['radar_lon']
     radar_lat = f_tobj.radar_info['radar_lat']
-    lon = np.arange(round(radar_lon-5,2),round(radar_lon+5,2), 1)
-    lat = np.arange(round(radar_lat-5,2),round(radar_lat+5,2), 1)
+    lon = np.arange(round(radar_lon-5,4),round(radar_lon+5,4), 1)
+    lat = np.arange(round(radar_lat-5,4),round(radar_lat+5,4), 1)
 
     time_ind = f_tobj.tracks.index.get_level_values('time')    
     
@@ -283,8 +283,8 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         display = pyart.graph.GridMapDisplay(grid)
 
         # Box Size
-        tx_met = np.int(np.round(row['grid_x']))
-        ty_met = np.int(np.round(row['grid_y']))
+        tx_met = row['grid_x']
+        ty_met = row['grid_y']
         tx_low = row_low['grid_x']/1000
         tx_high = row_high['grid_x']/1000
         ty_low = row_low['grid_y']/1000
@@ -527,8 +527,8 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         row_high = cell_high.iloc[nframe]
 
         # Box Size
-        tx_met = np.int(np.round(row['grid_x']))
-        ty_met = np.int(np.round(row['grid_y']))
+        tx_met = row['grid_x']
+        ty_met = row['grid_y']
         tx_low = row_low['grid_x']/1000
         tx_high = row_high['grid_x']/1000
         ty_low = row_low['grid_y']/1000
@@ -584,7 +584,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                 lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
                     x_draft, y_draft, projparams
                 )
-
+                
                 display.plot_grid(field, level=get_grid_alt(grid_size, alts[i]),
                                   vmin=vmin, vmax=vmax, mask_outside=False,
                                   cmap=cmap, colorbar_flag=True,
