@@ -35,6 +35,7 @@ GS_ALT = 1500
 LEVELS = np.array([[0, 20000]])
 TRACK_INTERVAL = 0
 UPDRAFT_THRESH = 30
+UPDRAFT_START = 500
 
 """
 Tracking Parameter Guide
@@ -81,9 +82,11 @@ TRACK_INTERVAL: integer
 BOUNDARY_GRID_CELLS: set
     Set of tuples of grid indices for the boundary of the in range area. 
     Use empty set to ignore this test. 
-UPDRAFT_THRESH: float
+UPDRAFT_THRESH: float, DbZ
     Threshold used when tracking local maxima across vertical levels in order
     to define "updrafts". 
+UPDRAFT_START: float, metres
+    Height at which to begin tracking updrafts.
 """
 
 
@@ -136,7 +139,8 @@ class Cell_tracks(object):
                        'LEVELS': LEVELS,
                        'TRACK_INTERVAL': TRACK_INTERVAL,
                        'BOUNDARY_GRID_CELLS': BOUNDARY_GRID_CELLS,
-                       'UPDRAFT_THRESH': UPDRAFT_THRESH}
+                       'UPDRAFT_THRESH': UPDRAFT_THRESH,
+                       'UPDRAFT_START': UPDRAFT_START}
                        
         self.field = field
         self.grid_size = None
@@ -210,11 +214,21 @@ class Cell_tracks(object):
 
             if grid_obj2 is not None:
                 self.record.update_scan_and_time(grid_obj1, grid_obj2)
+                        
                 raw2, frames2, cores2 = extract_grid_data(grid_obj2,
                                                           self.field,
                                                           self.grid_size,
                                                           self.params)
                 frame2 = frames2[self.params['TRACK_INTERVAL']]
+                
+                # Check for gaps in record. If gap exists, tell tint to start
+                # define new objects in current grid. 
+                if self.record.interval_ratio != None:
+                    if self.record.interval_ratio < 0.5:
+                        print('\nTime discontinuity.', flush=True) 
+                        newRain = True
+                        self.current_objects = None
+                
             else:
                 # setup to write final scan
                 self.__save()

@@ -75,6 +75,8 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 tracers=False, persist=False,
                 projection=None, **kwargs):
                 
+    colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
+                
     # Create a copy of tobj for use by this function
     f_tobj = copy.deepcopy(tobj)
 
@@ -103,7 +105,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
     lon = np.arange(round(radar_lon-5,4),round(radar_lon+5,4), 1)
     lat = np.arange(round(radar_lat-5,4),round(radar_lat+5,4), 1)
 
-    time_ind = f_tobj.tracks.index.get_level_values('time')    
+    time_ind = f_tobj.tracks.index.get_level_values('time')
     
     # Restrict tracks data to start and end datetime arguments
     if start_datetime != None:
@@ -116,14 +118,14 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
     if end_datetime != None:
         cond = (time_ind <= end_datetime)
         f_tobj.tracks = f_tobj.tracks[cond]
-        time_ind = f_tobj.tracks.index.get_level_values('time')    
+        time_ind = f_tobj.tracks.index.get_level_values('time')
     else:
         end_datetime = time_ind[-1]
         time_ind = f_tobj.tracks.index.get_level_values('time')
     
     # Create index of scan numbers so scans can be easily
     # retrieved for a given time.
-    scan_ind = f_tobj.tracks.index.get_level_values('scan')     
+    scan_ind = f_tobj.tracks.index.get_level_values('scan')    
 
     print('Animating from {} to {}.'.format(str(start_datetime), 
                                             str(end_datetime)))
@@ -159,10 +161,12 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         
         for i in [1,2]:
         
+            hgt_ind = get_grid_alt(grid_size, alts[i-1])
+        
             ax = fig_grid.add_subplot(1, 2, i, projection=projection)
             transform = projection._as_mpl_transform(ax)
             display.plot_crosshairs(lon=radar_lon, lat=radar_lat)
-            display.plot_grid(tobj.field, level=get_grid_alt(grid_size, alts[i-1]),
+            display.plot_grid(tobj.field, level=hgt_ind,
                               vmin=vmin, vmax=vmax, mask_outside=False,
                               cmap=cmap, transform=projection, ax=ax, **kwargs)
 
@@ -184,20 +188,48 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 for ind, uid in enumerate(frame_tracks.index):
                     if isolated_only and not frame_tracks['isolated'].iloc[ind]:
                         continue
-                    x = frame_tracks['lon'].iloc[ind]
-                    y = frame_tracks['lat'].iloc[ind]
-                    [u, v] = [frame_tracks_low['u'].iloc[ind], frame_tracks_low['v'].iloc[ind]]
-                    x_low = frame_tracks_low['lon'].iloc[ind]
-                    y_low = frame_tracks_low['lat'].iloc[ind]
-                    x_high = frame_tracks_high['lon'].iloc[ind]
-                    y_high = frame_tracks_high['lat'].iloc[ind]
+                    lon = frame_tracks['lon'].iloc[ind]
+                    lat = frame_tracks['lat'].iloc[ind]
+                    [u, v] = [frame_tracks_low['u_shift'].iloc[ind], 
+                              frame_tracks_low['v_shift'].iloc[ind]]
+                    
+                    x_low = frame_tracks_low['grid_x'].iloc[ind]
+                    y_low = frame_tracks_low['grid_y'].iloc[ind]
+                    
+                    projparams = grid.get_projparams()
+                    dt = f_tobj.record.interval.total_seconds()
+                    
+                    [new_lon, new_lat] = pyart.core.transforms.cartesian_to_geographic(
+                        x_low + 5*u*dt, y_low + 5*v*dt, projparams,
+                    )
+                    
+                    lon_low = frame_tracks_low['lon'].iloc[ind]
+                    lat_low = frame_tracks_low['lat'].iloc[ind]
+
+                    lon_high = frame_tracks_high['lon'].iloc[ind]
+                    lat_high = frame_tracks_high['lat'].iloc[ind]
                     mergers = list(frame_tracks['mergers'].iloc[ind])
                     mergers_str = ", ".join(mergers)
                         
-                    ax.text(x-.05, y+0.05, uid, transform=projection, fontsize=12)
-                    ax.text(x+.05, y-0.05, mergers_str, transform=projection, fontsize=10)
-                    ax.plot([x_low, x_high], [y_low, y_high], '--b', linewidth=2.0)
-                    ax.plot([x_low, x_low + u/30], [y_low, y_low + v/30], '--m', linewidth=2.0)
+                    ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
+                    ax.text(lon+.05, lat-0.05, mergers_str, transform=projection, fontsize=10)
+                    ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
+                    ax.plot([lon_low, new_lon], [lat_low, new_lat], '--m', linewidth=2.0)
+                    
+                    for j in range(len(frame_tracks_low.iloc[ind]['updrafts'])):
+                
+                        # Plot location of updraft j at alts[i] if it exists          
+                        if len(np.array(frame_tracks_low.iloc[ind]['updrafts'][j])) > hgt_ind:
+                            x_draft = grid.x['data'][np.array(frame_tracks_low.iloc[ind]['updrafts'][j])[hgt_ind,1]]         
+                            y_draft = grid.y['data'][np.array(frame_tracks_low.iloc[ind]['updrafts'][j])[hgt_ind,0]]
+                            
+                            projparams = grid.get_projparams()
+                            lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
+                                x_draft, y_draft, projparams
+                            )
+                            
+                            ax.scatter(lon_ud, lat_ud, marker='x', s=10, 
+                                       c=colors[np.mod(j,len(colors))], zorder=3)
 
         plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
                     bbox_inches = 'tight', dpi=dpi)
@@ -397,9 +429,12 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         ax.plot([tx_low, tx_high], [low, high], '--b', linewidth=2.0)
         
         # Plot updraft tracks
+        import pdb
+        pdb.set_trace()
+        z0 = get_grid_alt(tobj.record.grid_size, tobj.params['UPDRAFT_START'])
         for i in range(len(row_low['updrafts'])):         
             x_draft = grid.x['data'][np.array(row_low['updrafts'][i])[:,1]]/1000
-            z_draft = grid.z['data'][0:len(x_draft)]/1000
+            z_draft = grid.z['data'][z0:len(x_draft)+z0]/1000
             ax.plot(x_draft, z_draft, '-', 
                     color=colors[np.mod(i,len(colors))],
                     linewidth=1.0)
@@ -427,7 +462,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         # Plot updraft tilts
         for i in range(len(row_low['updrafts'])):         
             y_draft = grid.y['data'][np.array(row_low['updrafts'][i])[:,0]]/1000
-            z_draft = grid.z['data'][0:len(y_draft)]/1000
+            z_draft = grid.z['data'][z0:len(y_draft)+z0]/1000
             ax.plot(y_draft, z_draft, '-', 
                     color=colors[np.mod(i,len(colors))], 
                     linewidth=1.0)
@@ -595,17 +630,18 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
 
                 ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
                             
-                # Plot location of updraft j at alts[i] if it exists          
-                if len(np.array(row_low['updrafts'][j])) > hgt_ind:
-                    x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[hgt_ind,1]]         
-                    y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind,0]]
+                # Plot location of updraft j at alts[i] if it exists
+                z0 = get_grid_alt(tobj.record.grid_size, tobj.params['UPDRAFT_START'])          
+                if len(np.array(row_low['updrafts'][j])) > hgt_ind-z0:
+                    x_draft_hgt = grid.x['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,1]]         
+                    y_draft_hgt = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,0]]
                     
                     projparams = grid.get_projparams()
-                    lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
-                        x_draft, y_draft, projparams
+                    lon_ud_hgt, lat_ud_hgt = pyart.core.transforms.cartesian_to_geographic(
+                        x_draft_hgt, y_draft_hgt, projparams
                     )
                     
-                    ax.scatter(lon_ud, lat_ud, marker='x', s=20, 
+                    ax.scatter(lon_ud_hgt, lat_ud_hgt, marker='x', s=20, 
                                c=colors[np.mod(j,len(colors))], zorder=3)
                        
                 ax.set_xlim(lvxlim[0], lvxlim[1])
@@ -642,7 +678,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             
             # Plot updraft tracks
             x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[:,1]]/1000
-            z_draft = grid.z['data'][0:len(x_draft)]/1000
+            z_draft = grid.z['data'][z0:len(x_draft)+z0]/1000
             ax.plot(x_draft, z_draft, '-', 
                     color=colors[np.mod(j,len(colors))],
                     linewidth=1.0)
@@ -669,7 +705,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             ax.plot([ty_low, ty_high], [low, high], '--b', linewidth=2.0)
             # Plot updraft tracks       
             y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[:,0]]/1000
-            z_draft = grid.z['data'][0:len(y_draft)]/1000
+            z_draft = grid.z['data'][z0:len(y_draft)+z0]/1000
             ax.plot(y_draft, z_draft, '-', 
                     color=colors[np.mod(j,len(colors))], 
                     linewidth=1.0)
@@ -710,7 +746,7 @@ def make_mp4_from_frames(tmp_dir, dest_dir, basename, fps):
         print('Make sure ffmpeg is installed properly.')
 
 def make_gif_from_frames(tmp_dir, dest_dir, basename, fps):
-    print('\nCreating GIF - may take a few minutes.', flush=True)
+    print('\nCreating GIF - may take a few minutes.')
     os.chdir(tmp_dir)
     delay = round(100/fps)
     

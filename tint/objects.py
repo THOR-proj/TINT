@@ -14,9 +14,10 @@ import pyart
 from scipy import ndimage
 from skimage.measure import regionprops
 from skimage.feature import peak_local_max
+from numba import jit
 
-from .grid_utils import get_filtered_frame, get_level_indices
-
+from .grid_utils import get_filtered_frame, get_level_indices, get_grid_alt
+from .grid_utils import steiner_conv_strat
 
 def get_object_center(obj_id, labeled_image):
     """ Returns index of center pixel of the given object id from labeled
@@ -57,12 +58,11 @@ def init_current_objects(first_frame, second_frame, pairs, counter):
     # Store uids of objects in frame1 that have merged with objects in
     # frame 2. Store as uids.
     mergers = [set() for i in range(len(uid))] 
-    #for i in range(len(uid)):
-    #    mergers[i] = set(uid[obj_merge[:,i]])
+    new_mergers = [set() for i in range(len(uid))]
 
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
-                       'mergers': mergers, 'obs_num': obs_num, 
-                       'origin': origin}
+                       'mergers': mergers, 'new_mergers':new_mergers,
+                       'obs_num': obs_num, 'origin': origin}
     current_objects = attach_last_heads(first_frame, second_frame,
                                         current_objects)
     return current_objects, counter
@@ -97,16 +97,17 @@ def update_current_objects(frame1, frame2, pairs, old_objects,
             
     id2 = pairs
     
+    new_mergers = [set() for i in range(len(uid))]
     mergers = [set() for i in range(len(uid))]
     for i in range(len(uid)):
         if uid[i] in old_objects['uid']:
             old_i = int(np.argwhere(old_objects['uid']==uid[i]))
-            mergers[i] = set(old_objects['uid'][old_obj_merge[:,old_i]])
-            mergers[i]=mergers[i].union(old_objects['mergers'][old_i])
+            new_mergers[i] = set(old_objects['uid'][old_obj_merge[:,old_i]])
+            mergers[i]=new_mergers[i].union(old_objects['mergers'][old_i])
         
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
                        'obs_num': obs_num, 'origin': origin,
-                       'mergers': mergers}
+                       'mergers': mergers, 'new_mergers': new_mergers}
 
     current_objects = attach_last_heads(frame1, frame2, current_objects)
     return current_objects, counter
@@ -181,14 +182,29 @@ def identify_updrafts(raw3D, images, grid1, record, params):
         
     raw3D_filt = copy.deepcopy(raw3D)
     
+    # Find steiner convective pixels at initial level
+    [dz, dx, dy] = record.grid_size
+    
+    z0 = get_grid_alt(record.grid_size, params['UPDRAFT_START'])
+    sclass = steiner_conv_strat(
+        raw3D_filt[z0], grid1.x['data'], grid1.y['data'], dx, dy
+    )
+    
     # Get local maxima
     local_max = []
-    for k in range(raw3D_filt.shape[0]):
+    for k in range(z0, grid1.nz):
         local_max.append(peak_local_max(raw3D_filt[k], 
-                         threshold_abs= params['UPDRAFT_THRESH']))
+                         threshold_abs = params['UPDRAFT_THRESH']))
+        
+    # Find pixels classified as convective by steiner
+    conv_ind = np.argwhere(sclass == 2)
+    conv_ind_set = set(
+        [tuple(conv_ind[i]) for i in range(len(conv_ind))]
+    )
         
     # Define updrafts starting from local maxima at lowest level 
-    updrafts = [[local_max[0][j]] for j in range(len(local_max[0]))]
+    updrafts = [[local_max[0][j]] for j in range(len(local_max[0])) 
+                if tuple(local_max[0][j]) in conv_ind_set]
     
     # Find first level with no local_max
     try:
@@ -269,7 +285,7 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
     z_values = grid1.z['data']/1000
                         
     all_updrafts = identify_updrafts(raw3D, images, grid1, record, params)
-             
+    
     for i in range(levels):
 
         # Caclulate ellipse fit properties
@@ -424,6 +440,8 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'time': record.time,
         'grid_x': obj_props['grid_x'],
         'grid_y': obj_props['grid_y'],
+        'u_shift': obj_props['u_shift'],
+        'v_shift': obj_props['v_shift'],
         'lon': obj_props['lon'],
         'lat': obj_props['lat'],
         'proj_area': obj_props['proj_area'],
@@ -446,6 +464,26 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     new_tracks.sort_index(inplace=True)
     tracks = old_tracks.append(new_tracks)
     return tracks
+    
+@jit
+def smooth(group_df, n=1):      
+    # Smooth middle cases.
+    if len(group_df) >= (2*n+1):
+        group_df.iloc[n:-n-1] = group_df.rolling(
+            window=(2*n+1), center=True
+        ).mean().iloc[n:-n-1]
+    
+    # Deal with end cases.
+    new_n = min(n, int(np.ceil(len(group_df)/2)))
+    for k in range(0,new_n):
+        # Use a k+1 window on both sides to smooth
+        fwd = np.mean(group_df.iloc[:k+2])
+        bwd = np.mean(group_df.iloc[-k-2:])
+    
+        group_df.iloc[k] = fwd
+        group_df.iloc[-1-k] = bwd
+    
+    return group_df
 
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
@@ -454,17 +492,24 @@ def post_tracks(tracks_obj):
     # Likely a weird floating point storage issue
     tracks_obj.tracks['max'] = np.round(tracks_obj.tracks['max'], 2)    
     
-    # Calculate velocity        
+    # Smooth u_shift, v_shift
+    tmp_tracks = tracks_obj.tracks[['u_shift','v_shift']]
+    # Calculate forward difference for first time step
+    tmp_tracks = tmp_tracks.groupby(level=['uid','level'], 
+                                   as_index=False, 
+                                   group_keys=False)
+    tracks_obj.tracks[['u_shift','v_shift']] = tmp_tracks.apply(
+        lambda x: smooth(x)
+    )
+    
+    # Calculate velocity using centred difference.    
     tmp_tracks = tracks_obj.tracks[['grid_x','grid_y']]
     tmp_tracks = tmp_tracks.groupby(
         level=['uid', 'level'], as_index=False, group_keys=False
     )
     tmp_tracks = tmp_tracks.rolling(window=5, center=True)
-    # Calculate centred difference.
+    
     dt = tracks_obj.record.interval.total_seconds()
-    # Get x,y grid sizes. 
-    # Use negative index incase grid two dimensional.     
-    dx = tracks_obj.record.grid_size[-2:]
     tmp_tracks = tmp_tracks.apply(lambda x: np.round(((x[4] - x[0])/(4*dt)), 3))
     tmp_tracks = tmp_tracks.rename(
         columns={'grid_x': 'u', 'grid_y': 'v'}
@@ -472,6 +517,7 @@ def post_tracks(tracks_obj):
     tracks_obj.tracks = tracks_obj.tracks.merge(
         tmp_tracks, left_index=True, right_index=True
     )
+    
     # Sort multi-index again as levels will be jumbled after rolling etc.
     tracks_obj.tracks = tracks_obj.tracks.sort_index()  
 
@@ -497,9 +543,10 @@ def get_system_tracks(tracks_obj):
     print('Calculating system tracks.', flush=True)
     
     # Get position and velocity at tracking level.        
-    system_tracks = tracks_obj.tracks[['grid_x', 'grid_y', 
-                                       'lon', 'lat', 'u', 'v',
-                                       'mergers']]
+    system_tracks = tracks_obj.tracks[
+        ['grid_x', 'grid_y', 'lon', 'lat', 'u', 'v', 'mergers',
+         'u_shift', 'v_shift']
+    ]
     system_tracks = system_tracks.xs(
         tracks_obj.params['TRACK_INTERVAL'], level='level'
     )
@@ -508,7 +555,8 @@ def get_system_tracks(tracks_obj):
     # at lowest interval assuming this is first
     # interval in list.
     for prop in ['n_cores', 'semi_major', 'semi_minor', 
-                 'eccentricity', 'orientation', 'updrafts']:
+                 'eccentricity', 'orientation', 'updrafts'
+                 ]:
         prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
         system_tracks = system_tracks.merge(prop_lvl_0, left_index=True, 
                                             right_index=True)
