@@ -25,16 +25,16 @@ FIELD_THRESH = [32]
 ISO_THRESH = [8]
 ISO_SMOOTH = 3
 MIN_SIZE = [8]
-SEARCH_MARGIN = 4000
-FLOW_MARGIN = 10000
+SEARCH_MARGIN = 5000
+FLOW_MARGIN = 8000
 MAX_DISPARITY = 999
-MAX_FLOW_MAG = 50
-MAX_SHIFT_DISP = 15
+MAX_FLOW_MAG = 20
+MAX_SHIFT_DISP = 10
 BOUNDARY_GRID_CELLS = set()
 GS_ALT = 1500
-LEVELS = np.array([[0, 20000]])
+LEVELS = np.array([[500, 20000]])
 TRACK_INTERVAL = 0
-UPDRAFT_THRESH = 30
+UPDRAFT_THRESH = 25
 UPDRAFT_START = 500
 
 """
@@ -172,7 +172,6 @@ class Cell_tracks(object):
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
 
-
     def get_tracks(self, grids):
         """ Obtains tracks given a list of pyart grid objects. This is the
         primary method of the tracks class. This method makes use of all of the
@@ -196,7 +195,7 @@ class Cell_tracks(object):
         else:
             newRain = False
 
-        raw2, frames2, cores2 = extract_grid_data(grid_obj2, self.field, self.grid_size,
+        raw2, frames2, cores2, sclasses2 = extract_grid_data(grid_obj2, self.field, self.grid_size,
                                          self.params)
         frame2 = frames2[self.params['TRACK_INTERVAL']]
 
@@ -206,6 +205,7 @@ class Cell_tracks(object):
             frame1 = frame2
             frames1 = frames2
             cores1 = cores2
+            sclasses1 = sclasses2
 
             try:
                 grid_obj2 = next(grids)
@@ -215,7 +215,7 @@ class Cell_tracks(object):
             if grid_obj2 is not None:
                 self.record.update_scan_and_time(grid_obj1, grid_obj2)
                         
-                raw2, frames2, cores2 = extract_grid_data(grid_obj2,
+                raw2, frames2, cores2, sclasses2 = extract_grid_data(grid_obj2,
                                                           self.field,
                                                           self.grid_size,
                                                           self.params)
@@ -225,7 +225,10 @@ class Cell_tracks(object):
                 # define new objects in current grid. 
                 if self.record.interval_ratio != None:
                     if self.record.interval_ratio < 0.5:
-                        print('\nTime discontinuity.', flush=True) 
+                        message = '\nTime discontinuity at {}.'.format(
+                            self.record.time
+                        ) 
+                        print(message, flush=True) 
                         newRain = True
                         self.current_objects = None
                 
@@ -254,6 +257,8 @@ class Cell_tracks(object):
             if newRain:
                 # first nonempty scan after a period of empty scans
                 self.current_objects, self.counter = init_current_objects(
+                    raw1,
+                    raw2,
                     frame1,
                     frame2,
                     pairs,
@@ -262,6 +267,8 @@ class Cell_tracks(object):
                 newRain = False
             else:
                 self.current_objects, self.counter = update_current_objects(
+                    raw1,
+                    raw2,
                     frame1,
                     frame2,
                     pairs,
@@ -270,10 +277,9 @@ class Cell_tracks(object):
                     obj_merge
                 )
             obj_merge = obj_merge_new
-
             obj_props = get_object_prop(
-                frames1, cores1, grid_obj1, u_shift, v_shift, self.field,
-                self.record, self.params, self.current_objects
+                frames1, cores1, grid_obj1, u_shift, v_shift, sclasses1, 
+                self.field, self.record, self.params, self.current_objects
             )
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,

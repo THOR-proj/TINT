@@ -200,7 +200,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                     dt = f_tobj.record.interval.total_seconds()
                     
                     [new_lon, new_lat] = pyart.core.transforms.cartesian_to_geographic(
-                        x_low + 5*u*dt, y_low + 5*v*dt, projparams,
+                        x_low + 2*u*dt, y_low + 2*v*dt, projparams,
                     )
                     
                     lon_low = frame_tracks_low['lon'].iloc[ind]
@@ -214,14 +214,14 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                     ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
                     ax.text(lon+.05, lat-0.05, mergers_str, transform=projection, fontsize=10)
                     ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
-                    ax.plot([lon_low, new_lon], [lat_low, new_lat], '--m', linewidth=2.0)
+                    ax.plot([lon_low, new_lon], [lat_low, new_lat], '-m', linewidth=2.0)
                     
                     for j in range(len(frame_tracks_low.iloc[ind]['updrafts'])):
                 
                         # Plot location of updraft j at alts[i] if it exists          
                         if len(np.array(frame_tracks_low.iloc[ind]['updrafts'][j])) > hgt_ind:
-                            x_draft = grid.x['data'][np.array(frame_tracks_low.iloc[ind]['updrafts'][j])[hgt_ind,1]]         
-                            y_draft = grid.y['data'][np.array(frame_tracks_low.iloc[ind]['updrafts'][j])[hgt_ind,0]]
+                            x_draft = grid.x['data'][np.array(frame_tracks_low.iloc[ind]['updrafts'][j])[hgt_ind,2]]         
+                            y_draft = grid.y['data'][np.array(frame_tracks_low.iloc[ind]['updrafts'][j])[hgt_ind,1]]
                             
                             projparams = grid.get_projparams()
                             lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
@@ -355,8 +355,8 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             
             hgt_ind = get_grid_alt(grid_size, alts[i])
             
-            x_draft = grid.x['data'][np.array(row_low['updrafts'][0])[0,1]]        
-            y_draft = grid.y['data'][np.array(row_low['updrafts'][0])[0,0]]
+            x_draft = grid.x['data'][np.array(row_low['updrafts'][0])[0,2]]        
+            y_draft = grid.y['data'][np.array(row_low['updrafts'][0])[0,1]]
             
             projparams = grid.get_projparams()
             lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
@@ -377,8 +377,8 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                 
                 # Plot location of updraft j at alts[i] if it exists          
                 if len(np.array(row_low['updrafts'][j])) > hgt_ind:
-                    x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[hgt_ind,1]]         
-                    y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind,0]]
+                    x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[hgt_ind,2]]         
+                    y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind,1]]
                     
                     projparams = grid.get_projparams()
                     lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
@@ -411,8 +411,8 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         # Latitude Cross Section
         ax = fig.add_subplot(2, 2, 2)
         
-        x_draft = grid.x['data'][np.array(row_low['updrafts'][0])[0,1]]         
-        y_draft = grid.y['data'][np.array(row_low['updrafts'][0])[0,0]]
+        x_draft = grid.x['data'][np.array(row_low['updrafts'][0])[0,2]]         
+        y_draft = grid.y['data'][np.array(row_low['updrafts'][0])[0,1]]
         
         projparams = grid.get_projparams()
         lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(x_draft,
@@ -433,7 +433,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         pdb.set_trace()
         z0 = get_grid_alt(tobj.record.grid_size, tobj.params['UPDRAFT_START'])
         for i in range(len(row_low['updrafts'])):         
-            x_draft = grid.x['data'][np.array(row_low['updrafts'][i])[:,1]]/1000
+            x_draft = grid.x['data'][np.array(row_low['updrafts'][i])[:,2]]/1000
             z_draft = grid.z['data'][z0:len(x_draft)+z0]/1000
             ax.plot(x_draft, z_draft, '-', 
                     color=colors[np.mod(i,len(colors))],
@@ -461,7 +461,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         ax.plot([ty_low, ty_high], [low, high], '--b', linewidth=2.0)
         # Plot updraft tilts
         for i in range(len(row_low['updrafts'])):         
-            y_draft = grid.y['data'][np.array(row_low['updrafts'][i])[:,0]]/1000
+            y_draft = grid.y['data'][np.array(row_low['updrafts'][i])[:,1]]/1000
             z_draft = grid.z['data'][z0:len(y_draft)+z0]/1000
             ax.plot(y_draft, z_draft, '-', 
                     color=colors[np.mod(i,len(colors))], 
@@ -612,8 +612,8 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                 
                 hgt_ind = get_grid_alt(grid_size, alts[i])
                 
-                x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[0,1]]        
-                y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[0,0]]
+                x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[0,2]]        
+                y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[0,1]]
                 
                 projparams = grid.get_projparams()
                 lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
@@ -633,8 +633,8 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                 # Plot location of updraft j at alts[i] if it exists
                 z0 = get_grid_alt(tobj.record.grid_size, tobj.params['UPDRAFT_START'])          
                 if len(np.array(row_low['updrafts'][j])) > hgt_ind-z0:
-                    x_draft_hgt = grid.x['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,1]]         
-                    y_draft_hgt = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,0]]
+                    x_draft_hgt = grid.x['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,2]]         
+                    y_draft_hgt = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,1]]
                     
                     projparams = grid.get_projparams()
                     lon_ud_hgt, lat_ud_hgt = pyart.core.transforms.cartesian_to_geographic(
@@ -677,7 +677,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             ax.plot([tx_low, tx_high], [low, high], '--b', linewidth=2.0)
             
             # Plot updraft tracks
-            x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[:,1]]/1000
+            x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[:,2]]/1000
             z_draft = grid.z['data'][z0:len(x_draft)+z0]/1000
             ax.plot(x_draft, z_draft, '-', 
                     color=colors[np.mod(j,len(colors))],
@@ -704,7 +704,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                                          ax=ax)
             ax.plot([ty_low, ty_high], [low, high], '--b', linewidth=2.0)
             # Plot updraft tracks       
-            y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[:,0]]/1000
+            y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[:,1]]/1000
             z_draft = grid.z['data'][z0:len(y_draft)+z0]/1000
             ax.plot(y_draft, z_draft, '-', 
                     color=colors[np.mod(j,len(colors))], 

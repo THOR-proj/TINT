@@ -80,6 +80,10 @@ def correct_shift(local_shift, current_objects, obj_id1, global_shift, record,
     correspond to the objects in the current frame1. """
     global_shift = clip_shift(global_shift, record, params)
 
+    # Note last_heads is defined using object centers! These jump around a lot 
+    # when tracking large objects and should therefore probably not be used 
+    # when tracking MCS systems!
+
     if current_objects is None:
         last_heads = None
     else:

@@ -16,6 +16,9 @@ import networkx
 from networkx.algorithms.components.connected import connected_components
 from numba import jit
 from numba import int32
+import copy
+
+from .steiner import steiner_conv_strat
 
 
 def parse_grid_datetime(grid_obj):
@@ -26,7 +29,7 @@ def parse_grid_datetime(grid_obj):
     dt = datetime.datetime.strptime(date + ' ' + time, '%Y-%m-%d %H:%M:%S')
     return dt
 
-
+@jit
 def get_grid_size(grid_obj):
     """ Calculates grid size per dimension given a grid object. """
     z_len = grid_obj.z['data'][-1] - grid_obj.z['data'][0]
@@ -60,33 +63,28 @@ def get_filtered_frame(grid, min_size, thresh, z_min=None, z_max=None):
     """ Returns a labeled frame from gridded radar data. Smaller objects
     are removed and the rest are labeled. """
     echo_height = get_vert_projection(grid, thresh, z_min, z_max)
-    labeled_echo = ndimage.label(echo_height)[0]
-    # May need to do this elsewhere for system stuff.
-    frame = clear_small_echoes(labeled_echo, min_size)
+    frame = ndimage.label(echo_height)[0]
     return frame
-    
-def get_filtered_frame_steiner(grid_obj, field, z_min=None, z_max=None):
+   
+def get_filtered_frame_steiner(grid_obj, field, grid_size, min_size, 
+                               z_min=None, z_max=None):
     """ Returns a labeled frame from gridded radar data. Smaller objects
     are removed and the rest are labeled. """
     
-    masked = grid_obj.fields[field]['data'][z_min:z_max]
+    masked = grid_obj.fields[field]['data'][z_min]
     masked.data[masked.data == masked.fill_value] = 0
-    grid = masked.data
-    
-    [dz, dx, dy] = grid.shape
-    sclass = np.zeros(grid.shape, dtype=int32)
-       
-    for i in range(grid.shape[0]):
-        sclass[i] = steiner_conv_strat(
-            grid[i], grid_obj.x['data'], grid_obj.y['data'], dx, dy
-        )
+    grid = copy.copy(masked.data)
+    grid[grid==0] = np.nan
+      
+    sclass = steiner_conv_strat(
+            grid, grid_obj.x['data'], grid_obj.y['data'], 
+            grid_size[1], grid_size[2]
+    )
+    sclass[sclass != 2] = 0
         
-    sclass_proj = np.any(sclass == 2, axis==0)
-        
-    labeled_echo = ndimage.label(sclass_proj)[0]
-    # May need to do this elsewhere for system stuff.
-    frame = clear_small_echoes(labeled_echo, min_size)
-    return frame
+    frame = ndimage.label(sclass)[0]
+
+    return frame, sclass
 
 def clear_small_echoes(label_image, min_size):
     """ Takes in binary image and clears objects less than min_size. """
@@ -99,6 +97,26 @@ def clear_small_echoes(label_image, min_size):
         label_image[label_image == obj] = 0
     label_image = ndimage.label(label_image)
     return label_image[0]
+    
+def clear_small_echoes_system(images_con, min_sizes):
+    """ Takes in binary image and clears objects less than min_size. """
+    small_objects = set()
+    for i in range(len(min_sizes)):
+        flat_image = pd.Series(images_con[i].flatten())
+        flat_image = flat_image[flat_image > 0]
+        size_table = flat_image.value_counts(sort=False)
+        small_objects_i = set(size_table.keys()[size_table < min_sizes[i]])
+        small_objects = small_objects.union(small_objects_i)
+
+    for obj in small_objects:
+        images_con[images_con == obj] = 0
+    
+    relabeled_images_con = np.zeros(images_con.shape, dtype=int)
+    
+    for new_objs, old_objs in enumerate(set(images_con.flatten().tolist())):
+        relabeled_images_con[images_con == old_objs] = new_objs
+    
+    return relabeled_images_con
 
 def get_level_indices(grid_obj, grid_size, levels):
     """ Returns indices corresponding to the inclusive range
@@ -163,201 +181,6 @@ def get_connected_components(frames):
 
     return frames_con, frames
 
-@jit(nopython=True)
-def steiner_conv_strat(refl, x, y, dx, dy, intense=42, peak_relation=0,
-                        area_relation=1, bkg_rad=11000, use_intense=True):
-    """
-    We perform the Steiner et al. (1995) algorithm for echo classification
-    using only the reflectivity field in order to classify each grid point
-    as either convective, stratiform or undefined. Grid points are
-    classified as follows,
-    0 = Undefined
-    1 = Stratiform
-    2 = Convective
-    """
-    def convective_radius(ze_bkg, area_relation):
-        """
-        Given a mean background reflectivity value, we determine via a step
-        function what the corresponding convective radius would be.
-        Higher background reflectivitives are expected to have larger
-        convective influence on surrounding areas, so a larger convective
-        radius would be prescribed.
-        """
-        if area_relation == 0:
-            if ze_bkg < 30:
-                conv_rad = 1000.
-            elif (ze_bkg >= 30) & (ze_bkg < 35.):
-                conv_rad = 2000.
-            elif (ze_bkg >= 35.) & (ze_bkg < 40.):
-                conv_rad = 3000.
-            elif (ze_bkg >= 40.) & (ze_bkg < 45.):
-                conv_rad = 4000.
-            else:
-                conv_rad = 5000.
-
-        if area_relation == 1:
-            if ze_bkg < 25:
-                conv_rad = 1000.
-            elif (ze_bkg >= 25) & (ze_bkg < 30.):
-                conv_rad = 2000.
-            elif (ze_bkg >= 30.) & (ze_bkg < 35.):
-                conv_rad = 3000.
-            elif (ze_bkg >= 35.) & (ze_bkg < 40.):
-                conv_rad = 4000.
-            else:
-                conv_rad = 5000.
-
-        if area_relation == 2:
-            if ze_bkg < 20:
-                conv_rad = 1000.
-            elif (ze_bkg >= 20) & (ze_bkg < 25.):
-                conv_rad = 2000.
-            elif (ze_bkg >= 25.) & (ze_bkg < 30.):
-                conv_rad = 3000.
-            elif (ze_bkg >= 30.) & (ze_bkg < 35.):
-                conv_rad = 4000.
-            else:
-                conv_rad = 5000.
-
-        if area_relation == 3:
-            if ze_bkg < 40:
-                conv_rad = 0.
-            elif (ze_bkg >= 40) & (ze_bkg < 45.):
-                conv_rad = 1000.
-            elif (ze_bkg >= 45.) & (ze_bkg < 50.):
-                conv_rad = 2000.
-            elif (ze_bkg >= 50.) & (ze_bkg < 55.):
-                conv_rad = 6000.
-            else:
-                conv_rad = 8000.
-
-        return conv_rad
-
-    def peakedness(ze_bkg, peak_relation):
-        """
-        Given a background reflectivity value, we determine what the necessary
-        peakedness (or difference) has to be between a grid point's
-        reflectivity and the background reflectivity in order for that grid
-        point to be labeled convective.
-        """
-        if peak_relation == 0:
-            if ze_bkg < 0.:
-                peak = 10.
-            elif (ze_bkg >= 0.) and (ze_bkg < 42.43):
-                peak = 10. - ze_bkg ** 2 / 180.
-            else:
-                peak = 0.
-
-        elif peak_relation == 1:
-            if ze_bkg < 0.:
-                peak = 14.
-            elif (ze_bkg >= 0.) and (ze_bkg < 42.43):
-                peak = 14. - ze_bkg ** 2 / 180.
-            else:
-                peak = 4.
-
-        return peak
-
-    sclass = np.zeros(refl.shape, dtype=int32)
-    ny, nx = refl.shape
-
-    for i in range(0, nx):
-        # Get stencil of x grid points within the background radius
-        imin = np.max(np.array([1, (i - bkg_rad / dx)], dtype=int32))
-        imax = np.min(np.array([nx, (i + bkg_rad / dx)], dtype=int32))
-
-        for j in range(0, ny):
-            # First make sure that the current grid point has not already been
-            # classified. This can happen when grid points within the
-            # convective radius of a previous grid point have also been
-            # classified.
-            if ~np.isnan(refl[j, i]) & (sclass[j, i] == 0):
-                # Get stencil of y grid points within the background radius
-                jmin = np.max(np.array([1, (j - bkg_rad / dy)], dtype=int32))
-                jmax = np.min(np.array([ny, (j + bkg_rad / dy)], dtype=int32))
-
-                n = 0
-                sum_ze = 0
-
-                # Calculate the mean background reflectivity for the current
-                # grid point, which will be used to determine the convective
-                # radius and the required peakedness.
-
-                for l in range(imin, imax):
-                    for m in range(jmin, jmax):
-                        if not np.isnan(refl[m, l]):
-                            rad = np.sqrt(
-                                (x[l] - x[i]) ** 2 + (y[m] - y[j]) ** 2)
-
-                        # The mean background reflectivity will first be
-                        # computed in linear units, i.e. mm^6/m^3, then
-                        # converted to decibel units.
-                            if rad <= bkg_rad:
-                                n += 1
-                                sum_ze += 10. ** (refl[m, l] / 10.)
-
-                if n == 0:
-                    ze_bkg = np.inf
-                else:
-                    ze_bkg = 10.0 * np.log10(sum_ze / n)
-
-                # Now get the corresponding convective radius knowing the mean
-                # background reflectivity.
-                conv_rad = convective_radius(ze_bkg, area_relation)
-
-                # Now we want to investigate the points surrounding the current
-                # grid point that are within the convective radius, and whether
-                # they too are convective, stratiform or undefined.
-
-                # Get stencil of x and y grid points within the convective
-                # radius.
-                lmin = np.max(
-                    np.array([1, int(i - conv_rad / dx)], dtype=int32))
-                lmax = np.min(
-                    np.array([nx, int(i + conv_rad / dx)], dtype=int32))
-                mmin = np.max(
-                    np.array([1, int(j - conv_rad / dy)], dtype=int32))
-                mmax = np.min(
-                    np.array([ny, int(j + conv_rad / dy)], dtype=int32))
-
-                if use_intense and (refl[j, i] >= intense):
-                    sclass[j, i] = 2
-
-                    for l in range(lmin, lmax):
-                        for m in range(mmin, mmax):
-                            if not np.isnan(refl[m, l]):
-                                rad = np.sqrt(
-                                    (x[l] - x[i]) ** 2
-                                    + (y[m] - y[j]) ** 2)
-
-                                if rad <= conv_rad:
-                                    sclass[m, l] = 2
-
-                else:
-                    peak = peakedness(ze_bkg, peak_relation)
-
-                    if refl[j, i] - ze_bkg >= peak:
-                        sclass[j, i] = 2
-
-                        for l in range(imin, imax):
-                            for m in range(jmin, jmax):
-                                if not np.isnan(refl[m, l]):
-                                    rad = np.sqrt(
-                                        (x[l] - x[i]) ** 2
-                                        + (y[m] - y[j]) ** 2)
-
-                                    if rad <= conv_rad:
-                                        sclass[m, l] = 2
-
-                    else:
-                        # If by now the current grid point has not been
-                        # classified as convective by either the intensity
-                        # criteria or the peakedness criteria, then it must be
-                        # stratiform.
-                        sclass[j, i] = 1
-
-    return sclass
-
 def extract_grid_data(grid_obj, field, grid_size, params):
     """ Returns filtered grid frame and raw grid slice at global shift
     altitude. """
@@ -369,20 +192,37 @@ def extract_grid_data(grid_obj, field, grid_size, params):
     
     n_levels = params['LEVELS'].shape[0]
     frames = np.zeros([n_levels, grid_obj.nx, grid_obj.ny], dtype=int)
+    sclasses = [None]*n_levels
+    
+    min_sizes = params['MIN_SIZE'] / np.prod(grid_size[1:]/1000)
 
     # Calculate frames for each level interval
-    for i in range(0, frames.shape[0]):
-        min_size = params['MIN_SIZE'][i] / np.prod(grid_size[1:]/1000)
+    # Count down because we only want to calculate steiner if 
+    # absolutely necessary
+    for i in range(frames.shape[0]-1, -1, -1):
+        
         [z_min, z_max] = get_level_indices(
             grid_obj, grid_size, params['LEVELS'][i,:]
-        ) 
-        frames[i] = get_filtered_frame(
-            masked.data, min_size,
-            params['FIELD_THRESH'][i],
-            z_min, z_max
-        )   
+        )
+        if np.any(masked.data[z_min:z_max] > 0):
+            if params['FIELD_THRESH'][i] == 'convective':
+                frames[i], sclass = get_filtered_frame_steiner(
+                    grid_obj, field, grid_size, min_sizes[i], z_min, z_max
+                )
+                sclasses[i] = sclass
+            else: 
+                frames[i] = get_filtered_frame(
+                    masked.data, min_sizes[i],
+                    params['FIELD_THRESH'][i],
+                    z_min, z_max
+                )
+        else:
+            break           
 
     # Calculate connected components between frames
     [frames_con, frames] = get_connected_components(frames)
+    
+    # Clear small echos
+    frames_con = clear_small_echoes_system(frames_con, min_sizes)
 
-    return raw, frames_con, frames
+    return raw, frames_con, frames, sclasses

@@ -17,7 +17,8 @@ from skimage.feature import peak_local_max
 from numba import jit
 
 from .grid_utils import get_filtered_frame, get_level_indices, get_grid_alt
-from .grid_utils import steiner_conv_strat
+from .steiner import steiner_conv_strat
+from scipy.ndimage import center_of_mass
 
 def get_object_center(obj_id, labeled_image):
     """ Returns index of center pixel of the given object id from labeled
@@ -26,8 +27,7 @@ def get_object_center(obj_id, labeled_image):
     obj_index = np.argwhere(labeled_image == obj_id)
     center = np.median(obj_index, axis=0).astype('i')
     return center
-
-
+    
 def get_obj_extent(labeled_image, obj_label):
     """ Takes in labeled image and finds the radius, area, and center of the
     given object. """
@@ -44,7 +44,7 @@ def get_obj_extent(labeled_image, obj_label):
     return obj_extent
 
 
-def init_current_objects(first_frame, second_frame, pairs, counter):
+def init_current_objects(raw1, raw2, first_frame, second_frame, pairs, counter):
     """ Returns a dictionary for objects with unique ids and their
     corresponding ids in frame1 and frame2. This function is called when
     echoes are detected after a period of no echoes. """
@@ -63,12 +63,12 @@ def init_current_objects(first_frame, second_frame, pairs, counter):
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
                        'mergers': mergers, 'new_mergers':new_mergers,
                        'obs_num': obs_num, 'origin': origin}
-    current_objects = attach_last_heads(first_frame, second_frame,
+    current_objects = attach_last_heads(raw1, raw2, first_frame, second_frame,
                                         current_objects)
     return current_objects, counter
 
 
-def update_current_objects(frame1, frame2, pairs, old_objects, 
+def update_current_objects(raw1, raw2, frame1, frame2, pairs, old_objects, 
                            counter, old_obj_merge):
     """ Removes dead objects, updates living objects, and assigns new uids to
     new-born objects. """
@@ -109,20 +109,25 @@ def update_current_objects(frame1, frame2, pairs, old_objects,
                        'obs_num': obs_num, 'origin': origin,
                        'mergers': mergers, 'new_mergers': new_mergers}
 
-    current_objects = attach_last_heads(frame1, frame2, current_objects)
+    current_objects = attach_last_heads(raw1, raw2, frame1, frame2, current_objects)
     return current_objects, counter
 
 
-def attach_last_heads(frame1, frame2, current_objects):
+def attach_last_heads(raw1, raw2, frame1, frame2, current_objects):
     """ Attaches last heading information to current_objects dictionary. """
     nobj = len(current_objects['uid'])
     heads = np.ma.empty((nobj, 2))
+    
     for obj in range(nobj):
         if ((current_objects['id1'][obj] > 0) and
                 (current_objects['id2'][obj] > 0)):
-            center1 = get_object_center(current_objects['id1'][obj], frame1)
-            center2 = get_object_center(current_objects['id2'][obj], frame2)
-            heads[obj, :] = center2 - center1
+            center1 = center_of_mass(
+                raw1, labels=frame1, index=current_objects['id1'][obj]
+            )
+            center2 = center_of_mass(
+                raw2, labels=frame2, index=current_objects['id2'][obj],
+            )
+            heads[obj, :] = np.array(center2) - np.array(center1)
         else:
             heads[obj, :] = np.ma.array([-999, -999], mask=[True, True])
 
@@ -176,35 +181,43 @@ def get_border_indices(obj_ind, b_ind):
      
     return b_ind
     
-def identify_updrafts(raw3D, images, grid1, record, params):
+
+def identify_updrafts(raw3D, images, grid1, record, params, sclasses):
     """ Determine "updrafts" by looking for local maxima at each 
     vertical level."""
-        
-    raw3D_filt = copy.deepcopy(raw3D)
     
-    # Find steiner convective pixels at initial level
     [dz, dx, dy] = record.grid_size
+    z0 = get_grid_alt(record.grid_size, params['LEVELS'][0,0])
     
-    z0 = get_grid_alt(record.grid_size, params['UPDRAFT_START'])
-    sclass = steiner_conv_strat(
-        raw3D_filt[z0], grid1.x['data'], grid1.y['data'], dx, dy
-    )
+    if params['FIELD_THRESH'][0] == 'convective':
+        sclass = sclasses[0]
+    else:
+        sclass = steiner_conv_strat(
+            raw3D[z0], grid1.x['data'], grid1.y['data'], dx, dy
+        )
     
     # Get local maxima
     local_max = []
+    
     for k in range(z0, grid1.nz):
-        local_max.append(peak_local_max(raw3D_filt[k], 
-                         threshold_abs = params['UPDRAFT_THRESH']))
+        l_max = peak_local_max(
+            raw3D[k], threshold_abs = params['UPDRAFT_THRESH']
+        )
+        l_max = np.insert(
+            l_max, 0, np.ones(len(l_max), dtype=int)*k, axis=1
+        )
+        local_max.append(l_max)
         
     # Find pixels classified as convective by steiner
     conv_ind = np.argwhere(sclass == 2)
     conv_ind_set = set(
         [tuple(conv_ind[i]) for i in range(len(conv_ind))]
-    )
-        
-    # Define updrafts starting from local maxima at lowest level 
+    )      
+       
+    # Define updrafts starting from local maxima at lowest level
+    # Append the starting level index - i.e. z0.
     updrafts = [[local_max[0][j]] for j in range(len(local_max[0])) 
-                if tuple(local_max[0][j]) in conv_ind_set]
+                if tuple(local_max[0][j][1:]) in conv_ind_set]
     
     # Find first level with no local_max
     try:
@@ -222,29 +235,34 @@ def identify_updrafts(raw3D, images, grid1, record, params):
 
         previous =  np.array([updrafts[i][k-1] for i in current_inds])
         current = local_max[k]
+        
+        if ((len(previous) == 0) or (len(current)==0)):
+            break        
 
-        match = np.zeros((len(previous), len(current)))
+        # Calculate euclidean distance between indices
+        mc1, mp1 = np.meshgrid(current[:,1], previous[:,1])
+        mc2, mp2 = np.meshgrid(current[:,2], previous[:,2])
+        
+        match = np.sqrt((mp1-mc1)**2+(mp2-mc2)**2)
+       
+        next_inds = copy.copy(current_inds)
+        minimums = np.argmin(match, axis=1)
         for l in range(match.shape[0]):
-            for m in range(match.shape[1]):
-                match[l,m] = np.linalg.norm(previous[l]-current[m])
-
-        next_inds = copy.deepcopy(current_inds)
-        for l in range(match.shape[0]):
-            minimum = np.argmin(match[l])
-            field_value = raw3D_filt[k, previous[l,0], previous[l,1]]
+            minimum = minimums[l]
             if (match[l,minimum] < 2):
                 updrafts[list(current_inds)[l]].append(current[minimum])
             else:
                 next_inds = next_inds - set([list(current_inds)[l]])
+        # If any indices remain in current - add them to next_inds
         current_inds = next_inds
-    
+     
     updrafts = [updrafts[i] for i in range(len(updrafts)) 
-                if len(updrafts[i])>1]
+                if (len(updrafts[i])>1)]
     
     return updrafts
 
-def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record, 
-                    params, current_objects):
+def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
+                    field, record, params, current_objects):
     """ Returns dictionary of object properties for all objects found in
     each level of images, where images are the labelled (filtered) 
     frames. """
@@ -259,7 +277,7 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
     max_height = []
     volume = []
     level = []
-    isolation = []
+    #isolation = []
     touch_border = [] # Counts number of pixels touching scan border.
     n_cores = [] # Number of objects at lowest interval.
     semi_major = []
@@ -283,8 +301,10 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
 
     raw3D = grid1.fields[field]['data'].data # Complete dataset
     z_values = grid1.z['data']/1000
-                        
-    all_updrafts = identify_updrafts(raw3D, images, grid1, record, params)
+    
+    all_updrafts = identify_updrafts(
+        raw3D, images, grid1, record, params, sclasses
+    )
     
     for i in range(levels):
 
@@ -360,11 +380,21 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
             [z_min, z_max] = get_level_indices(
                 grid1, record.grid_size, params['LEVELS'][i,:]
             )
+            
             raw3D_i = raw3D[z_min:z_max,:,:]
             obj_slices = [raw3D_i[:, ind[0], ind[1]] for ind in obj_index]
-            field_max.append(np.max(obj_slices))
-            filtered_slices = [obj_slice > params['FIELD_THRESH'][i]
-                               for obj_slice in obj_slices]
+            
+            if params['FIELD_THRESH'][i] == 'convective':
+                sclasses_i = sclasses[i]
+                sclasses_slices = [sclasses_i[ind[0], ind[1]] 
+                                   for ind in obj_index]
+                field_max.append(np.max(obj_slices))
+                filtered_slices = [sclasses_slice == 2
+                                   for sclasses_slice in sclasses_slices]
+            else:
+                field_max.append(np.max(obj_slices))
+                filtered_slices = [obj_slice > params['FIELD_THRESH'][i]
+                                   for obj_slice in obj_slices]
 
             heights = [np.arange(raw3D_i.shape[0])[ind] for ind in filtered_slices]
             max_height.append(np.max(np.concatenate(heights)) * unit_alt 
@@ -377,11 +407,12 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
             
             # Calculate "updrafts" by tracking location of local maxima
             # through ALL vertical levels. Only do this once. 
+
             if i==0:
                 all_updrafts_0 = [all_updrafts[i][0].tolist() 
                                   for i in range(len(all_updrafts))]
                 updraft_obj_inds = [i for i in range(len(all_updrafts_0)) 
-                                    if all_updrafts_0[i] 
+                                    if all_updrafts_0[i][1:] 
                                     in obj_index.tolist()]
                 updrafts_obj = [all_updrafts[i] for i in updraft_obj_inds]
                 updraft_list.append(updrafts_obj)
@@ -389,10 +420,10 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
                 updraft_list.append([])
             
         # cell isolation
-        isolation += check_isolation(
-            raw3D[z_min:z_max, :,:], images[i].squeeze(), 
-            record.grid_size, params, i
-        ).tolist()
+        #isolation += check_isolation(
+        #    raw3D[z_min:z_max, :,:], images[i].squeeze(), 
+        #    record.grid_size, params, i
+        #).tolist()
  
     objprop = {
         'id1': id1,
@@ -407,7 +438,7 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, field, record,
         'volume': volume,
         'lon': longitude,
         'lat': latitude,
-        'isolated': isolation,
+        #'isolated': isolation,
         'touch_border': touch_border,
         'level': level,
         'n_cores': n_cores,
@@ -448,7 +479,7 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'vol': obj_props['volume'],
         'max': obj_props['field_max'],
         'max_alt': obj_props['max_height'],
-        'isolated': obj_props['isolated'],
+        #'isolated': obj_props['isolated'],
         'touch_border': obj_props['touch_border'],
         'level': obj_props['level'],
         'n_cores': obj_props['n_cores'],
@@ -465,7 +496,6 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     tracks = old_tracks.append(new_tracks)
     return tracks
     
-@jit
 def smooth(group_df, n=1):      
     # Smooth middle cases.
     if len(group_df) >= (2*n+1):
@@ -490,7 +520,7 @@ def post_tracks(tracks_obj):
     print('Calculating additional tracks properties.', flush=True)
     # Round max - for some reason works here but not in get_obj_props
     # Likely a weird floating point storage issue
-    tracks_obj.tracks['max'] = np.round(tracks_obj.tracks['max'], 2)    
+    tracks_obj.tracks['max'] = np.round(tracks_obj.tracks['max'], 2)
     
     # Smooth u_shift, v_shift
     tmp_tracks = tracks_obj.tracks[['u_shift','v_shift']]
@@ -586,10 +616,10 @@ def get_system_tracks(tracks_obj):
                                         right_index=True)
 
     # Get isolated for system
-    iso = tracks_obj.tracks[['isolated']]
-    iso = iso.prod(level=['scan', 'time', 'uid']).astype('bool')
-    system_tracks = system_tracks.merge(iso, left_index=True, 
-                                        right_index=True)
+    #iso = tracks_obj.tracks[['isolated']]
+    #iso = iso.prod(level=['scan', 'time', 'uid']).astype('bool')
+    #system_tracks = system_tracks.merge(iso, left_index=True, 
+    #                                   right_index=True)
     
     # Calculate total tilt.
     tilt = tracks_obj.tracks[['x_vert_disp', 'y_vert_disp']]
