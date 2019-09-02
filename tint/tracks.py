@@ -26,9 +26,9 @@ ISO_THRESH = [8]
 ISO_SMOOTH = 3
 MIN_SIZE = [8]
 SEARCH_MARGIN = 5000
-FLOW_MARGIN = 8000
+FLOW_MARGIN = 20000 # CPOL grid is 2500 m, so 20000 is 8 pixels.
 MAX_DISPARITY = 999
-MAX_FLOW_MAG = 20
+MAX_FLOW_MAG = 30
 MAX_SHIFT_DISP = 10
 BOUNDARY_GRID_CELLS = set()
 GS_ALT = 1500
@@ -248,7 +248,7 @@ class Cell_tracks(object):
                 self.current_objects = None
                 continue
                 
-            global_shift = get_global_shift(raw1, raw2, self.params)
+            global_shift = get_global_shift(raw1, raw2)
             pairs, obj_merge_new, u_shift, v_shift = get_pairs(
                 frame1, frame2, global_shift, self.current_objects, 
                 self.record, self.params

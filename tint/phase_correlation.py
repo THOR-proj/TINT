@@ -45,17 +45,21 @@ def fft_flowvectors(im1, im2, global_shift=False):
     """ Estimates flow vectors in two images using cross covariance. """
     if not global_shift and (np.max(im1) == 0 or np.max(im2) == 0):
         return None
-
-    crosscov = fft_crosscov(im1, im2)
+    
+    dims = np.array(im1.shape)
+    rd, cd = np.round(dims/2).astype('int')
+    crosscov = fft_crosscov(im1, im2, rd, cd)
     sigma = (1/8) * min(crosscov.shape)
     cov_smooth = ndimage.filters.gaussian_filter(crosscov, sigma)
-    dims = np.array(im1.shape)
     pshift = np.argwhere(cov_smooth == np.max(cov_smooth))[0]
-    pshift = (pshift+1) - np.round(dims/2, 0)
+    # Note that the fft_shift function has translated the covariance  
+    # matrix so that the [0,0] entry has moved to the [rd2+1, cd2+1]  
+    # entry. Thus we must subtract this vector from pshift.  
+    pshift = pshift - [rd+1, cd+1]
     return pshift
 
 
-def fft_crosscov(im1, im2):
+def fft_crosscov(im1, im2, rd, cd):
     """ Computes cross correlation matrix using FFT method. """
     fft1_conj = np.conj(np.fft.fft2(im1))
     fft2 = np.fft.fft2(im2)
@@ -64,20 +68,18 @@ def fft_crosscov(im1, im2):
     cross_power_spectrum = (fft2*fft1_conj)/normalize
     crosscov = np.fft.ifft2(cross_power_spectrum)
     crosscov = np.real(crosscov)
-    return fft_shift(crosscov)
+    return fft_shift(crosscov, rd, cd)
 
 
-def fft_shift(fft_mat):
+def fft_shift(fft_mat, rd, cd):
     """ Rearranges the cross correlation matrix so that 'zero' frequency or DC
     component is in the middle of the matrix. Taken from stackoverflow Que.
     30630632. """
     if type(fft_mat) is np.ndarray:
-        rd2 = np.int(fft_mat.shape[0]/2)
-        cd2 = np.int(fft_mat.shape[1]/2)
-        quad1 = fft_mat[:rd2, :cd2]
-        quad2 = fft_mat[:rd2, cd2:]
-        quad3 = fft_mat[rd2:, cd2:]
-        quad4 = fft_mat[rd2:, :cd2]
+        quad1 = fft_mat[:rd, :cd]
+        quad2 = fft_mat[:rd, cd:]
+        quad3 = fft_mat[rd:, cd:]
+        quad4 = fft_mat[rd:, :cd]
         centered_t = np.concatenate((quad4, quad1), axis=0)
         centered_b = np.concatenate((quad3, quad2), axis=0)
         centered = np.concatenate((centered_b, centered_t), axis=1)
@@ -87,10 +89,12 @@ def fft_shift(fft_mat):
         return
 
 
-def get_global_shift(im1, im2, params):
+def get_global_shift(im1, im2):
     """ Returns standardized global shift vector. im1 and im2 are full frames
     of raw DBZ values. """
     if im2 is None:
         return None
+    import pdb
+    pdb.set_trace()
     shift = fft_flowvectors(im1, im2, global_shift=True)
     return shift

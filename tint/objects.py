@@ -279,7 +279,6 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
     level = []
     #isolation = []
     touch_border = [] # Counts number of pixels touching scan border.
-    n_cores = [] # Number of objects at lowest interval.
     semi_major = []
     semi_minor = []
     orientation = []
@@ -332,7 +331,6 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
             )
             touch_border.append(len(b_intersect))
             
-            n_cores.append(len(set(cores[i,obj_index[:,0],obj_index[:,1]])))
             center.append(np.median(obj_index, axis=0))
             # Caclulate mean x and y indices and round to three decimal places
             this_centroid = np.round(np.mean(obj_index, axis=0), 3)
@@ -441,7 +439,6 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
         #'isolated': isolation,
         'touch_border': touch_border,
         'level': level,
-        'n_cores': n_cores,
         'semi_major': semi_major,
         'semi_minor': semi_minor,
         'eccentricity': eccentricity,
@@ -482,7 +479,6 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         #'isolated': obj_props['isolated'],
         'touch_border': obj_props['touch_border'],
         'level': obj_props['level'],
-        'n_cores': obj_props['n_cores'],
         'semi_major': obj_props['semi_major'],
         'semi_minor': obj_props['semi_minor'],
         'eccentricity': obj_props['eccentricity'],
@@ -584,7 +580,7 @@ def get_system_tracks(tracks_obj):
     # Get number of cores and ellipse fit properties 
     # at lowest interval assuming this is first
     # interval in list.
-    for prop in ['n_cores', 'semi_major', 'semi_minor', 
+    for prop in ['semi_major', 'semi_minor', 
                  'eccentricity', 'orientation', 'updrafts'
                  ]:
         prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
