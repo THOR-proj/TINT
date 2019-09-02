@@ -46,8 +46,11 @@ def fft_flowvectors(im1, im2, global_shift=False):
     if not global_shift and (np.max(im1) == 0 or np.max(im2) == 0):
         return None
     
+    import pdb
+    pdb.set_trace()
+    
     dims = np.array(im1.shape)
-    rd, cd = np.round(dims/2).astype('int')
+    rd, cd = np.ceil(dims/2).astype('int')
     crosscov = fft_crosscov(im1, im2, rd, cd)
     sigma = (1/8) * min(crosscov.shape)
     cov_smooth = ndimage.filters.gaussian_filter(crosscov, sigma)
@@ -55,7 +58,7 @@ def fft_flowvectors(im1, im2, global_shift=False):
     # Note that the fft_shift function has translated the covariance  
     # matrix so that the [0,0] entry has moved to the [rd2+1, cd2+1]  
     # entry. Thus we must subtract this vector from pshift.  
-    pshift = pshift - [rd+1, cd+1]
+    pshift = pshift - (dims - [rd, cd])
     return pshift
 
 
@@ -94,7 +97,5 @@ def get_global_shift(im1, im2):
     of raw DBZ values. """
     if im2 is None:
         return None
-    import pdb
-    pdb.set_trace()
     shift = fft_flowvectors(im1, im2, global_shift=True)
     return shift
