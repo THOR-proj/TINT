@@ -248,9 +248,9 @@ class Cell_tracks(object):
                 self.current_objects = None
                 continue
                 
-            global_shift = get_global_shift(raw1, raw2)
+            global_shift = get_global_shift(raw1, raw2, self.params)
             pairs, obj_merge_new, u_shift, v_shift = get_pairs(
-                frame1, frame2, global_shift, self.current_objects, 
+                frame1, frame2, raw1, raw2, global_shift, self.current_objects, 
                 self.record, self.params
             )
                                                                                  

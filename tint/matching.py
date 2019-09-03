@@ -111,7 +111,8 @@ def correct_shift(local_shift, current_objects, obj_id1, global_shift, record,
 
     else:
         case = 4
-        corrected_shift = (local_shift + last_heads)/2
+        #corrected_shift = (local_shift + last_heads)/2
+        corrected_shift = local_shift
 
     corrected_shift = np.round(corrected_shift, 2)
 
@@ -197,7 +198,7 @@ def save_obj_match(obj_id1, obj_found, disparity, obj_match, params):
     return obj_match
 
 
-def locate_all_objects(image1, image2, global_shift, current_objects, record,
+def locate_all_objects(image1, image2, raw1, raw2, global_shift, current_objects, record,
                        params):
     """ Matches all the objects in image1 to objects in image2. This is the
     main function called on a pair of images. """
@@ -215,8 +216,8 @@ def locate_all_objects(image1, image2, global_shift, current_objects, record,
 
     for obj_id1 in np.arange(nobj1) + 1:
         obj1_extent = get_obj_extent(image1, obj_id1)
-        shift = get_ambient_flow(obj1_extent, image1,
-                                 image2, params, record.grid_size)
+        shift = get_ambient_flow(obj1_extent, raw1,
+                                 raw2, params, record.grid_size)
          
         if shift is None:
             record.count_case(5)
@@ -272,7 +273,7 @@ def match_pairs(obj_match, params):
     return pairs, obj_merge
 
 
-def get_pairs(image1, image2, global_shift, current_objects, record, params):
+def get_pairs(image1, image2, raw1, raw2, global_shift, current_objects, record, params):
     """ Given two images, this function identifies the matching objects and
     pairs them appropriately. See disparity function. """
     nobj1 = np.max(image1)
@@ -287,8 +288,8 @@ def get_pairs(image1, image2, global_shift, current_objects, record, params):
                                   dtype=bool)
         return zero_pairs, zero_obj_merge, [np.nan] * nobj1, [np.nan] * nobj1
 
-    obj_match, u_shift, v_shift = locate_all_objects(
-        image1, image2, global_shift, current_objects, record, params
+    obj_match, u_shift, v_shift = locate_all_objects(image1, image2,
+        raw1, raw2, global_shift, current_objects, record, params
     )
     
     pairs, obj_merge = match_pairs(obj_match, params)

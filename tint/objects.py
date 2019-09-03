@@ -268,6 +268,8 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
     frames. """
     id1 = []
     center = []
+    com_x = []
+    com_y = []
     grid_x = []
     grid_y = []
     proj_area = []
@@ -283,9 +285,10 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
     semi_minor = []
     orientation = []
     eccentricity = []
-    nobj = np.max(images)
     mergers = []
     updraft_list = []
+    
+    nobj = np.max(images)
     [levels, rows, columns] = images.shape
     
     unit_dim = record.grid_size
@@ -304,15 +307,27 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
     all_updrafts = identify_updrafts(
         raw3D, images, grid1, record, params, sclasses
     )
-    
+       
     for i in range(levels):
-
+      
+        # Get vertical indices of ith level
+        [z_min, z_max] = get_level_indices(
+            grid1, record.grid_size, params['LEVELS'][i,:]
+        )
+        
         # Caclulate ellipse fit properties
-        ski_props = regionprops(images[i], cache=True)
+        ski_props = regionprops(images[i], raw3D[z_min], cache=True)
+        
+        # Calculated reflectivity weighted means (centers of mass).
+        com = center_of_mass(
+            raw3D[z_min], labels=images[i], index=(np.arange(nobj) + 1)
+        )
 
         for obj in np.arange(nobj) + 1:
+            # Append current object number
             id1.append(obj)
             
+            # Append list of objects that have merged with obj
             mergers.append(current_objects['mergers'][obj-1])
             
             # Get objects in images[i], i.e. the frame at i-th level
@@ -331,38 +346,43 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
             )
             touch_border.append(len(b_intersect))
             
+            # Append median object index as measure of center
             center.append(np.median(obj_index, axis=0))
-            # Caclulate mean x and y indices and round to three decimal places
-            this_centroid = np.round(np.mean(obj_index, axis=0), 3)
-            # Convert centroid index into grid units
-            # y component is zeroth index of this_centroid 
-            # x component is first index of this_centroid
-            # unit_dim is list [dz, dx, dy]   
+                       
+            # Append mean object index (centroid) in grid units
+            this_centroid = np.mean(obj_index, axis=0)
+            # Note, y component is zeroth index of this_centroid, 
+            # x component is first index of this_centroid, unit_dim 
+            # is list [dz, dx, dy].
             g_y = this_centroid[0] * unit_dim[2]
             g_y += grid1.y['data'][0]
             g_x = this_centroid[1] * unit_dim[1]
+            g_x += grid1.x['data'][0] 
+            grid_x.append(np.round(g_x, 1))
+            grid_y.append(np.round(g_y, 1))
+            
+            # Append object center of mass (reflectivity weighted
+            # centroid) in grid units
+            g_y = com[obj-1][0] * unit_dim[2]
+            g_y += grid1.y['data'][0]
+            g_x = com[obj-1][1] * unit_dim[1]
             g_x += grid1.x['data'][0]
-            # Append to lists    
-            grid_x.append(g_x)
-            grid_y.append(g_y)
+            com_x.append(np.round(g_x, 1))
+            com_y.append(np.round(g_y, 1))
+            
+            # Append area of vertical projection.
             proj_area.append(obj_index.shape[0] * unit_area)
-
-            rounded = np.round(this_centroid).astype('i')
-            # Convert mean indices to mean position in grid cartesian coords.
-            cent_met = np.array([grid1.y['data'][rounded[0]],
-                                 grid1.x['data'][rounded[1]]])
-
+            
+            # Append centroid in lat, lon units. 
             projparams = grid1.get_projparams()
             lon, lat = pyart.core.transforms.cartesian_to_geographic(
                 g_x, g_y, projparams)
-
             longitude.append(np.round(lon[0], 5))
             latitude.append(np.round(lat[0], 5))
             
-            # Try appending ellipse properties - append nan if except
-            # Note semi_major, semi_minor are currently stored in `index' units
-            # This effectively assumes dx = dy
-            # Could probably convert to grid units using orientation, dx and dy'
+            # Append ellipse properties
+            # Note semi_major, semi_minor are currently stored in
+            # `index' units which effectively assumes dx = dy. 
             attrs = ['major_axis_length', 'minor_axis_length', 
                      'eccentricity', 'orientation']
             lists = [semi_major, semi_minor, eccentricity, orientation]
@@ -373,12 +393,8 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
                     )
                 except:
                     lists[j].append(np.nan)
-                             
-            # raw 3D grid stats
-            [z_min, z_max] = get_level_indices(
-                grid1, record.grid_size, params['LEVELS'][i,:]
-            )
             
+            # Calculate raw3D slices                            
             raw3D_i = raw3D[z_min:z_max,:,:]
             obj_slices = [raw3D_i[:, ind[0], ind[1]] for ind in obj_index]
             
@@ -393,19 +409,21 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
                 field_max.append(np.max(obj_slices))
                 filtered_slices = [obj_slice > params['FIELD_THRESH'][i]
                                    for obj_slice in obj_slices]
-
-            heights = [np.arange(raw3D_i.shape[0])[ind] for ind in filtered_slices]
+    
+            # Append maximum height
+            heights = [np.arange(raw3D_i.shape[0])[ind] 
+                       for ind in filtered_slices]
             max_height.append(np.max(np.concatenate(heights)) * unit_alt 
                               + z_values[z_min])
             
+            # Append volume
             # Note volume isn't necessarily consistent with proj_area.
             # proj_area is calculated from boolean vertical projection,
             # whereas volume doesn't perform vertical projection.
             volume.append(np.sum(filtered_slices) * unit_vol)
             
-            # Calculate "updrafts" by tracking location of local maxima
-            # through ALL vertical levels. Only do this once. 
-
+            # Append reflectivity cells based on vertically 
+            # overlapping reflectivity maxima. 
             if i==0:
                 all_updrafts_0 = [all_updrafts[i][0].tolist() 
                                   for i in range(len(all_updrafts))]
@@ -430,6 +448,8 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
         'v_shift': v_shift * levels ,
         'grid_x': grid_x,
         'grid_y': grid_y,
+        'com_x': com_x,
+        'com_y': com_y,
         'proj_area': proj_area,
         'field_max': field_max,
         'max_height': max_height,
@@ -468,6 +488,8 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'time': record.time,
         'grid_x': obj_props['grid_x'],
         'grid_y': obj_props['grid_y'],
+        'com_x': obj_props['com_x'],
+        'com_y': obj_props['com_y'],
         'u_shift': obj_props['u_shift'],
         'v_shift': obj_props['v_shift'],
         'lon': obj_props['lon'],
@@ -492,12 +514,15 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     tracks = old_tracks.append(new_tracks)
     return tracks
     
-def smooth(group_df, n=1):      
+def smooth(group_df, n=2):
+        
+    group_df_smoothed = copy.deepcopy(group_df)
+      
     # Smooth middle cases.
     if len(group_df) >= (2*n+1):
-        group_df.iloc[n:-n-1] = group_df.rolling(
+        group_df_smoothed = group_df.rolling(
             window=(2*n+1), center=True
-        ).mean().iloc[n:-n-1]
+        ).mean()
     
     # Deal with end cases.
     new_n = min(n, int(np.ceil(len(group_df)/2)))
@@ -506,10 +531,10 @@ def smooth(group_df, n=1):
         fwd = np.mean(group_df.iloc[:k+2])
         bwd = np.mean(group_df.iloc[-k-2:])
     
-        group_df.iloc[k] = fwd
-        group_df.iloc[-1-k] = bwd
+        group_df_smoothed.iloc[k] = fwd
+        group_df_smoothed.iloc[-1-k] = bwd
     
-    return group_df
+    return group_df_smoothed
 
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
@@ -570,8 +595,8 @@ def get_system_tracks(tracks_obj):
     
     # Get position and velocity at tracking level.        
     system_tracks = tracks_obj.tracks[
-        ['grid_x', 'grid_y', 'lon', 'lat', 'u', 'v', 'mergers',
-         'u_shift', 'v_shift']
+        ['grid_x', 'grid_y', 'com_x', 'com_y', 'lon', 'lat', 'u', 'v', 
+         'mergers', 'u_shift', 'v_shift']
     ]
     system_tracks = system_tracks.xs(
         tracks_obj.params['TRACK_INTERVAL'], level='level'
@@ -615,16 +640,24 @@ def get_system_tracks(tracks_obj):
     #iso = tracks_obj.tracks[['isolated']]
     #iso = iso.prod(level=['scan', 'time', 'uid']).astype('bool')
     #system_tracks = system_tracks.merge(iso, left_index=True, 
-    #                                   right_index=True)
+    #                                    right_index=True)
     
-    # Calculate total tilt.
-    tilt = tracks_obj.tracks[['x_vert_disp', 'y_vert_disp']]
-    tilt = tilt.sum(level=['scan', 'time', 'uid'])
+    # Calculate total vertical displacement.
+    n_lvl = tracks_obj.params['LEVELS'].shape[0]
+    pos_0 = tracks_obj.tracks[['com_x', 'com_y']].xs(0, level='level')
+    pos_1 = tracks_obj.tracks[['grid_x', 'grid_y']].xs(n_lvl-1, level='level') 
+    
+    pos_0.rename(columns={'com_x': 'x_vert_disp', 
+                          'com_y': 'y_vert_disp'},
+                 inplace=True)
+    pos_1.rename(columns={'grid_x': 'x_vert_disp', 
+                          'grid_y': 'y_vert_disp'},
+                 inplace=True)
 
-    system_tracks = system_tracks.merge(tilt, left_index=True, 
+    system_tracks = system_tracks.merge(pos_1-pos_0, left_index=True, 
                                         right_index=True)
     
-    # Calculate magnitude of tilt.
+    # Calculate magnitude of vertical displacement.
     tilt_mag = np.round(np.sqrt((system_tracks['x_vert_disp'] ** 2 
                         + system_tracks['y_vert_disp'] ** 2)), 3)
     tilt_mag = tilt_mag.rename('tilt_mag')
@@ -632,8 +665,8 @@ def get_system_tracks(tracks_obj):
         tilt_mag, left_index=True, right_index=True
     )
     
-    # Calculate tilt direction
-    vel_dir = np.arctan2(system_tracks['v'], system_tracks['u'])
+    # Calculate vertical displacement direction.
+    vel_dir = np.arctan2(system_tracks['v_shift'], system_tracks['u_shift'])
     vel_dir = np.rad2deg(vel_dir)
     vel_dir = vel_dir.rename('vel_dir')
     vel_dir = np.round(vel_dir, 3)
