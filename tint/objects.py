@@ -317,11 +317,6 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
         
         # Caclulate ellipse fit properties
         ski_props = regionprops(images[i], raw3D[z_min], cache=True)
-        
-        # Calculated reflectivity weighted means (centers of mass).
-        com = center_of_mass(
-            raw3D[z_min], labels=images[i], index=(np.arange(nobj) + 1)
-        )
 
         for obj in np.arange(nobj) + 1:
             # Append current object number
@@ -349,29 +344,28 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
             # Append median object index as measure of center
             center.append(np.median(obj_index, axis=0))
                        
+            # Append area of vertical projection.
+            proj_area.append(obj_index.shape[0] * unit_area)
+            
             # Append mean object index (centroid) in grid units
-            this_centroid = np.mean(obj_index, axis=0)
             # Note, y component is zeroth index of this_centroid, 
             # x component is first index of this_centroid, unit_dim 
             # is list [dz, dx, dy].
-            g_y = this_centroid[0] * unit_dim[2]
+            g_y = ski_props[obj-1].centroid[0] * unit_dim[2]
             g_y += grid1.y['data'][0]
-            g_x = this_centroid[1] * unit_dim[1]
+            g_x = ski_props[obj-1].centroid[1] * unit_dim[1]
             g_x += grid1.x['data'][0] 
             grid_x.append(np.round(g_x, 1))
             grid_y.append(np.round(g_y, 1))
             
             # Append object center of mass (reflectivity weighted
             # centroid) in grid units
-            g_y = com[obj-1][0] * unit_dim[2]
+            g_y = ski_props[obj-1].weighted_centroid[0] * unit_dim[2]
             g_y += grid1.y['data'][0]
-            g_x = com[obj-1][1] * unit_dim[1]
+            g_x = ski_props[obj-1].weighted_centroid[1] * unit_dim[1]
             g_x += grid1.x['data'][0]
             com_x.append(np.round(g_x, 1))
-            com_y.append(np.round(g_y, 1))
-            
-            # Append area of vertical projection.
-            proj_area.append(obj_index.shape[0] * unit_area)
+            com_y.append(np.round(g_y, 1))  
             
             # Append centroid in lat, lon units. 
             projparams = grid1.get_projparams()
@@ -381,8 +375,8 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
             latitude.append(np.round(lat[0], 5))
             
             # Append ellipse properties
-            # Note semi_major, semi_minor are currently stored in
-            # `index' units which effectively assumes dx = dy. 
+            # Note semi_major, semi_minor are stored in `index' 
+            # units which effectively assumes dx = dy. 
             attrs = ['major_axis_length', 'minor_axis_length', 
                      'eccentricity', 'orientation']
             lists = [semi_major, semi_minor, eccentricity, orientation]

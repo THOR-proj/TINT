@@ -18,10 +18,12 @@ import matplotlib as mpl
 from IPython.display import display, Image
 from matplotlib import pyplot as plt
 from matplotlib import rcParams
+from matplotlib.patches import Ellipse
 import cartopy.crs as ccrs
 import copy
 
 import pyart
+from pyart.core.transforms import cartesian_to_geographic
 
 from .grid_utils import get_grid_alt
 
@@ -68,12 +70,66 @@ class Tracer(object):
                 or (uid in self.current.reset_index(level=['time']).index)
                 or (uid in mergers)):
                 ax.plot(tracer.lon, tracer.lat, self.cell_color[uid])
+                
+                
+def plot_ellipse(ax, frame_tracks_ind, projparams, weighted_centroid=False):
+    if weighted_centroid:
+        centroid = frame_tracks_ind[['com_x','com_y']].values
+    else:
+        centroid = frame_tracks_ind[['grid_x', 'grid_y']].values
+    orientation = frame_tracks_ind[['orientation']].values[0]
+    major_axis = frame_tracks_ind[['semi_major']].values[0]
+    minor_axis = frame_tracks_ind[['semi_minor']].values[0]
+                                
+    # Convert axes into lat/lon units by approximating 1 degree lat or
+    # lon = 110 km.
+    major_axis = major_axis*2.5/110
+    minor_axis = minor_axis*2.5/110
+    
+    lon_e, lat_e = cartesian_to_geographic(
+        centroid[0], centroid[1], projparams
+    )
+
+    ell = Ellipse(tuple([lon_e, lat_e]), major_axis, minor_axis, orientation,
+                  linewidth=1.5, fill=False)
+
+    ell.set_clip_box(ax.bbox)
+    ell.set_alpha(0.4)
+    ax.add_artist(ell)
+    return ell
+    
+    
+def plot_updrafts(ax, grid, frame_tracks_ind, hgt_ind, projparams, colors):
+    for j in range(len(frame_tracks_ind['updrafts'])):
+        # Plot location of updraft j at alts[i] if it exists          
+        if len(np.array(frame_tracks_ind['updrafts'][j])) > hgt_ind:
+            x_ind = np.array(frame_tracks_ind['updrafts'][j])[hgt_ind,2]
+            y_ind = np.array(frame_tracks_ind['updrafts'][j])[hgt_ind,1]
+            x_draft = grid.x['data'][x_ind]         
+            y_draft = grid.y['data'][y_ind]
+            lon_ud, lat_ud = cartesian_to_geographic(
+                x_draft, y_draft, projparams
+            )
+            ax.scatter(lon_ud, lat_ud, marker='x', s=15, 
+                       c=colors[np.mod(j,len(colors))], zorder=3)
+                       
+                       
+def plot_boundary(ax, tobj, grid, projparams):
+    b_list = list(tobj.params['BOUNDARY_GRID_CELLS'])
+    boundary = np.zeros((117,117))*np.nan
+    for i in range(len(b_list)):
+        boundary[b_list[i][0], b_list[i][1]]=1
+    x_bounds = grid.x['data'][[0,-1]]
+    y_bounds = grid.y['data'][[0,-1]]      
+    lon_b, lat_b = cartesian_to_geographic(x_bounds, y_bounds, projparams)
+    ax.imshow(boundary, extent=(lon_b[0], lon_b[1], lat_b[0], lat_b[1]))
+                
 
 def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 start_datetime = None, end_datetime = None,
                 cmap=None, alt_low=None, alt_high=None, isolated_only=False,
-                tracers=False, persist=False,
-                projection=None, **kwargs):
+                tracers=False, persist=False, projection=None, 
+                scan_boundary=False, ellipses=False, **kwargs):
                 
     colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
                 
@@ -156,6 +212,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
               end='\r', flush=True)
         
         display = pyart.graph.GridMapDisplay(grid)
+        projparams = grid.get_projparams()
         
         alts = [alt_low, alt_high]
         
@@ -163,13 +220,19 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         
             hgt_ind = get_grid_alt(grid_size, alts[i-1])
         
+            # Plot reflectivity and crosshairs
             ax = fig_grid.add_subplot(1, 2, i, projection=projection)
             transform = projection._as_mpl_transform(ax)
             display.plot_crosshairs(lon=radar_lon, lat=radar_lat)
             display.plot_grid(tobj.field, level=hgt_ind,
                               vmin=vmin, vmax=vmax, mask_outside=False,
                               cmap=cmap, transform=projection, ax=ax, **kwargs)
+            
+            # Plot scan boundary
+            if scan_boundary:        
+                plot_boundary(ax, tobj, grid, projparams)
 
+            # Plot object features
             if grid_time in time_ind:
 
                 nframe = scan_ind[time_ind == grid_time][0]
@@ -181,13 +244,14 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 frame_tracks_low = frame_tracks_low.reset_index(level=['time'])
                 frame_tracks_high = frame_tracks_high.reset_index(level=['time'])
                 
+                # Plot tracers if necessary
                 if tracers:
                     tracer.update(nframe)
                     tracer.plot(ax)
 
                 for ind, uid in enumerate(frame_tracks.index):
-                    if isolated_only and not frame_tracks['isolated'].iloc[ind]:
-                        continue
+                                       
+                    # Plot velocity and stratiform offset
                     lon = frame_tracks['lon'].iloc[ind]
                     lat = frame_tracks['lat'].iloc[ind]
                     [u, v] = [frame_tracks_low['u_shift'].iloc[ind], 
@@ -196,11 +260,10 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                     x_low = frame_tracks_low['grid_x'].iloc[ind]
                     y_low = frame_tracks_low['grid_y'].iloc[ind]
                     
-                    projparams = grid.get_projparams()
                     dt = f_tobj.record.interval.total_seconds()
                     
-                    [new_lon, new_lat] = pyart.core.transforms.cartesian_to_geographic(
-                        x_low + 2*u*dt, y_low + 2*v*dt, projparams,
+                    [new_lon, new_lat] = cartesian_to_geographic(
+                        x_low + 4*u*dt, y_low + 4*v*dt, projparams,
                     )
                     
                     lon_low = frame_tracks_low['lon'].iloc[ind]
@@ -214,23 +277,23 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                     ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
                     ax.text(lon+.05, lat-0.05, mergers_str, transform=projection, fontsize=10)
                     ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
-                    ax.plot([lon_low, new_lon], [lat_low, new_lat], '-m', linewidth=2.0)
+                    ax.arrow(lon_low, lat_low, new_lon[0]-lon_low, 
+                             new_lat[0]-lat_low, color='m', head_width=0.024, 
+                             head_length=0.040)
+                             
+                    # Plot ellipses if required
+                    if ellipses:
+                        if i == 1:
+                            plot_ellipse(ax, frame_tracks_low.iloc[ind], 
+                                         projparams, weighted_centroid=True)                    
+                        else:
+                            plot_ellipse(ax, frame_tracks_high.iloc[ind], 
+                                         projparams, weighted_centroid=False)                   
                     
-                    for j in range(len(frame_tracks_low.iloc[ind]['updrafts'])):
-                
-                        # Plot location of updraft j at alts[i] if it exists          
-                        if len(np.array(frame_tracks_low.iloc[ind]['updrafts'][j])) > hgt_ind:
-                            x_draft = grid.x['data'][np.array(frame_tracks_low.iloc[ind]['updrafts'][j])[hgt_ind,2]]         
-                            y_draft = grid.y['data'][np.array(frame_tracks_low.iloc[ind]['updrafts'][j])[hgt_ind,1]]
-                            
-                            projparams = grid.get_projparams()
-                            lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
-                                x_draft, y_draft, projparams
-                            )
-                            
-                            ax.scatter(lon_ud, lat_ud, marker='x', s=10, 
-                                       c=colors[np.mod(j,len(colors))], zorder=3)
-
+                    # Plot reflectivity cells                            
+                    plot_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
+                                  hgt_ind, projparams, colors)
+        # Save frame and cleanup
         plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
                     bbox_inches = 'tight', dpi=dpi)
         plt.close()
@@ -359,7 +422,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             y_draft = grid.y['data'][np.array(row_low['updrafts'][0])[0,1]]
             
             projparams = grid.get_projparams()
-            lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
+            lon_ud, lat_ud = cartesian_to_geographic(
                 x_draft, y_draft, projparams
             )
 
@@ -381,7 +444,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                     y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind,1]]
                     
                     projparams = grid.get_projparams()
-                    lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
+                    lon_ud, lat_ud = cartesian_to_geographic(
                         x_draft, y_draft, projparams
                     )
                     
@@ -415,9 +478,9 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         y_draft = grid.y['data'][np.array(row_low['updrafts'][0])[0,1]]
         
         projparams = grid.get_projparams()
-        lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(x_draft,
-                                                                 y_draft,
-                                                                 projparams)
+        lon_ud, lat_ud = cartesian_to_geographic(x_draft,
+                                                 y_draft,
+                                                 projparams)
         
         display.plot_latitude_slice(field, lon=lon_ud, lat=lat_ud,
                                     title_flag=False,
@@ -616,7 +679,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                 y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[0,1]]
                 
                 projparams = grid.get_projparams()
-                lon_ud, lat_ud = pyart.core.transforms.cartesian_to_geographic(
+                lon_ud, lat_ud = cartesian_to_geographic(
                     x_draft, y_draft, projparams
                 )
                 
@@ -637,7 +700,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                     y_draft_hgt = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,1]]
                     
                     projparams = grid.get_projparams()
-                    lon_ud_hgt, lat_ud_hgt = pyart.core.transforms.cartesian_to_geographic(
+                    lon_ud_hgt, lat_ud_hgt = cartesian_to_geographic(
                         x_draft_hgt, y_draft_hgt, projparams
                     )
                     
