@@ -508,7 +508,7 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     tracks = old_tracks.append(new_tracks)
     return tracks
     
-def smooth(group_df, n=2):
+def smooth(group_df, r=3, n=2):
         
     group_df_smoothed = copy.deepcopy(group_df)
       
@@ -528,7 +528,7 @@ def smooth(group_df, n=2):
         group_df_smoothed.iloc[k] = fwd
         group_df_smoothed.iloc[-1-k] = bwd
     
-    return group_df_smoothed
+    return np.round(group_df_smoothed, r)
 
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
@@ -638,11 +638,11 @@ def get_system_tracks(tracks_obj):
     
     # Calculate total vertical displacement.
     n_lvl = tracks_obj.params['LEVELS'].shape[0]
-    pos_0 = tracks_obj.tracks[['com_x', 'com_y']].xs(0, level='level')
+    pos_0 = tracks_obj.tracks[['grid_x', 'grid_y']].xs(0, level='level')
     pos_1 = tracks_obj.tracks[['grid_x', 'grid_y']].xs(n_lvl-1, level='level') 
     
-    pos_0.rename(columns={'com_x': 'x_vert_disp', 
-                          'com_y': 'y_vert_disp'},
+    pos_0.rename(columns={'grid_x': 'x_vert_disp', 
+                          'grid_y': 'y_vert_disp'},
                  inplace=True)
     pos_1.rename(columns={'grid_x': 'x_vert_disp', 
                           'grid_y': 'y_vert_disp'},

@@ -71,12 +71,99 @@ class Tracer(object):
                 or (uid in mergers)):
                 ax.plot(tracer.lon, tracer.lat, self.cell_color[uid])
                 
+'''
+def plot_horiz_slice(tobj, grid, tmp_dir, nframe, display, fig=None, ax=None, 
+                     dpi=100, vmin=-8,
+                     vmax=64, start_datetime = None, end_datetime = None,
+                     cmap=None, alt, isolated_only=False, 
+                     tracers=False, persist=False, projection=None, 
+                     scan_boundary=False, ellipses=False, **kwargs):
+    
+    if fig == None:
+        fig = plt.figure(figsize=(12, 5))
+    if ax == None:
+        ax = fig_grid.add_subplot(1, 1, 1, projection=projection)
+    if display == None:
+        display = pyart.graph.GridMapDisplay(grid)
+        projparams = grid.get_projparams()
+    
+    # Get height and level indices                                
+    hgt_ind = get_grid_alt(grid_size, alt)
+    in_lvl = [((alt >= test[i,0]) & (alt < test[i,-1])) 
+              for i in range(len(grid.params['LEVELS']))]
+    lvl_ind = np.argwhere(in_lvl)[0,0]
+    
+    # Restrict tracks to the given level and frame
+    f_tobj = copy.deepcopy(tobj)
+    tracks = f_tobj.tracks.xs(lvl_ind, level='level').loc[nframe]
+    tracks = tracks.reset_index(level=['time'])
+    
+    # Initialise fonts
+    rcParams.update({'font.family' : 'serif'})
+    rcParams.update({'font.serif': 'Liberation Serif'})
+    rcParams.update({'mathtext.fontset' : 'dejavuserif'}) 
+    rcParams.update({'font.size': 12})
+            
+    # Plot reflectivity and crosshairs
+    display.plot_crosshairs(lon=radar_lon, lat=radar_lat)
+    display.plot_grid(tracks.field, level=hgt_ind, vmin=vmin, vmax=vmax, 
+                      mask_outside=False, cmap=cmap, transform=projection, 
+                      ax=ax, **kwargs)
+
+    # Plot scan boundary
+    if scan_boundary:        
+        plot_boundary(ax, tobj, grid, projparams)
+    
+    # Plot tracers if necessary
+    if tracers:
+        tracer.update(nframe)
+        tracer.plot(ax)
+
+    # Loop through objects in 
+    for ind, uid in enumerate(tracks.index):
+                           
+        # Plot velocity and stratiform offset
+        lon = tracks['lon'].iloc[ind]
+        lat = tracks['lat'].iloc[ind]
+        [u, v] = [tracks['u_shift'].iloc[ind], 
+                  tracks['v_shift'].iloc[ind]]
+        
+        x_low = frame_tracks_low['grid_x'].iloc[ind]
+        y_low = frame_tracks_low['grid_y'].iloc[ind]
+        
+        dt = f_tobj.record.interval.total_seconds()
+        
+        [new_lon, new_lat] = cartesian_to_geographic(
+            x_low + 4*u*dt, y_low + 4*v*dt, projparams,
+        )
+        
+        lon_low = frame_tracks_low['lon'].iloc[ind]
+        lat_low = frame_tracks_low['lat'].iloc[ind]
+
+        lon_high = frame_tracks_high['lon'].iloc[ind]
+        lat_high = frame_tracks_high['lat'].iloc[ind]
+        mergers = list(frame_tracks['mergers'].iloc[ind])
+        mergers_str = ", ".join(mergers)
+            
+        ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
+        ax.text(lon+.05, lat-0.05, mergers_str, transform=projection, fontsize=10)
+        ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
+        ax.arrow(lon_low, lat_low, new_lon[0]-lon_low, 
+                 new_lat[0]-lat_low, color='m', head_width=0.024, 
+                 head_length=0.040)
+                 
+        # Plot ellipses if required
+        if ellipses:
+            plot_ellipse(ax, tracks.iloc[ind], projparams)                    
+        
+        # Plot reflectivity cells                            
+        plot_updrafts(ax, grid, tracks.iloc[ind], 
+                      hgt_ind, projparams, colors)
+'''
                 
-def plot_ellipse(ax, frame_tracks_ind, projparams, weighted_centroid=False):
-    if weighted_centroid:
-        centroid = frame_tracks_ind[['com_x','com_y']].values
-    else:
-        centroid = frame_tracks_ind[['grid_x', 'grid_y']].values
+def plot_ellipse(ax, frame_tracks_ind, projparams):
+
+    centroid = frame_tracks_ind[['grid_x', 'grid_y']].values
     orientation = frame_tracks_ind[['orientation']].values[0]
     major_axis = frame_tracks_ind[['semi_major']].values[0]
     minor_axis = frame_tracks_ind[['semi_minor']].values[0]
@@ -185,7 +272,8 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
 
     print('Animating from {} to {}.'.format(str(start_datetime), 
                                             str(end_datetime)))
-
+    
+    # Loop through all scans/grids provided to function.
     for counter, grid in enumerate(grids):
         
         grid_time = np.datetime64(grid.time['units'][15:])
@@ -216,6 +304,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         
         alts = [alt_low, alt_high]
         
+        # Loop through plotting routines for high and low altitudes.
         for i in [1,2]:
         
             hgt_ind = get_grid_alt(grid_size, alts[i-1])
@@ -285,10 +374,10 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                     if ellipses:
                         if i == 1:
                             plot_ellipse(ax, frame_tracks_low.iloc[ind], 
-                                         projparams, weighted_centroid=True)                    
+                                         projparams)                    
                         else:
                             plot_ellipse(ax, frame_tracks_high.iloc[ind], 
-                                         projparams, weighted_centroid=False)                   
+                                         projparams)                   
                     
                     # Plot reflectivity cells                            
                     plot_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
