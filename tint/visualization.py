@@ -19,6 +19,8 @@ from IPython.display import display, Image
 from matplotlib import pyplot as plt
 from matplotlib import rcParams
 from matplotlib.patches import Ellipse
+from matplotlib.patches import FancyArrow
+import matplotlib.lines as mlines
 import cartopy.crs as ccrs
 import copy
 
@@ -71,7 +73,7 @@ class Tracer(object):
                 or (uid in mergers)):
                 ax.plot(tracer.lon, tracer.lat, self.cell_color[uid])
                 
-'''
+
 def plot_horiz_slice(tobj, grid, tmp_dir, nframe, display, fig=None, ax=None, 
                      dpi=100, vmin=-8,
                      vmax=64, start_datetime = None, end_datetime = None,
@@ -119,47 +121,6 @@ def plot_horiz_slice(tobj, grid, tmp_dir, nframe, display, fig=None, ax=None,
         tracer.update(nframe)
         tracer.plot(ax)
 
-    # Loop through objects in 
-    for ind, uid in enumerate(tracks.index):
-                           
-        # Plot velocity and stratiform offset
-        lon = tracks['lon'].iloc[ind]
-        lat = tracks['lat'].iloc[ind]
-        [u, v] = [tracks['u_shift'].iloc[ind], 
-                  tracks['v_shift'].iloc[ind]]
-        
-        x_low = frame_tracks_low['grid_x'].iloc[ind]
-        y_low = frame_tracks_low['grid_y'].iloc[ind]
-        
-        dt = f_tobj.record.interval.total_seconds()
-        
-        [new_lon, new_lat] = cartesian_to_geographic(
-            x_low + 4*u*dt, y_low + 4*v*dt, projparams,
-        )
-        
-        lon_low = frame_tracks_low['lon'].iloc[ind]
-        lat_low = frame_tracks_low['lat'].iloc[ind]
-
-        lon_high = frame_tracks_high['lon'].iloc[ind]
-        lat_high = frame_tracks_high['lat'].iloc[ind]
-        mergers = list(frame_tracks['mergers'].iloc[ind])
-        mergers_str = ", ".join(mergers)
-            
-        ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
-        ax.text(lon+.05, lat-0.05, mergers_str, transform=projection, fontsize=10)
-        ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
-        ax.arrow(lon_low, lat_low, new_lon[0]-lon_low, 
-                 new_lat[0]-lat_low, color='m', head_width=0.024, 
-                 head_length=0.040)
-                 
-        # Plot ellipses if required
-        if ellipses:
-            plot_ellipse(ax, tracks.iloc[ind], projparams)                    
-        
-        # Plot reflectivity cells                            
-        plot_updrafts(ax, grid, tracks.iloc[ind], 
-                      hgt_ind, projparams, colors)
-'''
                 
 def plot_ellipse(ax, frame_tracks_ind, projparams):
 
@@ -200,6 +161,8 @@ def plot_updrafts(ax, grid, frame_tracks_ind, hgt_ind, projparams, colors):
             ax.scatter(lon_ud, lat_ud, marker='x', s=15, 
                        c=colors[np.mod(j,len(colors))], zorder=3)
                        
+    return ax
+                       
                        
 def plot_boundary(ax, tobj, grid, projparams):
     b_list = list(tobj.params['BOUNDARY_GRID_CELLS'])
@@ -210,6 +173,8 @@ def plot_boundary(ax, tobj, grid, projparams):
     y_bounds = grid.y['data'][[0,-1]]      
     lon_b, lat_b = cartesian_to_geographic(x_bounds, y_bounds, projparams)
     ax.imshow(boundary, extent=(lon_b[0], lon_b[1], lat_b[0], lat_b[1]))
+    
+    return ax
     
     
 def plot_shear(ax, frame_tracks_ind, grid, projparams, dt):
@@ -223,10 +188,10 @@ def plot_shear(ax, frame_tracks_ind, grid, projparams, dt):
     v_s = frame_tracks_ind['v_shear']
     
     u_prop = frame_tracks_ind['u_prop']
-    v_prop = frame_tracks_ind['u_prop']
+    v_prop = frame_tracks_ind['v_prop']
     
     u_cl = frame_tracks_ind['u_cl']
-    v_cl =frame_tracks_ind['u_cl']
+    v_cl =frame_tracks_ind['v_cl']
     
     grid_time = np.datetime64(grid.time['units'][15:])
         
@@ -242,14 +207,16 @@ def plot_shear(ax, frame_tracks_ind, grid, projparams, dt):
     )
           
     ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='g', 
-             head_width=0.024, head_length=0.040, label = 'Propagation')
+             head_width=0.024, head_length=0.040, label = 'Propagation Velocity')
              
     [new_lon, new_lat] = cartesian_to_geographic(
         x + 4*u_cl*dt, y + 4*v_cl*dt, projparams,
     )
           
-    ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='o', 
+    ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='orange', 
              head_width=0.024, head_length=0.040, label = 'Cloud Layer Mean Wind')
+             
+    return ax
 
 
 def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
@@ -406,12 +373,15 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                         
                     ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
                     ax.text(lon+.05, lat-0.05, mergers_str, transform=projection, fontsize=10)
-                    ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0, label='Stratiform Offset')
+                    ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0,)
+                    lgd = dict()
+                    lgd_strat = mlines.Line2D([], [], color='b', linestyle='--', linewidth=2.0, label='Stratiform Offset')
+                            
                     ax.arrow(lon_low, lat_low, new_lon[0]-lon_low, 
                              new_lat[0]-lat_low, color='m', head_width=0.024, 
                              head_length=0.040, label='System Velocity')
-                    plt.legend()
-                             
+                    lgd_vel = mlines.Line2D([], [], color='m', linestyle='-', label='System Velocity')
+                                     
                     # Plot ellipses if required
                     if ellipses:
                         if i == 1:
@@ -421,12 +391,20 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                             plot_ellipse(ax, frame_tracks_high.iloc[ind], 
                                          projparams)                   
                     if plot_shear_vec:
-                        plot_shear(ax, frame_tracks_low.iloc[ind], grid, 
-                                   projparams, dt)
-                    
+                        lgd = plot_shear(ax, frame_tracks_low.iloc[ind], grid, 
+                                        projparams, dt)
+                    lgd_shear = mlines.Line2D([], [], color='r', linestyle='-', label='Low-Level Shear')
+                    lgd_prop = mlines.Line2D([], [], color='g', linestyle='-', label='Propagation Velocity')
+                    lgd_cl = mlines.Line2D([], [], color='orange', linestyle='-', label='Cloud-Layer Mean Wind')
+                                        
                     # Plot reflectivity cells                            
                     plot_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
                                   hgt_ind, projparams, colors)
+                                  
+                
+                plt.legend(handles=[lgd_strat, lgd_vel, lgd_shear, lgd_prop, 
+                                    lgd_cl])
+                  
         # Save frame and cleanup
         plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
                     bbox_inches = 'tight', dpi=dpi)
