@@ -210,13 +210,54 @@ def plot_boundary(ax, tobj, grid, projparams):
     y_bounds = grid.y['data'][[0,-1]]      
     lon_b, lat_b = cartesian_to_geographic(x_bounds, y_bounds, projparams)
     ax.imshow(boundary, extent=(lon_b[0], lon_b[1], lat_b[0], lat_b[1]))
-                
+    
+    
+def plot_shear(ax, frame_tracks_ind, grid, projparams, dt):
+    lon = frame_tracks_ind['lon']
+    lat = frame_tracks_ind['lat']
+    
+    x = frame_tracks_ind['grid_x']
+    y = frame_tracks_ind['grid_y']
+    
+    u_s = frame_tracks_ind['u_shear']
+    v_s = frame_tracks_ind['v_shear']
+    
+    u_prop = frame_tracks_ind['u_prop']
+    v_prop = frame_tracks_ind['u_prop']
+    
+    u_cl = frame_tracks_ind['u_cl']
+    v_cl =frame_tracks_ind['u_cl']
+    
+    grid_time = np.datetime64(grid.time['units'][15:])
+        
+    [new_lon, new_lat] = cartesian_to_geographic(
+        x + 4*u_s*dt, y + 4*v_s*dt, projparams,
+    )
+          
+    ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='r', 
+             head_width=0.024, head_length=0.040, label = 'Low-level Shear')
+             
+    [new_lon, new_lat] = cartesian_to_geographic(
+        x + 4*u_prop*dt, y + 4*v_prop*dt, projparams,
+    )
+          
+    ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='g', 
+             head_width=0.024, head_length=0.040, label = 'Propagation')
+             
+    [new_lon, new_lat] = cartesian_to_geographic(
+        x + 4*u_cl*dt, y + 4*v_cl*dt, projparams,
+    )
+          
+    ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='o', 
+             head_width=0.024, head_length=0.040, label = 'Cloud Layer Mean Wind')
+
 
 def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 start_datetime = None, end_datetime = None,
                 cmap=None, alt_low=None, alt_high=None, isolated_only=False,
                 tracers=False, persist=False, projection=None, 
-                scan_boundary=False, ellipses=False, **kwargs):
+                scan_boundary=False, ellipses=False, plot_shear_vec=False,
+                **kwargs):
                 
     colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
                 
@@ -365,10 +406,11 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                         
                     ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
                     ax.text(lon+.05, lat-0.05, mergers_str, transform=projection, fontsize=10)
-                    ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
+                    ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0, label='Stratiform Offset')
                     ax.arrow(lon_low, lat_low, new_lon[0]-lon_low, 
                              new_lat[0]-lat_low, color='m', head_width=0.024, 
-                             head_length=0.040)
+                             head_length=0.040, label='System Velocity')
+                    plt.legend()
                              
                     # Plot ellipses if required
                     if ellipses:
@@ -378,6 +420,9 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                         else:
                             plot_ellipse(ax, frame_tracks_high.iloc[ind], 
                                          projparams)                   
+                    if plot_shear_vec:
+                        plot_shear(ax, frame_tracks_low.iloc[ind], grid, 
+                                   projparams, dt)
                     
                     # Plot reflectivity cells                            
                     plot_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
@@ -581,8 +626,6 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         ax.plot([tx_low, tx_high], [low, high], '--b', linewidth=2.0)
         
         # Plot updraft tracks
-        import pdb
-        pdb.set_trace()
         z0 = get_grid_alt(tobj.record.grid_size, tobj.params['UPDRAFT_START'])
         for i in range(len(row_low['updrafts'])):         
             x_draft = grid.x['data'][np.array(row_low['updrafts'][i])[:,2]]/1000
