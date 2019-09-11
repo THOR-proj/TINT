@@ -99,9 +99,14 @@ def add_ellipses(ax, frame_tracks_ind, projparams):
     return ell
     
     
-def add_updrafts(ax, grid, frame_tracks_ind, hgt_ind, projparams):
-    colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow'] 
-    for j in range(len(frame_tracks_ind['updrafts'])):
+def add_updrafts(ax, grid, frame_tracks_ind, hgt_ind, projparams, 
+                 updraft_ind=None):
+    colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
+    if updraft_ind is None:
+        updraft_list = range(len(frame_tracks_ind['updrafts']))
+    else:
+        updraft_list = [updraft_ind]
+    for j in updraft_list:
         # Plot location of updraft j at alts[i] if it exists          
         if len(np.array(frame_tracks_ind['updrafts'][j])) > hgt_ind:
             x_ind = np.array(frame_tracks_ind['updrafts'][j])[hgt_ind,2]
@@ -111,7 +116,7 @@ def add_updrafts(ax, grid, frame_tracks_ind, hgt_ind, projparams):
             lon_ud, lat_ud = cartesian_to_geographic(
                 x_draft, y_draft, projparams
             )
-            ax.scatter(lon_ud, lat_ud, marker='x', s=15, 
+            ax.scatter(lon_ud, lat_ud, marker='x', s=25, 
                        c=colors[np.mod(j,len(colors))], zorder=3)
                        
     return ax
@@ -136,19 +141,15 @@ def add_velocities(ax, frame_tracks_ind, grid, projparams, dt,
                     labels=['System Velocity', 'Propagation',
                             'Low-Level Shear', 'Mean Cloud-Layer Winds']):
     lon = frame_tracks_ind['lon']
-    lat = frame_tracks_ind['lat']
-    
+    lat = frame_tracks_ind['lat']    
     x = frame_tracks_ind['grid_x']
     y = frame_tracks_ind['grid_y']
     
     for i in range(len(var_list)):
         u = frame_tracks_ind['u_' + var_list[i]]
-        v = frame_tracks_ind['v_' + var_list[i]]
-        
-        [new_lon, new_lat] = cartesian_to_geographic(
-            x + 4*u*dt, y + 4*v*dt, projparams,
-        )
-          
+        v = frame_tracks_ind['v_' + var_list[i]]     
+        [new_lon, new_lat] = cartesian_to_geographic(x + 4*u*dt, y + 4*v*dt, 
+                                                     projparams)
         ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat, 
                  color=c_list[i], head_width=0.024, head_length=0.040)      
 
@@ -169,8 +170,11 @@ def init_fonts():
     rcParams.update({'font.family' : 'serif'})
     rcParams.update({'font.serif': 'Liberation Serif'})
     rcParams.update({'mathtext.fontset' : 'dejavuserif'}) 
-    rcParams.update({'font.size': 12})
-    
+    rcParams.update({'font.size': 12})        
+        
+
+
+
 
 def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                             cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
@@ -178,6 +182,7 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                             projection=ccrs.PlateCarree(), 
                             scan_boundary=False,
                             tracers=False, ellipses='conv', legend=True,
+                            uid_ind=None, updraft_ind=None, box_rad=.75,
                             **kwargs):       
                                                       
     # Initialise fig and ax if not passed as arguments
@@ -188,36 +193,15 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         ax = fig.add_subplot(1, 1, 1, projection=projection)
     if tracers:
         tracer = Tracer(f_tobj, persist)
-        
+                
     # Initialise dataframes for convective and stratiform regions
     n_lvl = f_tobj.params['LEVELS'].shape[0]
     tracks_low = f_tobj.tracks.xs(0, level='level')
     tracks_high = f_tobj.tracks.xs(n_lvl-1, level='level')  
-
-    # Plot reflectivity and crosshairs
-    display = pyart.graph.GridMapDisplay(grid)
-    projparams = grid.get_projparams()
-    grid_size = f_tobj.grid_size
-    radar_lon = f_tobj.radar_info['radar_lon']
-    radar_lat = f_tobj.radar_info['radar_lat']
-    hgt_ind = get_grid_alt(grid_size, alt)
-    transform = projection._as_mpl_transform(ax)
-    display.plot_crosshairs(lon=radar_lon, lat=radar_lat)
-    display.plot_grid(f_tobj.field, level=hgt_ind,
-                      vmin=vmin, vmax=vmax, mask_outside=False,
-                      cmap=cmap, transform=projection, ax=ax, **kwargs)
-    
-    # Plot scan boundary
-    if scan_boundary:        
-        plot_boundary(ax, f_tobj, grid, projparams)
-
-    # Check if objects exist at time of current grid, skip below if not
-    time_ind = f_tobj.tracks.index.get_level_values('time')
-    grid_time = np.datetime64(grid.time['units'][15:])
-    if grid_time not in time_ind:
-        return
     
     # Restrict tracks to time of grid
+    time_ind = f_tobj.tracks.index.get_level_values('time')
+    grid_time = np.datetime64(grid.time['units'][15:])
     scan_ind = f_tobj.tracks.index.get_level_values('scan')    
     nframe = scan_ind[time_ind == grid_time][0]
     frame_tracks_low = tracks_low.loc[nframe].reset_index(level=['time'])
@@ -227,15 +211,69 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
     if tracers:
         tracer.update(nframe)
         tracer.plot(ax)
+        
+    if uid_ind is not None:
+        # Drop other objects from frame_tracks
+        drop_set = set(frame_tracks_low.index) - {uid_ind}
+        frame_tracks_low.drop(drop_set, inplace=True)
+        frame_tracks_high.drop(drop_set, inplace=True)
+        
+        # Define bounding box of object
+        lat_box = frame_tracks_low['lat'].iloc[0]
+        lon_box = frame_tracks_low['lon'].iloc[0]
+        box = np.array([-1*box_rad, box_rad])
+        lvxlim = (lon_box) + box
+        lvylim = (lat_box) + box
+        
+        if updraft_ind is not None:
+            ud = frame_tracks_low.iloc[0]['updrafts'][updraft_ind]
+            x_ud = grid.x['data'][np.array(ud)[0,2]]        
+            y_ud = grid.y['data'][np.array(ud)[0,1]]
+            projparams = grid.get_projparams()
+            lon_ud, lat_ud = cartesian_to_geographic(x_ud, y_ud, projparams)
+            # Set crosshair to be at updraft location
+            [lon_ch, lat_ch] = [lon_ud, lat_ud]
+        else:
+            # Set crosshair to be at object location
+            [lon_ch, lat_ch] = [lon_box, lat_box]
+    else:
+        # Set crosshair to be at radar position
+        radar_lon = f_tobj.radar_info['radar_lon']
+        radar_lat = f_tobj.radar_info['radar_lat']
+        [lon_ch, lat_ch] = [radar_lon, radar_lat]
+        
+    # Plot reflectivity and crosshairs
+    display = pyart.graph.GridMapDisplay(grid)
+    projparams = grid.get_projparams()
+    grid_size = f_tobj.grid_size
+    hgt_ind = get_grid_alt(grid_size, alt)
+    transform = projection._as_mpl_transform(ax)
+    display.plot_crosshairs(lon=lon_ch, lat=lat_ch)
+    display.plot_grid(f_tobj.field, level=hgt_ind,
+                      vmin=vmin, vmax=vmax, mask_outside=False,
+                      cmap=cmap, transform=projection, ax=ax, **kwargs)           
+    # Set labels
+    ax.set_title('Altitude {} km'.format(alt))
+    ax.set_xlabel('Longitude')
+    ax.set_ylabel('Latitude')
+    
+    # Plot scan boundary
+    if scan_boundary:        
+        plot_boundary(ax, f_tobj, grid, projparams)
 
-    # Plot object properties
+    # Return if no objects exist at current grid time
+    if grid_time not in time_ind: 
+        del display                     
+        return
+    
+    # Plot objects
     for ind, uid in enumerate(frame_tracks_low.index):
                                                                         
         # Plot object labels 
         lon_low = frame_tracks_low['lon'].iloc[ind]
         lat_low = frame_tracks_low['lat'].iloc[ind]
         mergers = list(frame_tracks_low['mergers'].iloc[ind])
-        mergers_str = ", ".join(mergers) 
+        mergers_str = ", ".join(mergers)
         ax.text(lon_low-.05, lat_low+0.05, uid, 
                 transform=projection, fontsize=12)
         ax.text(lon_low+.05, lat_low-0.05, mergers_str, 
@@ -265,23 +303,29 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
             add_ellipses(ax, frame_tracks_high.iloc[ind], 
                          projparams)                   
                             
-        # Plot reflectivity cells                         
-        add_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
-                      hgt_ind, projparams)
-                         
-        # Plot label
+        # Plot reflectivity cells
+        if updraft_ind is None:                         
+            add_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
+                          hgt_ind, projparams)
+        else: 
+            add_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
+                          hgt_ind, projparams, updraft_ind=updraft_ind)
+                      
         if legend:
-            plt.legend(handles=lgd_han)     
-            
-    del display          
+            plt.legend(handles=lgd_han)
 
+    # If focusing on one object, restrict axis limits around object                  
+    if uid_ind is not None:
+        ax.set_xlim(lvxlim[0], lvxlim[1])
+        ax.set_ylim(lvylim[0], lvylim[1])
+                                                      
 
 def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 start_datetime = None, end_datetime = None,
                 cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
                 alt_low=None, alt_high=None, isolated_only=False,
                 tracers=False, persist=False, projection=ccrs.PlateCarree(), 
-                scan_boundary=False, **kwargs):
+                scan_boundary=False, box_rad=.75, **kwargs):
                               
     # Create a copy of tobj for use by this function
     f_tobj = copy.deepcopy(tobj)
@@ -351,13 +395,312 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         plt.close()
         del grid, ax
         gc.collect()
+                
+                
+def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
+                        vmin=-8, vmax=64,
+                        cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
+                        projection=ccrs.PlateCarree(), 
+                        scan_boundary=False,
+                        updraft_ind=0, direction='lat', color='k',
+                        **kwargs):
+          
+    field = f_tobj.field
+    grid_size = f_tobj.grid_size
+    projparams = grid.get_projparams()
+    display = pyart.graph.GridMapDisplay(grid) 
+
+    if alt_low is None:
+        alt_low = f_tobj.params['GS_ALT']
+    if alt_high is None:
+        alt_high = f_tobj.params['GS_ALT']
+
+    # Calculate mean height of first and last vertical TINT levels
+    low = f_tobj.params['LEVELS'][0].mean()/1000
+    high = f_tobj.params['LEVELS'][-1].mean()/1000
+        
+    # Restrict to uid and nframe
+    cell = f_tobj.tracks.xs(uid, level='uid')
+    cell = cell.reset_index(level=['time'])
+    cell = cell.iloc[nframe]
+    
+    # Get low and high data
+    n_lvl = f_tobj.params['LEVELS'].shape[0]
+    cell_low = cell.xs(0, level='level')
+    cell_high = cell.xs(n_lvl-1, level='level')
+    
+    # Define box size
+    tx_met = cell_low['grid_x']
+    ty_met = cell_low['grid_y']
+    tx_low = cell_low['grid_x']/1000
+    tx_high = cell_high['grid_x']/1000
+    ty_low = cell_low['grid_y']/1000
+    ty_high = cell_high['grid_y']/1000
+    
+    xlim = (tx_met + np.array([-75000, 75000]))/1000
+    ylim = (ty_met + np.array([-75000, 75000]))/1000
+    
+    # Get updraft location
+    ud = np.array(cell_low['updrafts'][updraft_ind])
+    x_draft = grid.x['data'][ud[0,2]]        
+    y_draft = grid.y['data'][ud[0,1]]
+    lon_ud, lat_ud = cartesian_to_geographic(
+        x_draft, y_draft, projparams
+    )
+    z0 = get_grid_alt(f_tobj.record.grid_size, 
+                      f_tobj.params['UPDRAFT_START'])
+    
+    if direction == 'lat':
+        display.plot_latitude_slice(field, lon=lon_ud, lat=lat_ud,
+                                    title_flag=False, colorbar_flag=False, 
+                                    edges=False, vmin=vmin, vmax=vmax, 
+                                    mask_outside=False, cmap=cmap, ax=ax)
+        [h_low, h_high] = [tx_low, tx_high]
+        h_draft = grid.x['data'][np.array(row_low['updrafts'][j])[:,2]]/1000
+        z_draft = grid.z['data'][z0:len(h_draft)+z0]/1000
+        h_lim = xlim
+        t_string = 'Latitude Cross Section'
+        x_label = 'East West Distance From Origin [km]'                                                               
+    
+    elif direction == 'lon':
+        display.plot_longitude_slice(field, lon=lon_ud, lat=lat_ud,
+                                     title_flag=False, colorbar_flag=False, 
+                                     edges=False, vmin=vmin, vmax=vmax, 
+                                     mask_outside=False, cmap=cmap, ax=ax)
+        [h_low, h_high] = [ty_low, ty_high]
+        h_draft = grid.y['data'][np.array(row_low['updrafts'][j])[:,1]]/1000
+        z_draft = grid.z['data'][z0:len(h_draft)+z0]/1000
+        h_lim = ylim
+        t_string = 'Longitude Cross Section'
+        x_label = 'North South Distance From Origin [km]'    
+                                          
+    # Plot system tilt
+    ax.plot([h_low, h_high], [low, high], '--b', linewidth=2.0)
+    
+    # Plot updraft tracks
+    ax.plot(h_draft, z_draft, '-', color=color,
+            linewidth=1.0)
+
+    ax.set_xlim(h_lim[0], h_lim[1])
+    ax.set_xticks(np.arange(h_lim[0], h_lim[1], 25))
+    ax.set_xticklabels(
+        np.round((np.arange(h_lim[0], h_lim[1], 25)), 1)
+    )
+
+    ax.set_title(t_string, fontsize=title_font)
+    ax.set_xlabel(x_label, fontsize=axes_font)
+    ax.set_ylabel('Distance Above Origin [km]', fontsize=axes_font)
+                
+        
+def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100, 
+                 vmin=-8, vmax=64,
+                 start_datetime=None, end_datetime=None,
+                 cmap=None, alt_low=None, alt_high=None, 
+                 box_rad=.75, projection=None, **kwargs):
+
+    if uid is None:
+        print("Please specify 'uid' keyword argument.")
+        return
+    stepsize = 0.2
+    title_font = 14
+    axes_font = 10
+    mpl.rcParams['xtick.labelsize'] = 10
+    mpl.rcParams['ytick.labelsize'] = 10
+    
+    f_tobj = copy.deepcopy(tobj)
+
+    field = tobj.field
+    grid_size = tobj.grid_size
+
+    if cmap is None:
+        cmap = pyart.graph.cm_colorblind.HomeyerRainbow
+    if alt_low is None:
+        alt_low = tobj.params['GS_ALT']
+    if alt_high is None:
+        alt_high = tobj.params['GS_ALT']
+    if projection is None:
+        projection = ccrs.PlateCarree()
+
+    low = tobj.params['LEVELS'][0].mean()/1000
+    high = tobj.params['LEVELS'][-1].mean()/1000
+        
+    cell = tobj.tracks.xs(uid, level='uid')
+    cell = cell.reset_index(level=['time'])
+    
+    n_lvl = tobj.params['LEVELS'].shape[0]
+    cell_low = cell.xs(0, level='level')
+    cell_high = cell.xs(n_lvl-1, level='level')
+    cell = cell.xs(tobj.params['TRACK_INTERVAL'] ,level='level')
+    
+    colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
+
+    nframes = len(cell)
+    print('Animating', nframes, 'frames')
+    nframe = 0
+    pframe = 0
+        
+    for grid in grids:
+        grid_time = np.datetime64(grid.time['units'][15:])        
+        if nframe >= nframes:
+            info_msg = ('Object died at ' 
+                        + str(cell.iloc[nframe-1].time)
+                        + '.\n' + 'Ending loop.')
+            print(info_msg)
+            del grid
+            gc.collect()
+            break        
+        elif cell.iloc[nframe].time > grid_time:
+            info_msg = ('Object not yet initiated at '
+                        + '{}.\n'.format(grid_time) 
+                        + 'Moving to next grid.') 
+            print(info_msg)
+            continue
+        while cell.iloc[nframe].time < grid_time:
+            
+            info_msg = ('Current grid at {}.\n'
+                        + 'Object initialises at {}.\n'
+                        + 'Moving to next object frame.') 
+            print(info_msg.format(grid_time, str(cell.iloc[nframe].time)))
+            nframe += 1
+             
+        print('Plotting frame at {}'.format(grid_time),
+              end='\n', flush=True)
+
+        row = cell.iloc[nframe]
+        row_low = cell_low.iloc[nframe]
+        row_high = cell_high.iloc[nframe]
+
+        # Box Size
+        tx_met = row['grid_x']
+        ty_met = row['grid_y']
+        tx_low = row_low['grid_x']/1000
+        tx_high = row_high['grid_x']/1000
+        ty_low = row_low['grid_y']/1000
+        ty_high = row_high['grid_y']/1000
+        
+        lat_low = row_low['lat']
+        lat_high = row_high['lat']
+        lon_low = row_low['lon']
+        lon_high = row_high['lon']
+        
+        xlim = (tx_met + np.array([-75000, 75000]))/1000
+        ylim = (ty_met + np.array([-75000, 75000]))/1000
+
+        # Initialise fonts
+        init_fonts()
+
+        plt.axis('off')
+        
+        # Iterate through updrafts
+        for j in range(len(row_low['updrafts'])):
+            
+            fig = plt.figure(figsize=(12, 10))
+        
+            print('Plotting updraft {}.  '.format(str(j)),
+              end='\r', flush=True)
+        
+            fig.suptitle('Object ' + uid + ' at ' 
+                         + str(grid_time) + ': Updraft ' 
+                         + str(j), fontsize=16, y=1.0)
+                         
+            ax = fig.add_subplot(2, 2, 1, projection=projection)
+            plot_tracks_horiz_cross(f_tobj, grid, alt_low, fig=fig, 
+                                    ax=ax, ellipses='conv', legend=False, 
+                                    uid_ind=uid, updraft_ind=j,
+                                    **kwargs)
+                                    
+            ax = fig.add_subplot(2, 2, 3, projection=projection)
+            plot_tracks_horiz_cross(f_tobj, grid, alt_high, fig=fig, 
+                                    ax=ax, ellipses='strat', legend=False, 
+                                    uid_ind=uid, updraft_ind=j,
+                                    **kwargs)
+            
+            display = pyart.graph.GridMapDisplay(grid)
+            projparams = grid.get_projparams()
+                                    
+            x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[0,2]]        
+            y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[0,1]]
+            
+            projparams = grid.get_projparams()
+            lon_ud, lat_ud = cartesian_to_geographic(
+                x_draft, y_draft, projparams
+            )
+            z0 = get_grid_alt(tobj.record.grid_size, tobj.params['UPDRAFT_START'])         
+                                                     
+            # Latitude Cross Section
+            ax = fig.add_subplot(2, 2, 2)
+                       
+            display.plot_latitude_slice(field, lon=lon_ud, lat=lat_ud,
+                                        title_flag=False,
+                                        colorbar_flag=False, edges=False,
+                                        vmin=vmin, vmax=vmax, mask_outside=False,
+                                        cmap=cmap,
+                                        ax=ax)      
+            # Plot system tilt
+            ax.plot([tx_low, tx_high], [low, high], '--b', linewidth=2.0)
+            
+            # Plot updraft tracks
+            x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[:,2]]/1000
+            z_draft = grid.z['data'][z0:len(x_draft)+z0]/1000
+            ax.plot(x_draft, z_draft, '-', 
+                    color=colors[np.mod(j,len(colors))],
+                    linewidth=1.0)
+
+            ax.set_xlim(xlim[0], xlim[1])
+            ax.set_xticks(np.arange(xlim[0], xlim[1], 25))
+            ax.set_xticklabels(
+                np.round((np.arange(xlim[0], xlim[1], 25)), 1)
+            )
+
+            ax.set_title('Latitude Cross Section', fontsize=title_font)
+            ax.set_xlabel('East West Distance From Origin (km)' + '\n',
+                           fontsize=axes_font)
+            ax.set_ylabel('Distance Above Origin (km)', fontsize=axes_font)
+
+            # Longitude Cross Section
+            ax = fig.add_subplot(2, 2, 4)
+            display.plot_longitude_slice(field, lon=lon_ud, lat=lat_ud,
+                                         title_flag=False,
+                                         colorbar_flag=False, edges=False,
+                                         vmin=vmin, vmax=vmax, mask_outside=False,
+                                         cmap=cmap,
+                                         ax=ax)
+            ax.plot([ty_low, ty_high], [low, high], '--b', linewidth=2.0)
+            # Plot updraft tracks       
+            y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[:,1]]/1000
+            z_draft = grid.z['data'][z0:len(y_draft)+z0]/1000
+            ax.plot(y_draft, z_draft, '-', 
+                    color=colors[np.mod(j,len(colors))], 
+                    linewidth=1.0)
+                    
+            ax.set_xlim(ylim[0], ylim[1])
+            ax.set_xticks(np.arange(ylim[0], ylim[1], 25))
+            ax.set_xticklabels(np.round(np.arange(ylim[0], ylim[1], 25), 1))
+
+            ax.set_title('Longitudinal Cross Section', fontsize=title_font)
+            ax.set_xlabel('North South Distance From Origin (km)',
+                           fontsize=axes_font)
+            ax.set_ylabel('Distance Above Origin (km)', fontsize=axes_font)
+        
+            plt.tight_layout()
+
+            # plot and save figure
+            fig.savefig(tmp_dir + '/frame_' + str(pframe).zfill(3) + '.png', 
+                        dpi=dpi)
+            plt.close()
+            pframe += 1
+            del display
+            gc.collect()
+        nframe += 1
+        del grid
+        gc.collect()
 
 
 def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100, 
                     vmin=-8, vmax=64,
                     start_datetime=None, end_datetime=None,
                     cmap=None, alt_low=None, alt_high=None, 
-                    box_rad=.75, projection=None):
+                    box_rad=.75, projection=None, **kwargs):
 
     if uid is None:
         print("Please specify 'uid' keyword argument.")
@@ -597,253 +940,7 @@ def lagrangian_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         nframe += 1
         del grid, display
         gc.collect()
-        
-def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100, 
-                 vmin=-8, vmax=64,
-                 start_datetime=None, end_datetime=None,
-                 cmap=None, alt_low=None, alt_high=None, 
-                 box_rad=.75, projection=None):
 
-    if uid is None:
-        print("Please specify 'uid' keyword argument.")
-        return
-    stepsize = 0.2
-    title_font = 14
-    axes_font = 10
-    mpl.rcParams['xtick.labelsize'] = 10
-    mpl.rcParams['ytick.labelsize'] = 10
-
-    field = tobj.field
-    grid_size = tobj.grid_size
-
-    if cmap is None:
-        cmap = pyart.graph.cm_colorblind.HomeyerRainbow
-    if alt_low is None:
-        alt_low = tobj.params['GS_ALT']
-    if alt_high is None:
-        alt_high = tobj.params['GS_ALT']
-    if projection is None:
-        projection = ccrs.PlateCarree()
-
-    low = tobj.params['LEVELS'][0].mean()/1000
-    high = tobj.params['LEVELS'][-1].mean()/1000
-        
-    cell = tobj.tracks.xs(uid, level='uid')
-    cell = cell.reset_index(level=['time'])
-    
-    n_lvl = tobj.params['LEVELS'].shape[0]
-    cell_low = cell.xs(0, level='level')
-    cell_high = cell.xs(n_lvl-1, level='level')
-    cell = cell.xs(tobj.params['TRACK_INTERVAL'] ,level='level')
-    
-    colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
-
-    nframes = len(cell)
-    print('Animating', nframes, 'frames')
-    nframe = 0
-    pframe = 0
-        
-    for grid in grids:
-        grid_time = np.datetime64(grid.time['units'][15:])        
-        if nframe >= nframes:
-            info_msg = ('Object died at ' 
-                        + str(cell.iloc[nframe-1].time)
-                        + '.\n' + 'Ending loop.')
-            print(info_msg)
-            del grid
-            gc.collect()
-            break        
-        elif cell.iloc[nframe].time > grid_time:
-            info_msg = ('Object not yet initiated at '
-                        + '{}.\n'.format(grid_time) 
-                        + 'Moving to next grid.') 
-            print(info_msg)
-            continue
-        while cell.iloc[nframe].time < grid_time:
-            
-            info_msg = ('Current grid at {}.\n'
-                        + 'Object initialises at {}.\n'
-                        + 'Moving to next object frame.') 
-            print(info_msg.format(grid_time, str(cell.iloc[nframe].time)))
-            nframe += 1
-             
-        print('Plotting frame at {}'.format(grid_time),
-              end='\n', flush=True)
-
-        row = cell.iloc[nframe]
-        row_low = cell_low.iloc[nframe]
-        row_high = cell_high.iloc[nframe]
-
-        # Box Size
-        tx_met = row['grid_x']
-        ty_met = row['grid_y']
-        tx_low = row_low['grid_x']/1000
-        tx_high = row_high['grid_x']/1000
-        ty_low = row_low['grid_y']/1000
-        ty_high = row_high['grid_y']/1000
-        lat = row['lat']
-        lon = row['lon']
-        
-        lat_low = row_low['lat']
-        lat_high = row_high['lat']
-        lon_low = row_low['lon']
-        lon_high = row_high['lon']
-        
-        box_rad_met = box_rad 
-        box = np.array([-1*box_rad_met, box_rad_met])
-        
-        lvxlim = (lon) + box
-        lvylim = (lat) + box
-        xlim = (tx_met + np.array([-75000, 75000]))/1000
-        ylim = (ty_met + np.array([-75000, 75000]))/1000
-
-        # Initialise fonts
-        rcParams.update({'font.family' : 'serif'})
-        rcParams.update({'font.serif': 'Liberation Serif'})
-        rcParams.update({'mathtext.fontset' : 'dejavuserif'}) 
-        rcParams.update({'font.size': 12})
-
-        plt.axis('off')
-        
-        # Iterate through updrafts
-        for j in range(len(row_low['updrafts'])):
-            
-            fig = plt.figure(figsize=(12, 10))
-            display = pyart.graph.GridMapDisplay(grid)
-        
-            print('Plotting updraft {}.  '.format(str(j)),
-              end='\r', flush=True)
-        
-            fig.suptitle('Object ' + uid + ' at ' 
-                         + str(grid_time) + ': Updraft ' 
-                         + str(j), fontsize=16)
-
-            # Lagrangian View
-            alts = [alt_low, alt_high]
-            for i in range(len(alts)):
-                ax = fig.add_subplot(2, 2, 2*i+1, projection=projection)
-                
-                hgt_ind = get_grid_alt(grid_size, alts[i])
-                
-                x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[0,2]]        
-                y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[0,1]]
-                
-                projparams = grid.get_projparams()
-                lon_ud, lat_ud = cartesian_to_geographic(
-                    x_draft, y_draft, projparams
-                )
-                
-                display.plot_grid(field, level=get_grid_alt(grid_size, alts[i]),
-                                  vmin=vmin, vmax=vmax, mask_outside=False,
-                                  cmap=cmap, colorbar_flag=True,
-                                  ax=ax, projection=projection)
-
-                display.plot_crosshairs(lon=lon_ud, lat=lat_ud, linestyle='--', 
-                                        color='k', linewidth=3, ax=ax)
-
-                ax.plot([lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
-                            
-                # Plot location of updraft j at alts[i] if it exists
-                z0 = get_grid_alt(tobj.record.grid_size, tobj.params['UPDRAFT_START'])          
-                if len(np.array(row_low['updrafts'][j])) > hgt_ind-z0:
-                    x_draft_hgt = grid.x['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,2]]         
-                    y_draft_hgt = grid.y['data'][np.array(row_low['updrafts'][j])[hgt_ind-z0,1]]
-                    
-                    projparams = grid.get_projparams()
-                    lon_ud_hgt, lat_ud_hgt = cartesian_to_geographic(
-                        x_draft_hgt, y_draft_hgt, projparams
-                    )
-                    
-                    ax.scatter(lon_ud_hgt, lat_ud_hgt, marker='x', s=20, 
-                               c=colors[np.mod(j,len(colors))], zorder=3)
-                       
-                ax.set_xlim(lvxlim[0], lvxlim[1])
-                ax.set_ylim(lvylim[0], lvylim[1])
-
-                ax.set_xticks(np.arange(lvxlim[0], lvxlim[1], stepsize))
-                ax.set_yticks(np.arange(lvylim[0], lvylim[1], stepsize))
-                
-                ax.set_xticklabels(
-                    np.round(np.arange(lvxlim[0], lvxlim[1], stepsize), 1)
-                )
-                ax.set_yticklabels(
-                    np.round(np.arange(lvylim[0], lvylim[1], stepsize), 1)
-                )
-
-                ax.set_title('Altitude {} km'.format(alts[i]), 
-                             fontsize=title_font)
-                ax.set_xlabel('Longitude of grid cell center [degree_E]',
-                               fontsize=axes_font)
-                ax.set_ylabel('Latitude of grid cell center [degree_N]',
-                               fontsize=axes_font)
-                                                     
-            # Latitude Cross Section
-            ax = fig.add_subplot(2, 2, 2)
-                       
-            display.plot_latitude_slice(field, lon=lon_ud, lat=lat_ud,
-                                        title_flag=False,
-                                        colorbar_flag=False, edges=False,
-                                        vmin=vmin, vmax=vmax, mask_outside=False,
-                                        cmap=cmap,
-                                        ax=ax)      
-            # Plot system tilt
-            ax.plot([tx_low, tx_high], [low, high], '--b', linewidth=2.0)
-            
-            # Plot updraft tracks
-            x_draft = grid.x['data'][np.array(row_low['updrafts'][j])[:,2]]/1000
-            z_draft = grid.z['data'][z0:len(x_draft)+z0]/1000
-            ax.plot(x_draft, z_draft, '-', 
-                    color=colors[np.mod(j,len(colors))],
-                    linewidth=1.0)
-
-            ax.set_xlim(xlim[0], xlim[1])
-            ax.set_xticks(np.arange(xlim[0], xlim[1], 25))
-            ax.set_xticklabels(
-                np.round((np.arange(xlim[0], xlim[1], 25)), 1)
-            )
-
-            ax.set_title('Latitude Cross Section', fontsize=title_font)
-            ax.set_xlabel('East West Distance From Origin (km)' + '\n',
-                           fontsize=axes_font)
-            ax.set_ylabel('Distance Above Origin (km)', fontsize=axes_font)
-
-            # Longitude Cross Section
-            ax = fig.add_subplot(2, 2, 4)
-            display.plot_longitude_slice(field, lon=lon_ud, lat=lat_ud,
-                                         title_flag=False,
-                                         colorbar_flag=False, edges=False,
-                                         vmin=vmin, vmax=vmax, mask_outside=False,
-                                         cmap=cmap,
-                                         ax=ax)
-            ax.plot([ty_low, ty_high], [low, high], '--b', linewidth=2.0)
-            # Plot updraft tracks       
-            y_draft = grid.y['data'][np.array(row_low['updrafts'][j])[:,1]]/1000
-            z_draft = grid.z['data'][z0:len(y_draft)+z0]/1000
-            ax.plot(y_draft, z_draft, '-', 
-                    color=colors[np.mod(j,len(colors))], 
-                    linewidth=1.0)
-                    
-            ax.set_xlim(ylim[0], ylim[1])
-            ax.set_xticks(np.arange(ylim[0], ylim[1], 25))
-            ax.set_xticklabels(np.round(np.arange(ylim[0], ylim[1], 25), 1))
-
-            ax.set_title('Longitudinal Cross Section', fontsize=title_font)
-            ax.set_xlabel('North South Distance From Origin (km)',
-                           fontsize=axes_font)
-            ax.set_ylabel('Distance Above Origin (km)', fontsize=axes_font)
-        
-            plt.tight_layout()
-
-            # plot and save figure
-            fig.savefig(tmp_dir + '/frame_' + str(pframe).zfill(3) + '.png', 
-                        dpi=dpi)
-            plt.close()
-            pframe += 1
-            del display
-            gc.collect()
-        nframe += 1
-        del grid
-        gc.collect()
 
 
 def make_mp4_from_frames(tmp_dir, dest_dir, basename, fps):
