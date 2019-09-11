@@ -75,13 +75,17 @@ def get_filtered_frame_steiner(grid_obj, field, grid_size, min_size,
     masked.data[masked.data == masked.fill_value] = 0
     grid = copy.copy(masked.data)
     grid[grid==0] = np.nan
-      
-    sclass = steiner_conv_strat(
-            grid, grid_obj.x['data'], grid_obj.y['data'], 
-            grid_size[1], grid_size[2]
-    )
+    
+    try: 
+        sclass = steiner_conv_strat(
+                grid, grid_obj.x['data'], grid_obj.y['data'], 
+                grid_size[1], grid_size[2]
+        )
+    except:
+        sclass = np.ones(grid.shape)
+        print('\nSteiner Scheme Failed.')
+            
     sclass[sclass != 2] = 0
-        
     frame = ndimage.label(sclass)[0]
 
     return frame, sclass
