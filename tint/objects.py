@@ -184,7 +184,7 @@ def get_border_indices(obj_ind, b_ind):
 
 def identify_updrafts(raw3D, images, grid1, record, params, sclasses):
     """ Determine "updrafts" by looking for local maxima at each 
-    vertical level."""
+    vertical level. """
     
     [dz, dx, dy] = record.grid_size
     z0 = get_grid_alt(record.grid_size, params['LEVELS'][0,0])
