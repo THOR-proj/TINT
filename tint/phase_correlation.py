@@ -41,7 +41,7 @@ def get_ambient_flow(obj_extent, raw1, raw2, params, grid_size):
 
 def fft_flowvectors(im1, im2, global_shift=False):
     """ Estimates flow vectors in two images using cross covariance. """
-    if not global_shift and (np.max(im1) == 0 or np.max(im2) == 0):
+    if (not global_shift) and (np.max(im1) == 0 or np.max(im2) == 0):
         return None
 
     crosscov = fft_crosscov(im1, im2)
@@ -99,5 +99,6 @@ def get_global_shift(im1, im2, params):
     of raw DBZ values. """
     if im2 is None:
         return None
+
     shift = fft_flowvectors(im1, im2, global_shift=True)
     return shift

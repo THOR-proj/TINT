@@ -190,7 +190,8 @@ def extract_grid_data(grid_obj, field, grid_size, params):
     altitude. """
     
     masked = grid_obj.fields[field]['data']
-    masked.data[masked.data == masked.fill_value] = 0
+    # Note this won't work if fill_value is nan!
+    masked.data[(masked.data == masked.fill_value) | np.isnan(masked.data)] = 0
     gs_alt = params['GS_ALT']
     raw = masked.data[get_grid_alt(grid_size, gs_alt), :, :]
     
