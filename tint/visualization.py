@@ -139,7 +139,7 @@ def add_velocities(ax, frame_tracks_ind, grid, projparams, dt,
                     var_list=['shift', 'prop', 'shear', 'cl'], 
                     c_list=['m', 'green', 'red', 'orange'],
                     labels=['System Velocity', 'Propagation',
-                            'Low-Level Shear', 'Mean Cloud-Layer Winds']):
+                            '0-3 km Shear', 'Mean Cloud-Layer Winds']):
     lon = frame_tracks_ind['lon']
     lat = frame_tracks_ind['lat']    
     x = frame_tracks_ind['grid_x']
@@ -198,10 +198,11 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
     
     # Restrict tracks to time of grid
     time_ind = f_tobj.tracks.index.get_level_values('time')
+    time_ind = np.array(time_ind).astype('datetime64[m]')
     # Below perhaps not necessary!
     grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[m]')
-    scan_ind = f_tobj.tracks.index.get_level_values('scan')    
-    nframe = scan_ind[time_ind == grid_time][0]
+    scan_ind = f_tobj.tracks.index.get_level_values('scan')
+
     frame_tracks_low = tracks_low.loc[nframe].reset_index(level=['time'])
     frame_tracks_high = tracks_high.loc[nframe].reset_index(level=['time'])
     
@@ -375,7 +376,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         
         # Initialise figure
         fig_grid = plt.figure(figsize=(22, 9))
-        fig_grid.suptitle(str(grid_time), fontsize=16)
+        fig_grid.suptitle('MCS at ' + str(grid_time), fontsize=16)
                 
         print('Plotting scan at {}.'.format(grid_time), 
               end='\r', flush=True)
@@ -507,7 +508,8 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                  vmin=-8, vmax=64,
                  start_datetime=None, end_datetime=None,
                  cmap=None, alt_low=None, alt_high=None, 
-                 box_rad=.75, projection=None, center_ud=False, updraft_ind=0, **kwargs):
+                 box_rad=.75, projection=None, center_ud=False, 
+                 updraft_ind=None, **kwargs):
 
     if uid is None:
         print("Please specify 'uid' keyword argument.")
@@ -570,6 +572,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         # Determine whether to plot updrafts
         if center_ud:
             if updraft_ind is None:
+                # Plot all updrafts
                 cell_frame = cell.iloc[nframe]
                 ud_list = range(len(cell_frame['updrafts']))
             else:
@@ -604,13 +607,18 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                                     ax=ax, ellipses='strat', legend=False, 
                                     uid_ind=uid, center_ud=center_ud, updraft_ind=j,
                                     **kwargs)     
+            
+            if center_ud:
+                color=colors[np.mod(j,len(colors))]
+            else:
+                color=None
                                                      
             # Latitude Cross Section
             ax = fig.add_subplot(2, 2, 2)
             plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=fig, ax=ax,
                                 alt_low=alt_low, alt_high=alt_high,
                                 center_ud=center_ud, updraft_ind=j, direction='lat', 
-                                color=colors[np.mod(j,len(colors))], 
+                                color=color, 
                                 **kwargs)
                                 
             ax = fig.add_subplot(2, 2, 4)
@@ -618,7 +626,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                                 alt_low=alt_low, alt_high=alt_high,
                                 updraft_ind=j, direction='lon', 
                                 center_ud=center_ud,
-                                color=colors[np.mod(j,len(colors))], 
+                                color=color, 
                                 **kwargs)                   
                               
             plt.tight_layout()
@@ -629,8 +637,10 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             plt.close()
             pframe += 1
             gc.collect()
+            
         nframe += 1
-        del grid
+        del grid, ax, fig
+        plt.close()
         gc.collect()
 
 
