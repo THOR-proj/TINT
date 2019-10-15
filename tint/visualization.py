@@ -23,9 +23,12 @@ from matplotlib.patches import FancyArrow
 import matplotlib.lines as mlines
 import cartopy.crs as ccrs
 import copy
+import glob
+import xarray as xr
 
 import pyart
 from pyart.core.transforms import cartesian_to_geographic
+from pyart.core.transforms import geographic_to_cartesian
 
 from .grid_utils import get_grid_alt
 
@@ -99,8 +102,9 @@ def add_ellipses(ax, frame_tracks_ind, projparams):
     return ell
     
     
-def add_updrafts(ax, grid, frame_tracks_ind, hgt_ind, projparams, 
+def add_updrafts(ax, grid, frame_tracks_ind, hgt_ind, ud_ind, projparams, grid_size,
                  updraft_ind=None):
+    
     colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
     if updraft_ind is None:
         updraft_list = range(len(frame_tracks_ind['updrafts']))
@@ -109,8 +113,8 @@ def add_updrafts(ax, grid, frame_tracks_ind, hgt_ind, projparams,
     for j in updraft_list:
         # Plot location of updraft j at alts[i] if it exists          
         if len(np.array(frame_tracks_ind['updrafts'][j])) > hgt_ind:
-            x_ind = np.array(frame_tracks_ind['updrafts'][j])[hgt_ind,2]
-            y_ind = np.array(frame_tracks_ind['updrafts'][j])[hgt_ind,1]
+            x_ind = np.array(frame_tracks_ind['updrafts'][j])[ud_ind,2]
+            y_ind = np.array(frame_tracks_ind['updrafts'][j])[ud_ind,1]
             x_draft = grid.x['data'][x_ind]         
             y_draft = grid.y['data'][y_ind]
             lon_ud, lat_ud = cartesian_to_geographic(
@@ -165,6 +169,56 @@ def create_vel_leg_han(c_list=['m', 'green', 'red', 'orange'],
     return lgd_han
     
     
+def plot_wrf_winds(ax, grid, lon, lat, direction, projparams):
+    grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
+    # Load WRF winds corresponding to this grid
+    base = '/g/data/w40/esh563/lind04_2500_winds/'
+    fn = glob.glob(base + str(grid_time) + '.nc')
+    winds = xr.open_dataset(fn[0])
+    if direction=='lat':
+        winds = winds.sel(lat=lat, method='nearest')
+    else:
+        winds = winds.sel(lon=lon, method='nearest')
+    winds = winds.squeeze()
+    U = winds.U
+    V = winds.V
+    W = winds.W
+    
+    x = np.arange(-148750, 148750+2500, 2500)/1000
+    z = np.arange(0, 20500, 500)/1000
+    
+    if direction=='lat':
+        ax.quiver(x[::2], z[::2], U.values[::2,::2], W.values[::2,::2])
+    else:
+        ax.quiver(x[::2], z[::2], V.values[::2,::2], W.values[::2,::2])
+        
+        
+def plot_W_contour(ax, grid, alt):
+    grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
+    # Load WRF winds corresponding to this grid
+    base = '/g/data/w40/esh563/lind04_2500_winds/'
+    fn = glob.glob(base + str(grid_time) + '.nc')
+    winds = xr.open_dataset(fn[0])
+    winds = winds.sel(alt=alt, method='nearest')
+    winds = winds.squeeze()
+    W = winds.W
+
+    ax.contour(W.lon, W.lat, W.values, colors='pink', linewidths=1.5, 
+               levels=[-2, 2], linestyles=['--', '-'])
+               
+               
+def plot_horiz_winds(ax, grid, alt):
+    grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
+    # Load WRF winds corresponding to this grid
+    base = '/g/data/w40/esh563/lind04_2500_winds/'
+    fn = glob.glob(base + str(grid_time) + '.nc')
+    winds = xr.open_dataset(fn[0])
+    winds = winds.sel(alt=alt, method='nearest')
+    winds = winds.squeeze()
+    U = winds.U
+    V = winds.V
+    ax.quiver(U.lon[::4], U.lat[::4], U.values[::4,::4], V.values[::4,::4])
+    
 def init_fonts():
     # Initialise fonts
     rcParams.update({'font.family' : 'serif'})
@@ -179,8 +233,8 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                             projection=ccrs.PlateCarree(), 
                             scan_boundary=False,
                             tracers=False, ellipses='conv', legend=True,
-                            uid_ind=None, center_ud=False, updraft_ind=None, box_rad=.75,
-                            **kwargs):       
+                            uid_ind=None, center_ud=False, updraft_ind=None, 
+                            box_rad=.75, wrf_winds=False, **kwargs):       
                                                       
     # Initialise fig and ax if not passed as arguments
     if fig is None:
@@ -202,9 +256,17 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
     # Below perhaps not necessary!
     grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[m]')
     scan_ind = f_tobj.tracks.index.get_level_values('scan')
-
+    nframe = scan_ind[time_ind == grid_time][0]
     frame_tracks_low = tracks_low.loc[nframe].reset_index(level=['time'])
     frame_tracks_high = tracks_high.loc[nframe].reset_index(level=['time'])
+    display = pyart.graph.GridMapDisplay(grid)
+    projparams = grid.get_projparams()
+    grid_size = f_tobj.grid_size
+    transform = projection._as_mpl_transform(ax)
+    hgt_ind = get_grid_alt(grid_size, alt)
+    up_start_ind = f_tobj.params['UPDRAFT_START']
+    up_start_ind = get_grid_alt(grid_size, up_start_ind)
+    ud_hgt_ind = hgt_ind - up_start_ind
     
     # Plot tracers if necessary
     if tracers:
@@ -242,17 +304,13 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         [lon_ch, lat_ch] = [radar_lon, radar_lat]
         
     # Plot reflectivity and crosshairs
-    display = pyart.graph.GridMapDisplay(grid)
-    projparams = grid.get_projparams()
-    grid_size = f_tobj.grid_size
-    hgt_ind = get_grid_alt(grid_size, alt)
-    transform = projection._as_mpl_transform(ax)
+
     display.plot_crosshairs(lon=lon_ch, lat=lat_ch)
     display.plot_grid(f_tobj.field, level=hgt_ind,
                       vmin=vmin, vmax=vmax, mask_outside=False,
                       cmap=cmap, transform=projection, ax=ax, **kwargs)           
     # Set labels
-    ax.set_title('Altitude {} km'.format(alt))
+    ax.set_title('Altitude {} m'.format(alt))
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
     
@@ -290,25 +348,27 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         ax.plot([lon_low, lon_high], [lat_low, lat_high], 
                 '--b', linewidth=2.0,)
         lgd_strat = mlines.Line2D([], [], color='b', linestyle='--', 
-                                  linewidth=2.0, 
-                                  label='Stratiform Offset')
+                                  linewidth=2.0, label='Stratiform Offset')
         lgd_han.append(lgd_strat)
                                                  
         # Plot ellipses if required
         if ellipses=='conv':
-            add_ellipses(ax, frame_tracks_low.iloc[ind], 
-                         projparams)                    
+            add_ellipses(ax, frame_tracks_low.iloc[ind], projparams)                    
         if ellipses=='strat':
-            add_ellipses(ax, frame_tracks_high.iloc[ind], 
-                         projparams)                   
+            add_ellipses(ax, frame_tracks_high.iloc[ind], projparams)                   
                             
         # Plot reflectivity cells
         if updraft_ind is None:                         
             add_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
-                          hgt_ind, projparams)
+                          hgt_ind, ud_hgt_ind, projparams, grid_size)
         else: 
             add_updrafts(ax, grid, frame_tracks_low.iloc[ind], 
-                          hgt_ind, projparams, updraft_ind=updraft_ind)
+                         hgt_ind, ud_hgt_ind, projparams, grid_size, 
+                         updraft_ind=updraft_ind)
+        # Plot WRF winds if necessary              
+        if wrf_winds:
+            plot_W_contour(ax, grid, alt)
+            #plot_horiz_winds(ax, grid, alt)
                       
         if legend:
             plt.legend(handles=lgd_han)
@@ -403,7 +463,7 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
                         projection=ccrs.PlateCarree(), 
                         scan_boundary=False, center_ud=False,
                         updraft_ind=0, direction='lat', color='k',
-                        **kwargs):
+                        wrf_winds=False, **kwargs):
           
     field = f_tobj.field
     grid_size = f_tobj.grid_size
@@ -481,7 +541,7 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
             z_draft = grid.z['data'][z0:len(h_draft)+z0]/1000
         h_lim = ylim
         t_string = 'Longitude Cross Section'
-        x_label = 'North South Distance From Origin [km]'    
+        x_label = 'North South Distance From Origin [km]'
                                           
     # Plot system tilt
     ax.plot([h_low, h_high], [low, high], '--b', linewidth=2.0)
@@ -490,6 +550,10 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
     if center_ud:
         ax.plot(h_draft, z_draft, '-', color=color,
                 linewidth=1.0)
+                
+    # Plot wrf winds if necessary
+    if wrf_winds:
+        plot_wrf_winds(ax, grid, lon, lat, direction, projparams)
 
     ax.set_xlim(h_lim[0], h_lim[1])
     ax.set_xticks(np.arange(h_lim[0], h_lim[1], 25))
@@ -509,7 +573,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                  start_datetime=None, end_datetime=None,
                  cmap=None, alt_low=None, alt_high=None, 
                  box_rad=.75, projection=None, center_ud=False, 
-                 updraft_ind=None, **kwargs):
+                 updraft_ind=None, wrf_winds=False, **kwargs):
 
     if uid is None:
         print("Please specify 'uid' keyword argument.")
@@ -617,17 +681,16 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             ax = fig.add_subplot(2, 2, 2)
             plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=fig, ax=ax,
                                 alt_low=alt_low, alt_high=alt_high,
-                                center_ud=center_ud, updraft_ind=j, direction='lat', 
-                                color=color, 
-                                **kwargs)
+                                center_ud=center_ud, updraft_ind=j, 
+                                direction='lat', color=color, 
+                                wrf_winds=wrf_winds, **kwargs,)
                                 
             ax = fig.add_subplot(2, 2, 4)
             plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=fig, ax=ax,
                                 alt_low=alt_low, alt_high=alt_high,
                                 updraft_ind=j, direction='lon', 
-                                center_ud=center_ud,
-                                color=color, 
-                                **kwargs)                   
+                                center_ud=center_ud, color=color, 
+                                wrf_winds=wrf_winds, **kwargs)                   
                               
             plt.tight_layout()
 
