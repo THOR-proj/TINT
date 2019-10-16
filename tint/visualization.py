@@ -25,13 +25,13 @@ import cartopy.crs as ccrs
 import copy
 import glob
 import xarray as xr
+from scipy.interpolate import griddata
 
 import pyart
 from pyart.core.transforms import cartesian_to_geographic
 from pyart.core.transforms import geographic_to_cartesian
 
 from .grid_utils import get_grid_alt
-
 
 class Tracer(object):
     colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
@@ -169,55 +169,54 @@ def create_vel_leg_han(c_list=['m', 'green', 'red', 'orange'],
     return lgd_han
     
     
-def plot_wrf_winds(ax, grid, lon, lat, direction, projparams):
+def plot_wrf_winds(ax, grid, x_draft, y_draft, direction, 
+                   projparams, quiver=False):
     grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
     # Load WRF winds corresponding to this grid
-    base = '/g/data/w40/esh563/lind04_2500_winds/'
+    base = '/g/data/w40/esh563/lind04_ref/lind04_ref_'
     fn = glob.glob(base + str(grid_time) + '.nc')
     winds = xr.open_dataset(fn[0])
     if direction=='lat':
-        winds = winds.sel(lat=lat, method='nearest')
+        winds = winds.sel(y=y_draft, method='nearest')
     else:
-        winds = winds.sel(lon=lon, method='nearest')
+        winds = winds.sel(x=x_draft, method='nearest')
     winds = winds.squeeze()
     U = winds.U
     V = winds.V
     W = winds.W
     
-    x = np.arange(-148750, 148750+2500, 2500)/1000
+    x = np.arange(-145000, 145000+2500, 2500)/1000
     z = np.arange(0, 20500, 500)/1000
     
-    if direction=='lat':
-        ax.quiver(x[::2], z[::2], U.values[::2,::2], W.values[::2,::2])
+    if quiver:
+        if direction=='lat':
+            ax.quiver(x[::2], z[::2], U.values[::2,::2], W.values[::2,::2])
+        else:
+            ax.quiver(x[::2], z[::2], V.values[::2,::2], W.values[::2,::2])
     else:
-        ax.quiver(x[::2], z[::2], V.values[::2,::2], W.values[::2,::2])
+        ax.contour(x, z, W, colors='pink', linewidths=1.5, 
+                   levels=[-2, 2], linestyles=['--', '-'])
         
-        
-def plot_W_contour(ax, grid, alt):
+                      
+def plot_horiz_winds(ax, grid, alt, quiver=False):
     grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
     # Load WRF winds corresponding to this grid
-    base = '/g/data/w40/esh563/lind04_2500_winds/'
+    base = '/g/data/w40/esh563/lind04_ref/lind04_ref_'
     fn = glob.glob(base + str(grid_time) + '.nc')
     winds = xr.open_dataset(fn[0])
-    winds = winds.sel(alt=alt, method='nearest')
-    winds = winds.squeeze()
-    W = winds.W
-
-    ax.contour(W.lon, W.lat, W.values, colors='pink', linewidths=1.5, 
-               levels=[-2, 2], linestyles=['--', '-'])
-               
-               
-def plot_horiz_winds(ax, grid, alt):
-    grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
-    # Load WRF winds corresponding to this grid
-    base = '/g/data/w40/esh563/lind04_2500_winds/'
-    fn = glob.glob(base + str(grid_time) + '.nc')
-    winds = xr.open_dataset(fn[0])
-    winds = winds.sel(alt=alt, method='nearest')
+    winds = winds.sel(z=alt, method='nearest')
     winds = winds.squeeze()
     U = winds.U
     V = winds.V
-    ax.quiver(U.lon[::4], U.lat[::4], U.values[::4,::4], V.values[::4,::4])
+    
+    if quiver:
+        ax.quiver(U.lon[::4], U.lat[::4], 
+                  U.values[::4,::4], V.values[::4,::4])
+    else:
+        ax.contour(winds.longitude, winds.latitude, winds.W.values, 
+                   colors='pink', linewidths=1.5, 
+                   levels=[-2, 2], linestyles=['--', '-'])
+    
     
 def init_fonts():
     # Initialise fonts
@@ -339,8 +338,10 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         # Plot velocities 
         dt = f_tobj.record.interval.total_seconds()
         add_velocities(ax, frame_tracks_low.iloc[ind], grid, 
-                       projparams, dt)
-        lgd_han = create_vel_leg_han()
+                       projparams, dt,
+                       var_list=['shift'], c_list=['m'],
+                       labels=['System Velocity'])
+        lgd_han = create_vel_leg_han(c_list=['m'], labels=['System Velocity'])
         
         # Plot stratiform offset
         lon_high = frame_tracks_high['lon'].iloc[ind]
@@ -367,8 +368,11 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                          updraft_ind=updraft_ind)
         # Plot WRF winds if necessary              
         if wrf_winds:
-            plot_W_contour(ax, grid, alt)
-            #plot_horiz_winds(ax, grid, alt)
+            plot_horiz_winds(ax, grid, alt)
+            lgd_winds = mlines.Line2D([], [], color='pink', linestyle='-', 
+                                      linewidth=1.5,
+                                      label='2 m/s Vertical Velocity')
+            lgd_han.append(lgd_winds)
                       
         if legend:
             plt.legend(handles=lgd_han)
@@ -455,7 +459,78 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         plt.close()
         del grid, ax
         gc.collect()
+        
+        
+def get_line_cross_wrf():    
+    # Get reflectivity data
+    base = '/g/data/w40/esh563/lind04_ref/lind04_ref_'
+    test = xr.open_dataset(base + str(grid_time) + '.nc')
+    test['reflectivity'].isel(time=0).isel(z=1).squeeze().transpose()
+    # Get appropriate transformation angle
+    angle = f_tobj.system_tracks.xs(np.datetime64('2006-02-09T10:00'), level='time').orientation.values[0]
+    # Get transform formula (should be basic rotation matrix right?)             
+        
                 
+def get_line_grid(f_tobj, grid, uid, nframe):
+    # Get raw grid data
+    raw = grid.fields['reflectivity']['data'].data
+    # Get appropriate tracks data
+    cell = f_tobj.tracks.xs(uid, level='uid')
+    cell = cell.reset_index(level=['time'])
+    cell_low = cell.xs(0, level='level')
+    cell_low = cell_low.iloc[nframe]
+    # Get appropriate transformation angle
+    angle = cell_low.orientation.values[0]
+    # Get rotation matrix
+    A = np.array([[np.cos(np.deg2rad(angle)), -np.sin(np.deg2rad(angle))], 
+                  [np.sin(np.deg2rad(angle)), np.cos(np.deg2rad(angle))]])              
+
+    x = grid.x['data'].data
+    y = grid.y['data'].data
+    z = grid.z['data'].data
+
+    xp = np.arange(-210000,210000+2500,2500)
+    yp = np.arange(-210000,210000+2500,2500)
+
+    Xp, Yp = np.mgrid[-210000:210000+2500:2500, -210000:210000+2500:2500]
+
+    new_grid = np.ones((len(z), len(yp), len(xp))) * np.nan
+
+    points_old = []
+    for j in range(len(y)):
+        for i in range(len(x)):
+            points_old.append(np.array([y[j], x[i]]))
+
+    points_new = []
+    for i in range(len(points_old)):
+        points_new.append(np.transpose(A.dot(np.transpose(points_old[i]))))
+
+    for k in range(len(z)):
+        values = []
+        for j in range(len(y)):
+            for i in range(len(x)):
+                values.append(raw[k,j,i])
+
+        new_grid[k,:,:] = griddata(points_new, values, (Xp, Yp))
+            
+    return new_grid, A
+                
+                
+def plot_obj_line_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
+                        vmin=-8, vmax=64, alt_low=None, alt_high=None,
+                        cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
+                        projection=ccrs.PlateCarree(), 
+                        scan_boundary=False, center_ud=False,
+                        updraft_ind=0, direction='lat', color='k',
+                        wrf_winds=False, **kwargs):
+                        
+                        
+    # Create new grid (seperate function) x should be across line, y along line
+    # Get formula for converting old coordinates to new coordinates. Easier in Cartesian.
+
+    # Take new grid and plot either across line or along line vertical cross sections
+                        
+                                        
                 
 def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
                         vmin=-8, vmax=64, alt_low=None, alt_high=None,
@@ -516,6 +591,8 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
     else:
         lon = cell_low['lon']
         lat = cell_low['lat']
+        x_draft = cell_low['grid_x']
+        y_draft = cell_low['grid_y']
         
     if direction == 'lat':
         display.plot_latitude_slice(field, lon=lon, lat=lat,
@@ -553,7 +630,7 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
                 
     # Plot wrf winds if necessary
     if wrf_winds:
-        plot_wrf_winds(ax, grid, lon, lat, direction, projparams)
+        plot_wrf_winds(ax, grid, x_draft, y_draft, direction, projparams)
 
     ax.set_xlim(h_lim[0], h_lim[1])
     ax.set_xticks(np.arange(h_lim[0], h_lim[1], 25))
