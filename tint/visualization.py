@@ -32,6 +32,7 @@ from pyart.core.transforms import cartesian_to_geographic
 from pyart.core.transforms import geographic_to_cartesian
 
 from .grid_utils import get_grid_alt
+from .visualization_aux import *
 
 class Tracer(object):
     colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
@@ -74,158 +75,9 @@ class Tracer(object):
             if (self.persist
                 or (uid in self.current.reset_index(level=['time']).index)
                 or (uid in mergers)):
-                ax.plot(tracer.lon, tracer.lat, self.cell_color[uid])
-                               
-                
-def add_ellipses(ax, frame_tracks_ind, projparams):
-
-    centroid = frame_tracks_ind[['grid_x', 'grid_y']].values
-    orientation = frame_tracks_ind[['orientation']].values[0]
-    major_axis = frame_tracks_ind[['semi_major']].values[0]
-    minor_axis = frame_tracks_ind[['semi_minor']].values[0]
-                                
-    # Convert axes into lat/lon units by approximating 1 degree lat or
-    # lon = 110 km.
-    major_axis = major_axis*2.5/110
-    minor_axis = minor_axis*2.5/110
-    
-    lon_e, lat_e = cartesian_to_geographic(
-        centroid[0], centroid[1], projparams
-    )
-
-    ell = Ellipse(tuple([lon_e, lat_e]), major_axis, minor_axis, orientation,
-                  linewidth=1.5, fill=False)
-
-    ell.set_clip_box(ax.bbox)
-    ell.set_alpha(0.4)
-    ax.add_artist(ell)
-    return ell
-    
-    
-def add_updrafts(ax, grid, frame_tracks_ind, hgt_ind, ud_ind, projparams, grid_size,
-                 updraft_ind=None):
-    
-    colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
-    if updraft_ind is None:
-        updraft_list = range(len(frame_tracks_ind['updrafts']))
-    else:
-        updraft_list = [updraft_ind]
-    for j in updraft_list:
-        # Plot location of updraft j at alts[i] if it exists          
-        if len(np.array(frame_tracks_ind['updrafts'][j])) > hgt_ind:
-            x_ind = np.array(frame_tracks_ind['updrafts'][j])[ud_ind,2]
-            y_ind = np.array(frame_tracks_ind['updrafts'][j])[ud_ind,1]
-            x_draft = grid.x['data'][x_ind]         
-            y_draft = grid.y['data'][y_ind]
-            lon_ud, lat_ud = cartesian_to_geographic(
-                x_draft, y_draft, projparams
-            )
-            ax.scatter(lon_ud, lat_ud, marker='x', s=25, 
-                       c=colors[np.mod(j,len(colors))], zorder=3)
-                       
-    return ax
-                       
-                       
-def add_boundary(ax, tobj, grid, projparams):
-    b_list = list(tobj.params['BOUNDARY_GRID_CELLS'])
-    boundary = np.zeros((117,117))*np.nan
-    for i in range(len(b_list)):
-        boundary[b_list[i][0], b_list[i][1]]=1
-    x_bounds = grid.x['data'][[0,-1]]
-    y_bounds = grid.y['data'][[0,-1]]      
-    lon_b, lat_b = cartesian_to_geographic(x_bounds, y_bounds, projparams)
-    ax.imshow(boundary, extent=(lon_b[0], lon_b[1], lat_b[0], lat_b[1]))
-    
-    return ax
-    
-    
-def add_velocities(ax, frame_tracks_ind, grid, projparams, dt, 
-                    var_list=['shift', 'prop', 'shear', 'cl'], 
-                    c_list=['m', 'green', 'red', 'orange'],
-                    labels=['System Velocity', 'Propagation',
-                            '0-3 km Shear', 'Mean Cloud-Layer Winds']):
-    lon = frame_tracks_ind['lon']
-    lat = frame_tracks_ind['lat']    
-    x = frame_tracks_ind['grid_x']
-    y = frame_tracks_ind['grid_y']
-    
-    for i in range(len(var_list)):
-        u = frame_tracks_ind['u_' + var_list[i]]
-        v = frame_tracks_ind['v_' + var_list[i]]     
-        [new_lon, new_lat] = cartesian_to_geographic(x + 4*u*dt, y + 4*v*dt, 
-                                                     projparams)
-        ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat, 
-                 color=c_list[i], head_width=0.024, head_length=0.040)      
-
-    
-def create_vel_leg_han(c_list=['m', 'green', 'red', 'orange'],
-                      labels=['System Velocity', 'Propagation',
-                      'Low-Level Shear', 'Mean Cloud-Layer Winds']):
-    lgd_han = []
-    for i in range(len(c_list)):
-        lgd_line = mlines.Line2D([], [], color=c_list[i], linestyle='-', 
-                                 label=labels[i])
-        lgd_han.append(lgd_line)
-    return lgd_han
-    
-    
-def plot_wrf_winds(ax, grid, x_draft, y_draft, direction, 
-                   projparams, quiver=False):
-    grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
-    # Load WRF winds corresponding to this grid
-    base = '/g/data/w40/esh563/lind04_ref/lind04_ref_'
-    fn = glob.glob(base + str(grid_time) + '.nc')
-    winds = xr.open_dataset(fn[0])
-    if direction=='lat':
-        winds = winds.sel(y=y_draft, method='nearest')
-    else:
-        winds = winds.sel(x=x_draft, method='nearest')
-    winds = winds.squeeze()
-    U = winds.U
-    V = winds.V
-    W = winds.W
-    
-    x = np.arange(-145000, 145000+2500, 2500)/1000
-    z = np.arange(0, 20500, 500)/1000
-    
-    if quiver:
-        if direction=='lat':
-            ax.quiver(x[::2], z[::2], U.values[::2,::2], W.values[::2,::2])
-        else:
-            ax.quiver(x[::2], z[::2], V.values[::2,::2], W.values[::2,::2])
-    else:
-        ax.contour(x, z, W, colors='pink', linewidths=1.5, 
-                   levels=[-2, 2], linestyles=['--', '-'])
-        
+                ax.plot(tracer.lon, tracer.lat, self.cell_color[uid])                             
                       
-def plot_horiz_winds(ax, grid, alt, quiver=False):
-    grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
-    # Load WRF winds corresponding to this grid
-    base = '/g/data/w40/esh563/lind04_ref/lind04_ref_'
-    fn = glob.glob(base + str(grid_time) + '.nc')
-    winds = xr.open_dataset(fn[0])
-    winds = winds.sel(z=alt, method='nearest')
-    winds = winds.squeeze()
-    U = winds.U
-    V = winds.V
-    
-    if quiver:
-        ax.quiver(U.lon[::4], U.lat[::4], 
-                  U.values[::4,::4], V.values[::4,::4])
-    else:
-        ax.contour(winds.longitude, winds.latitude, winds.W.values, 
-                   colors='pink', linewidths=1.5, 
-                   levels=[-2, 2], linestyles=['--', '-'])
-    
-    
-def init_fonts():
-    # Initialise fonts
-    rcParams.update({'font.family' : 'serif'})
-    rcParams.update({'font.serif': 'Liberation Serif'})
-    rcParams.update({'mathtext.fontset' : 'dejavuserif'}) 
-    rcParams.update({'font.size': 12})        
-        
-
+                      
 def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                             cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
                             fig=None, ax=None, 
@@ -233,7 +85,8 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                             scan_boundary=False,
                             tracers=False, ellipses='conv', legend=True,
                             uid_ind=None, center_ud=False, updraft_ind=None, 
-                            box_rad=.75, wrf_winds=False, **kwargs):       
+                            box_rad=.75, wrf_winds=False, line_coords=False,
+                            angle=None, **kwargs):       
                                                       
     # Initialise fig and ax if not passed as arguments
     if fig is None:
@@ -247,7 +100,7 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
     # Initialise dataframes for convective and stratiform regions
     n_lvl = f_tobj.params['LEVELS'].shape[0]
     tracks_low = f_tobj.tracks.xs(0, level='level')
-    tracks_high = f_tobj.tracks.xs(n_lvl-1, level='level')  
+    tracks_high = f_tobj.tracks.xs(n_lvl-1, level='level') 
     
     # Restrict tracks to time of grid
     time_ind = f_tobj.tracks.index.get_level_values('time')
@@ -287,7 +140,7 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         
         if center_ud and (updraft_ind is not None):
             ud = frame_tracks_low.iloc[0]['updrafts'][updraft_ind]
-            x_ud = grid.x['data'][np.array(ud)[0,2]]        
+            x_ud = grid.x['data'][np.array(ud)[0,2]]
             y_ud = grid.y['data'][np.array(ud)[0,1]]
             projparams = grid.get_projparams()
             lon_ud, lat_ud = cartesian_to_geographic(x_ud, y_ud, projparams)
@@ -303,8 +156,28 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         [lon_ch, lat_ch] = [radar_lon, radar_lat]
         
     # Plot reflectivity and crosshairs
-
-    display.plot_crosshairs(lon=lon_ch, lat=lat_ch)
+    if line_coords:
+        # Plot along line cross hair
+        m = np.tan(np.deg2rad(angle))
+        c = lat_ch - m*lon_ch
+        lat_ch_0 = m*kwargs['lon_lines'][0] + c
+        lat_ch_1 = m*kwargs['lon_lines'][-1] + c
+        ax.plot([kwargs['lon_lines'][0], kwargs['lon_lines'][-1]], 
+                [lat_ch_0, lat_ch_1], 
+                '--r', linewidth=2.0)
+        
+        # Plot across line cross hair
+        m = - 1/m
+        c = lat_ch - m*lon_ch
+        lat_ch_0 = m*kwargs['lon_lines'][0] + c
+        lat_ch_1 = m*kwargs['lon_lines'][-1] + c
+        ax.plot([kwargs['lon_lines'][0], kwargs['lon_lines'][-1]], 
+                [lat_ch_0, lat_ch_1], 
+                '--r', linewidth=2.0)
+    else:
+        display.plot_crosshairs(lon=lon_ch, lat=lat_ch)
+    
+    # Plot grid
     display.plot_grid(f_tobj.field, level=hgt_ind,
                       vmin=vmin, vmax=vmax, mask_outside=False,
                       cmap=cmap, transform=projection, ax=ax, **kwargs)           
@@ -368,7 +241,7 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                          updraft_ind=updraft_ind)
         # Plot WRF winds if necessary              
         if wrf_winds:
-            plot_horiz_winds(ax, grid, alt)
+            plot_horiz_winds(ax, grid, alt, mp=mp)
             lgd_winds = mlines.Line2D([], [], color='pink', linestyle='-', 
                                       linewidth=1.5,
                                       label='2 m/s Vertical Velocity')
@@ -388,7 +261,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
                 alt_low=None, alt_high=None, isolated_only=False,
                 tracers=False, persist=False, projection=ccrs.PlateCarree(), 
-                scan_boundary=False, box_rad=.75, **kwargs):
+                scan_boundary=False, box_rad=.75, line_coords=False, **kwargs):
                               
     # Create a copy of tobj for use by this function
     f_tobj = copy.deepcopy(tobj)
@@ -448,10 +321,12 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         # Plot frame
         ax = fig_grid.add_subplot(1, 2, 1, projection=projection)
         plot_tracks_horiz_cross(f_tobj, grid, alt_low, fig=fig_grid, 
-                                ax=ax, ellipses='conv', legend=True, **kwargs)
+                                ax=ax, ellipses='conv', legend=True, 
+                                line_coords=line_coords, **kwargs)
         ax = fig_grid.add_subplot(1, 2, 2, projection=projection)
         plot_tracks_horiz_cross(f_tobj, grid, alt_high, ellipses='strat', 
-                                legend=True, fig=fig_grid, ax=ax, **kwargs)
+                                legend=True, fig=fig_grid, ax=ax, 
+                                line_coords=line_coords, **kwargs)
                           
         # Save frame and cleanup
         plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
@@ -459,77 +334,167 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         plt.close()
         del grid, ax
         gc.collect()
-        
-        
-def get_line_cross_wrf():    
-    # Get reflectivity data
-    base = '/g/data/w40/esh563/lind04_ref/lind04_ref_'
-    test = xr.open_dataset(base + str(grid_time) + '.nc')
-    test['reflectivity'].isel(time=0).isel(z=1).squeeze().transpose()
-    # Get appropriate transformation angle
-    angle = f_tobj.system_tracks.xs(np.datetime64('2006-02-09T10:00'), level='time').orientation.values[0]
-    # Get transform formula (should be basic rotation matrix right?)             
-        
+                        
                 
-def get_line_grid(f_tobj, grid, uid, nframe):
-    # Get raw grid data
-    raw = grid.fields['reflectivity']['data'].data
-    # Get appropriate tracks data
-    cell = f_tobj.tracks.xs(uid, level='uid')
-    cell = cell.reset_index(level=['time'])
-    cell_low = cell.xs(0, level='level')
-    cell_low = cell_low.iloc[nframe]
-    # Get appropriate transformation angle
-    angle = cell_low.orientation.values[0]
-    # Get rotation matrix
-    A = np.array([[np.cos(np.deg2rad(angle)), -np.sin(np.deg2rad(angle))], 
-                  [np.sin(np.deg2rad(angle)), np.cos(np.deg2rad(angle))]])              
-
-    x = grid.x['data'].data
-    y = grid.y['data'].data
-    z = grid.z['data'].data
-
-    xp = np.arange(-210000,210000+2500,2500)
-    yp = np.arange(-210000,210000+2500,2500)
-
-    Xp, Yp = np.mgrid[-210000:210000+2500:2500, -210000:210000+2500:2500]
-
-    new_grid = np.ones((len(z), len(yp), len(xp))) * np.nan
-
-    points_old = []
-    for j in range(len(y)):
-        for i in range(len(x)):
-            points_old.append(np.array([y[j], x[i]]))
-
-    points_new = []
-    for i in range(len(points_old)):
-        points_new.append(np.transpose(A.dot(np.transpose(points_old[i]))))
-
-    for k in range(len(z)):
-        values = []
-        for j in range(len(y)):
-            for i in range(len(x)):
-                values.append(raw[k,j,i])
-
-        new_grid[k,:,:] = griddata(points_new, values, (Xp, Yp))
-            
-    return new_grid, A
-                
-                
-def plot_obj_line_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
+def plot_obj_line_cross(f_tobj, grid, new_grid, A, uid, nframe, semi_major,
+                        new_wrf=None,
+                        fig=None, ax=None,
                         vmin=-8, vmax=64, alt_low=None, alt_high=None,
                         cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
                         projection=ccrs.PlateCarree(), 
                         scan_boundary=False, center_ud=False,
-                        updraft_ind=0, direction='lat', color='k',
-                        wrf_winds=False, **kwargs):
+                        updraft_ind=0, direction='cross', color='k',
+                        wrf_winds=False, average_along_line=False, 
+                        quiver=False, **kwargs):
                         
-                        
-    # Create new grid (seperate function) x should be across line, y along line
-    # Get formula for converting old coordinates to new coordinates. Easier in Cartesian.
+    field = f_tobj.field
+    grid_size = f_tobj.grid_size
+    projparams = grid.get_projparams()
+    display = pyart.graph.GridMapDisplay(grid)
 
-    # Take new grid and plot either across line or along line vertical cross sections
-                        
+    if alt_low is None:
+        alt_low = f_tobj.params['GS_ALT']
+    if alt_high is None:
+        alt_high = f_tobj.params['GS_ALT']
+
+    # Calculate mean height of first and last vertical TINT levels
+    low = f_tobj.params['LEVELS'][0].mean()/1000
+    high = f_tobj.params['LEVELS'][-1].mean()/1000
+        
+    # Restrict to uid
+    cell = f_tobj.tracks.xs(uid, level='uid')
+    cell = cell.reset_index(level=['time'])
+        
+    # Get low and high data
+    n_lvl = f_tobj.params['LEVELS'].shape[0]
+    cell_low = cell.xs(0, level='level')
+    cell_high = cell.xs(n_lvl-1, level='level')
+    
+    # Restrict to specific time
+    cell_low = cell_low.iloc[nframe]
+    cell_high = cell_high.iloc[nframe]
+    
+    # Convert coordinates to those of new grid
+    old_x_low = cell_low['grid_x']
+    old_y_low = cell_low['grid_y']
+    old_low = np.array([old_x_low, old_y_low])
+    new_low = np.transpose(A).dot(old_low)
+    [new_x_low, new_y_low] = new_low.tolist()
+    
+    # Convert coordinates to those of new grid
+    old_x_high = cell_high['grid_x']
+    old_y_high = cell_high['grid_y']
+    old_high = np.array([old_x_high, old_y_high])
+    new_high = np.transpose(A).dot(old_high)
+    [new_x_high, new_y_high] = new_high.tolist()
+    
+    tx_met = new_x_low
+    ty_met = new_y_low
+    tx_low = new_x_low/1000
+    tx_high = new_x_high/1000
+    ty_low = new_y_low/1000
+    ty_high = new_y_high/1000
+    
+    xlim = (tx_met + np.array([-75000, 75000]))/1000
+    ylim = (ty_met + np.array([-75000, 75000]))/1000 
+    
+    # Get center location
+    if center_ud:
+        ud = np.array(cell_low['updrafts'][updraft_ind])
+        x_draft_old = grid.x['data'][ud[:,2]].data
+        y_draft_old = grid.y['data'][ud[:,1]].data
+        
+        drafts_old = np.array([x_draft_old, y_draft_old])
+        drafts_new = np.array([np.transpose(A).dot(drafts_old[:,i])
+                              for i in range(drafts_old.shape[1])])       
+
+        x_draft = grid.x['data'][ud[0,2]]
+        y_draft = grid.y['data'][ud[0,1]]
+        ud_old = np.array([x_draft, y_draft])
+        
+        # Get new coordinates
+        ud_new = np.transpose(A).dot(ud_old)
+        [x_draft_new, y_draft_new] = ud_new.tolist()
+        
+        z0 = get_grid_alt(f_tobj.record.grid_size, 
+                          f_tobj.params['UPDRAFT_START'])
+    else:
+        x_draft_new = new_x_low
+        y_draft_new = new_y_low        
+        
+    if direction == 'parallel':
+         
+        new_grid = new_grid.sel(y=y_draft_new, method='nearest').squeeze()
+        
+        extent = [new_grid.x[0]/1000, new_grid.x[-1]/1000, 
+                  new_grid.z[0]/1000, new_grid.z[-1]/1000] 
+        ax.imshow(new_grid.reflectivity, vmin=vmin, vmax=vmax, cmap=cmap, 
+                  interpolation='none', origin='lower',
+                  extent=extent, aspect='auto')
+
+        [h_low, h_high] = [tx_low, tx_high]
+        if center_ud:
+            h_draft = drafts_new[:,0]/1000
+            z_draft = grid.z['data'][z0:len(h_draft)+z0]/1000
+
+        h_lim = xlim
+        t_string = 'Along Line Cross Section'
+        x_label = 'Along Line Distance From Origin [km]' 
+                                                              
+    
+    elif direction == 'cross':
+        
+        if average_along_line:
+            cond = ((new_grid.x <= x_draft_new + semi_major*2500/2) 
+                    & (new_grid.x >= x_draft_new - semi_major*2500/2))
+            new_grid = new_grid.where(cond).dropna(dim='x', how='all')
+            new_grid = new_grid.mean(dim='x')
+        else:
+            new_grid = new_grid.sel(x=x_draft_new, method='nearest').squeeze()
+        
+        extent = [new_grid.y[0]/1000, new_grid.y[-1]/1000, 
+                  new_grid.z[0]/1000, new_grid.z[-1]/1000] 
+        ax.imshow(new_grid.reflectivity, vmin=vmin, vmax=vmax, cmap=cmap, 
+                  interpolation='none', origin='lower',
+                  extent=extent, aspect='auto')
+        
+        [h_low, h_high] = [ty_low, ty_high]
+        if center_ud:
+            h_draft = drafts_new[:,1]/1000
+            z_draft = grid.z['data'][z0:len(h_draft)+z0]/1000
+        
+        h_lim = ylim
+        if average_along_line:
+            t_string = 'Line Perpendicular Mean Cross Section'
+        else:
+            t_string = 'Line Perpendicular Cross Section'
+        x_label = 'Line Perpendicular Distance From Origin [km]'
+                                          
+    # Plot system tilt
+    ax.plot([h_low, h_high], [low, high], '--b', linewidth=2.0)
+    
+    # Plot updraft tracks
+    if center_ud:
+        ax.plot(h_draft, z_draft, '-', color=color,
+                linewidth=1.0)
+                
+    # Plot wrf winds if necessary
+    if wrf_winds:
+        plot_vert_winds_line(ax, new_wrf, x_draft_new, y_draft_new, direction, 
+                             quiver=quiver, semi_major=semi_major,
+                             average_along_line=average_along_line)
+
+    ax.set_xlim(h_lim[0], h_lim[1])
+    ax.set_xticks(np.arange(h_lim[0], h_lim[1], 25))
+    ax.set_xticklabels(
+        np.round((np.arange(h_lim[0], h_lim[1], 25)), 1)
+    )
+
+    ax.set_title(t_string)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel('Distance Above Origin [km]')
+    
+    del display                       
                                         
                 
 def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
@@ -538,7 +503,7 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
                         projection=ccrs.PlateCarree(), 
                         scan_boundary=False, center_ud=False,
                         updraft_ind=0, direction='lat', color='k',
-                        wrf_winds=False, **kwargs):
+                        wrf_winds=False, quiver=False, **kwargs):
           
     field = f_tobj.field
     grid_size = f_tobj.grid_size
@@ -630,7 +595,7 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
                 
     # Plot wrf winds if necessary
     if wrf_winds:
-        plot_wrf_winds(ax, grid, x_draft, y_draft, direction, projparams)
+        plot_wrf_winds(ax, grid, x_draft, y_draft, direction, quiver=quiver, mp=mp)
 
     ax.set_xlim(h_lim[0], h_lim[1])
     ax.set_xticks(np.arange(h_lim[0], h_lim[1], 25))
@@ -646,11 +611,12 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
                 
         
 def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100, 
-                 vmin=-8, vmax=64,
-                 start_datetime=None, end_datetime=None,
+                 vmin=-8, vmax=64, start_datetime=None, end_datetime=None,
                  cmap=None, alt_low=None, alt_high=None, 
                  box_rad=.75, projection=None, center_ud=False, 
-                 updraft_ind=None, wrf_winds=False, **kwargs):
+                 updraft_ind=None, wrf_winds=False, line_coords = False,
+                 average_along_line=False, quiver=False,
+                 **kwargs):
 
     if uid is None:
         print("Please specify 'uid' keyword argument.")
@@ -666,7 +632,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
     if projection is None:
         projection = ccrs.PlateCarree()
    
-    colors = ['m', 'r', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
+    colors = ['m', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
 
     cell = f_tobj.tracks.xs(uid, level='uid').xs(0, level='level')
     cell = cell.reset_index(level=['time'])
@@ -710,6 +676,13 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
         # Don't plot axis
         plt.axis('off')
         
+        if line_coords:
+            new_grid, A, angle, semi_major = get_line_grid(f_tobj, grid, uid, nframe)
+            if wrf_winds:
+                new_wrf = get_line_grid_wrf(grid_time, angle, mp=mp)
+            else:
+                new_wrf = None
+        
         # Determine whether to plot updrafts
         if center_ud:
             if updraft_ind is None:
@@ -740,6 +713,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             plot_tracks_horiz_cross(f_tobj, grid, alt_low, fig=fig, 
                                     ax=ax, ellipses='conv', legend=False, 
                                     uid_ind=uid, center_ud=center_ud, updraft_ind=j,
+                                    angle=angle, line_coords=line_coords, wrf_winds=wrf_winds,
                                     **kwargs)
                                     
             # Vertical cross section at alt_high
@@ -747,6 +721,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             plot_tracks_horiz_cross(f_tobj, grid, alt_high, fig=fig, 
                                     ax=ax, ellipses='strat', legend=False, 
                                     uid_ind=uid, center_ud=center_ud, updraft_ind=j,
+                                    angle=angle, line_coords=line_coords, wrf_winds=wrf_winds,
                                     **kwargs)     
             
             if center_ud:
@@ -754,20 +729,37 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             else:
                 color=None
                                                      
-            # Latitude Cross Section
+            # Plot latitude (or cross line) cross section 
             ax = fig.add_subplot(2, 2, 2)
-            plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=fig, ax=ax,
-                                alt_low=alt_low, alt_high=alt_high,
-                                center_ud=center_ud, updraft_ind=j, 
-                                direction='lat', color=color, 
-                                wrf_winds=wrf_winds, **kwargs,)
+            if line_coords:
+                plot_obj_line_cross(f_tobj, grid, new_grid, A, uid, nframe, semi_major,
+                    fig=fig, ax=ax, alt_low=alt_low, alt_high=alt_high,
+                    center_ud=center_ud, updraft_ind=j, direction='cross', 
+                    color=color, wrf_winds=wrf_winds, new_wrf=new_wrf, 
+                    average_along_line=average_along_line, quiver=quiver,
+                    **kwargs)
+            else:
+                plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=fig, ax=ax,
+                                    alt_low=alt_low, alt_high=alt_high,
+                                    center_ud=center_ud, updraft_ind=j, 
+                                    direction='lat', color=color, 
+                                    wrf_winds=wrf_winds, **kwargs)
                                 
+            # Plot longitude (or line parallel) cross section
             ax = fig.add_subplot(2, 2, 4)
-            plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=fig, ax=ax,
-                                alt_low=alt_low, alt_high=alt_high,
-                                updraft_ind=j, direction='lon', 
-                                center_ud=center_ud, color=color, 
-                                wrf_winds=wrf_winds, **kwargs)                   
+            if line_coords:
+                plot_obj_line_cross(f_tobj, grid, new_grid, A, uid, nframe, semi_major,
+                    fig=fig, ax=ax, alt_low=alt_low, alt_high=alt_high,
+                    center_ud=center_ud, updraft_ind=j, direction='parallel', 
+                    color=color, wrf_winds=wrf_winds, new_wrf=new_wrf, 
+                    average_along_line=average_along_line, quiver=quiver, 
+                    **kwargs)
+            else:
+                plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=fig, ax=ax,
+                                    alt_low=alt_low, alt_high=alt_high,
+                                    updraft_ind=j, direction='lon', 
+                                    center_ud=center_ud, color=color, 
+                                    wrf_winds=wrf_winds, **kwargs)                   
                               
             plt.tight_layout()
 
