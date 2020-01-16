@@ -86,7 +86,7 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                             tracers=False, ellipses='conv', legend=True,
                             uid_ind=None, center_ud=False, updraft_ind=None, 
                             box_rad=.75, wrf_winds=False, line_coords=False,
-                            angle=None, **kwargs):       
+                            angle=None, mp='lin', **kwargs):       
                                                       
     # Initialise fig and ax if not passed as arguments
     if fig is None:
@@ -203,10 +203,18 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         lat_low = frame_tracks_low['lat'].iloc[ind]
         mergers = list(frame_tracks_low['mergers'].iloc[ind])
         mergers_str = ", ".join(mergers)
+        
         ax.text(lon_low-.05, lat_low+0.05, uid, 
                 transform=projection, fontsize=12)
         ax.text(lon_low+.05, lat_low-0.05, mergers_str, 
-                transform=projection, fontsize=10)
+                transform=projection, fontsize=9)
+                
+        split_label = False
+        if split_label:
+            parent = list(frame_tracks_low['parent'].iloc[ind])
+            parent_str = ", ".join(parent)
+            ax.text(lon_low+.05, lat_low+0.1, parent_str, 
+                    transform=projection, fontsize=9)
         
         # Plot velocities 
         dt = f_tobj.record.interval.total_seconds()
@@ -261,7 +269,8 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
                 alt_low=None, alt_high=None, isolated_only=False,
                 tracers=False, persist=False, projection=ccrs.PlateCarree(), 
-                scan_boundary=False, box_rad=.75, line_coords=False, **kwargs):
+                scan_boundary=False, box_rad=.75, line_coords=False, 
+                **kwargs):
                               
     # Create a copy of tobj for use by this function
     f_tobj = copy.deepcopy(tobj)
@@ -345,7 +354,7 @@ def plot_obj_line_cross(f_tobj, grid, new_grid, A, uid, nframe, semi_major,
                         scan_boundary=False, center_ud=False,
                         updraft_ind=0, direction='cross', color='k',
                         wrf_winds=False, average_along_line=False, 
-                        quiver=False, **kwargs):
+                        quiver=False, mp='lin', **kwargs):
                         
     field = f_tobj.field
     grid_size = f_tobj.grid_size
@@ -503,7 +512,7 @@ def plot_obj_vert_cross(f_tobj, grid, uid, nframe, fig=None, ax=None,
                         projection=ccrs.PlateCarree(), 
                         scan_boundary=False, center_ud=False,
                         updraft_ind=0, direction='lat', color='k',
-                        wrf_winds=False, quiver=False, **kwargs):
+                        wrf_winds=False, quiver=False, mp='lin', **kwargs):
           
     field = f_tobj.field
     grid_size = f_tobj.grid_size
@@ -615,7 +624,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                  cmap=None, alt_low=None, alt_high=None, 
                  box_rad=.75, projection=None, center_ud=False, 
                  updraft_ind=None, wrf_winds=False, line_coords = False,
-                 average_along_line=False, quiver=False,
+                 average_along_line=False, quiver=False, mp='lin',
                  **kwargs):
 
     if uid is None:
@@ -713,7 +722,8 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             plot_tracks_horiz_cross(f_tobj, grid, alt_low, fig=fig, 
                                     ax=ax, ellipses='conv', legend=False, 
                                     uid_ind=uid, center_ud=center_ud, updraft_ind=j,
-                                    angle=angle, line_coords=line_coords, wrf_winds=wrf_winds,
+                                    angle=angle, line_coords=line_coords, 
+                                    wrf_winds=wrf_winds, mp=mp,
                                     **kwargs)
                                     
             # Vertical cross section at alt_high
@@ -721,7 +731,8 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             plot_tracks_horiz_cross(f_tobj, grid, alt_high, fig=fig, 
                                     ax=ax, ellipses='strat', legend=False, 
                                     uid_ind=uid, center_ud=center_ud, updraft_ind=j,
-                                    angle=angle, line_coords=line_coords, wrf_winds=wrf_winds,
+                                    angle=angle, line_coords=line_coords, 
+                                    wrf_winds=wrf_winds, mp=mp,
                                     **kwargs)     
             
             if center_ud:

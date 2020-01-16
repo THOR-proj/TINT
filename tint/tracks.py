@@ -172,7 +172,7 @@ class Cell_tracks(object):
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
 
-    def get_tracks(self, grids):
+    def get_tracks(self, grids, rain=True):
         """ Obtains tracks given a list of pyart grid objects. This is the
         primary method of the tracks class. This method makes use of all of the
         functions and helper classes defined above. """
@@ -198,10 +198,17 @@ class Cell_tracks(object):
         raw2, frames2, cores2, sclasses2 = extract_grid_data(grid_obj2, self.field, self.grid_size,
                                          self.params)
         frame2 = frames2[self.params['TRACK_INTERVAL']]
+        
+        import pdb
+        pdb.set_trace()
 
         while grid_obj2 is not None:
             grid_obj1 = grid_obj2
             raw1 = raw2
+            if not newRain:
+                frame0 = copy.deepcopy(frame1)
+            else:
+                frame0 = np.nan
             frame1 = frame2
             frames1 = frames2
             cores1 = cores2
@@ -216,19 +223,20 @@ class Cell_tracks(object):
                 self.record.update_scan_and_time(grid_obj1, grid_obj2)
                         
                 raw2, frames2, cores2, sclasses2 = extract_grid_data(grid_obj2,
-                                                          self.field,
-                                                          self.grid_size,
-                                                          self.params)
+                                                                     self.field,
+                                                                     self.grid_size,
+                                                                     self.params)
                 frame2 = frames2[self.params['TRACK_INTERVAL']]
                 
                 # Check for gaps in record. If gap exists, tell tint to start
                 # define new objects in current grid. 
                 if self.record.interval_ratio != None:
-                    if self.record.interval_ratio < 0.5:
+                    # Allow a couple of missing scans
+                    if self.record.interval_ratio < 0.25:
                         message = '\nTime discontinuity at {}.'.format(
                             self.record.time
-                        ) 
-                        print(message, flush=True) 
+                        )
+                        print(message, flush=True)
                         newRain = True
                         self.current_objects = None
                 
@@ -247,7 +255,7 @@ class Cell_tracks(object):
                       flush=True)
                 self.current_objects = None
                 continue
-                
+                              
             global_shift = get_global_shift(raw1, raw2, self.params)
             pairs, obj_merge_new, u_shift, v_shift = get_pairs(
                 frame1, frame2, raw1, raw2, global_shift, self.current_objects, 
@@ -269,6 +277,7 @@ class Cell_tracks(object):
                 self.current_objects, self.counter = update_current_objects(
                     raw1,
                     raw2,
+                    frame0,
                     frame1,
                     frame2,
                     pairs,
@@ -284,7 +293,7 @@ class Cell_tracks(object):
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,
                                        self.current_objects, obj_props)
-            del grid_obj1, raw1, frame1, frames1, cores1, 
+            del grid_obj1, raw1, frames1, cores1, 
             del global_shift, pairs, obj_props
             # scan loop end
 

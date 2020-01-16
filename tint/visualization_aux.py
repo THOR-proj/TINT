@@ -16,6 +16,7 @@ import copy
 import glob
 import xarray as xr
 from scipy.interpolate import griddata
+from numba import jit
 
 import pyart
 from pyart.core.transforms import cartesian_to_geographic
@@ -180,12 +181,20 @@ def plot_vert_winds_line(ax, new_wrf, x_draft_new, y_draft_new, direction,
         else:
             ax.quiver(x[::2], z[::2], V.values[::2,::2], W.values[::2,::2])
     else:
-        if W.min() > -1:
-            levels=[2]
-            linestyles=['-']
+        if average_along_line:
+            if W.min() > -1:
+                levels=[1]
+                linestyles=['-']
+            else:
+                levels=[-1, 1] 
+                linestyles=['--', '-']
         else:
-            levels=[-2, 2] 
-            linestyles=['--', '-']
+            if W.min() > -2:
+                levels=[2]
+                linestyles=['-']
+            else:
+                levels=[-2, 2] 
+                linestyles=['--', '-']
         ax.contour(x, z, W, colors='pink', linewidths=1.5, 
                    levels=levels, linestyles=linestyles)
         

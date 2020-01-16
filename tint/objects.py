@@ -20,6 +20,9 @@ from .grid_utils import get_filtered_frame, get_level_indices, get_grid_alt
 from .steiner import steiner_conv_strat
 from scipy.ndimage import center_of_mass
 
+# For debugging
+import matplotlib.pyplot as plt
+
 def get_object_center(obj_id, labeled_image):
     """ Returns index of center pixel of the given object id from labeled
     image. The center is calculated as the median pixel of the object extent;
@@ -44,7 +47,8 @@ def get_obj_extent(labeled_image, obj_label):
     return obj_extent
 
 
-def init_current_objects(raw1, raw2, first_frame, second_frame, pairs, counter):
+def init_current_objects(raw1, raw2, first_frame, second_frame, pairs, 
+                         counter, raw_rain1=np.nan, raw_rain2=np.nan):
     """ Returns a dictionary for objects with unique ids and their
     corresponding ids in frame1 and frame2. This function is called when
     echoes are detected after a period of no echoes. """
@@ -59,26 +63,30 @@ def init_current_objects(raw1, raw2, first_frame, second_frame, pairs, counter):
     # frame 2. Store as uids.
     mergers = [set() for i in range(len(uid))] 
     new_mergers = [set() for i in range(len(uid))]
-
+    parents = [set() for i in range(len(uid))]
+    
+    
+    
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
                        'mergers': mergers, 'new_mergers':new_mergers,
-                       'obs_num': obs_num, 'origin': origin}
+                       'parents': parents, 'obs_num': obs_num, 'origin': origin}
     current_objects = attach_last_heads(raw1, raw2, first_frame, second_frame,
                                         current_objects)
     return current_objects, counter
 
 
-def update_current_objects(raw1, raw2, frame1, frame2, pairs, old_objects, 
+def update_current_objects(raw1, raw2, frame0, frame1, frame2, pairs, old_objects, 
                            counter, old_obj_merge):
     """ Removes dead objects, updates living objects, and assigns new uids to
     new-born objects. """
-    nobj = np.max(frame1)
+    nobj = np.max(frame1)   
     id1 = np.arange(nobj) + 1
     uid = np.array([], dtype='str')
     obs_num = np.array([], dtype='i')
     origin = np.array([], dtype='str')
     mergers = []
-
+    parent = []
+    
     for obj in np.arange(nobj) + 1:
         if obj in old_objects['id2']:
             obj_index = old_objects['id2'] == obj
@@ -89,26 +97,42 @@ def update_current_objects(raw1, raw2, frame1, frame2, pairs, old_objects,
             #  obj_orig = get_origin_uid(obj, frame1, old_objects)
             obj_orig = '-1'
             origin = np.append(origin, obj_orig)
-            if obj_orig != '-1':
-                uid = np.append(uid, counter.next_cid(obj_orig))
-            else:
-                uid = np.append(uid, counter.next_uid())
+            uid = np.append(uid, counter.next_uid())
             obs_num = np.append(obs_num, 0)
             
     id2 = pairs
     
     new_mergers = [set() for i in range(len(uid))]
     mergers = [set() for i in range(len(uid))]
+    parents = [set() for i in range(len(uid))]
+    
     for i in range(len(uid)):
         if uid[i] in old_objects['uid']:
+            # Check for merger
             old_i = int(np.argwhere(old_objects['uid']==uid[i]))
             new_mergers[i] = set(old_objects['uid'][old_obj_merge[:,old_i]])
             mergers[i]=new_mergers[i].union(old_objects['mergers'][old_i])
+            parents[i]=parents[i].union(old_objects['parents'][old_i])
+        else:
+            # Check for splits
+            recurring = set(old_objects['uid']).intersection(set(uid))
+            for j in range(len(recurring)):
+                obj_index = (old_objects['uid'] == list(recurring)[j])
+                # Check for overlap
+                olap = np.any((frame0==old_objects['id1'][obj_index])
+                              *((frame1==id1[i])))
+                if olap:
+                    parents[i]=parents[i].union({old_objects['uid'][obj_index][0]})
+            
+    # Iterate through uids in current objects not in old objects.
+        # For each other uid in both current and old objects, check if old 
+        # and new frames overlap. If they do, declare the uid in previous frame
+        # the "parent" of that in the new frame. 
         
-    current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
-                       'obs_num': obs_num, 'origin': origin,
-                       'mergers': mergers, 'new_mergers': new_mergers}
-
+    current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 'obs_num': obs_num,
+                       'origin': origin, 'mergers': mergers, 
+                       'new_mergers': new_mergers, 'parents': parents}
+                       
     current_objects = attach_last_heads(raw1, raw2, frame1, frame2, current_objects)
     return current_objects, counter
 
@@ -286,6 +310,7 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
     orientation = []
     eccentricity = []
     mergers = []
+    parent = []
     updraft_list = []
     
     nobj = np.max(images)
@@ -324,6 +349,8 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
             
             # Append list of objects that have merged with obj
             mergers.append(current_objects['mergers'][obj-1])
+            # Append parent(s) of obj
+            parent.append(current_objects['parents'][obj-1])
             
             # Get objects in images[i], i.e. the frame at i-th level
             obj_index = np.argwhere(images[i] == obj)
@@ -457,6 +484,7 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
         'semi_minor': semi_minor,
         'eccentricity': eccentricity,
         'mergers': mergers,
+        'parent': parent,
         # Add orientation
         # Negative sign corrects for descending indexing convention 
         # in "y axis". Orientation given between -pi/2 and pi/2.
@@ -500,6 +528,7 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'eccentricity': obj_props['eccentricity'],
         'orientation': obj_props['orientation'],
         'mergers': obj_props['mergers'],
+        'parent': obj_props['parent'],
         'updrafts': obj_props['updrafts'],
     })
      
@@ -590,7 +619,7 @@ def get_system_tracks(tracks_obj):
     # Get position and velocity at tracking level.        
     system_tracks = tracks_obj.tracks[
         ['grid_x', 'grid_y', 'com_x', 'com_y', 'lon', 'lat', 'u', 'v', 
-         'mergers', 'u_shift', 'v_shift']
+         'mergers', 'parent', 'u_shift', 'v_shift']
     ]
     system_tracks = system_tracks.xs(
         tracks_obj.params['TRACK_INTERVAL'], level='level'
