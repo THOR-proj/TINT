@@ -195,16 +195,15 @@ class Cell_tracks(object):
         else:
             newRain = False
 
-        raw2, frames2, cores2, sclasses2 = extract_grid_data(grid_obj2, self.field, self.grid_size,
-                                         self.params)
+        raw2, raw_rain2, frames2, cores2, sclasses2 = extract_grid_data(
+            grid_obj2, self.field, self.grid_size, self.params, rain
+        )
         frame2 = frames2[self.params['TRACK_INTERVAL']]
         
-        import pdb
-        pdb.set_trace()
-
         while grid_obj2 is not None:
             grid_obj1 = grid_obj2
             raw1 = raw2
+            raw_rain1 = raw_rain2
             if not newRain:
                 frame0 = copy.deepcopy(frame1)
             else:
@@ -222,10 +221,9 @@ class Cell_tracks(object):
             if grid_obj2 is not None:
                 self.record.update_scan_and_time(grid_obj1, grid_obj2)
                         
-                raw2, frames2, cores2, sclasses2 = extract_grid_data(grid_obj2,
-                                                                     self.field,
-                                                                     self.grid_size,
-                                                                     self.params)
+                raw2, raw_rain2, frames2, cores2, sclasses2 = extract_grid_data(
+                    grid_obj2, self.field, self.grid_size, self.params, rain
+                )
                 frame2 = frames2[self.params['TRACK_INTERVAL']]
                 
                 # Check for gaps in record. If gap exists, tell tint to start
@@ -265,25 +263,16 @@ class Cell_tracks(object):
             if newRain:
                 # first nonempty scan after a period of empty scans
                 self.current_objects, self.counter = init_current_objects(
-                    raw1,
-                    raw2,
-                    frame1,
-                    frame2,
-                    pairs,
-                    self.counter,
+                    raw1,raw2,raw_rain1,raw_rain2,frame1,frame2,
+                    pairs,self.counter,self.record.interval.total_seconds(),
+                    rain
                 )
                 newRain = False
             else:
                 self.current_objects, self.counter = update_current_objects(
-                    raw1,
-                    raw2,
-                    frame0,
-                    frame1,
-                    frame2,
-                    pairs,
-                    self.current_objects,
-                    self.counter,
-                    obj_merge
+                    raw1,raw2,raw_rain1,raw_rain2,frame0,frame1,frame2,pairs,
+                    self.current_objects,self.counter,obj_merge,
+                    self.record.interval.total_seconds(),rain
                 )
             obj_merge = obj_merge_new
             obj_props = get_object_prop(

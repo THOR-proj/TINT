@@ -185,15 +185,25 @@ def get_connected_components(frames):
 
     return frames_con, frames
 
-def extract_grid_data(grid_obj, field, grid_size, params):
+def extract_grid_data(grid_obj, field, grid_size, params, rain):
     """ Returns filtered grid frame and raw grid slice at global shift
     altitude. """
     
     masked = grid_obj.fields[field]['data']
     # Note this won't work if fill_value is nan!
-    masked.data[(masked.data == masked.fill_value) | np.isnan(masked.data)] = 0
+    masked.data[(masked.data == masked.fill_value) 
+                | np.isnan(masked.data)] = 0
     gs_alt = params['GS_ALT']
     raw = masked.data[get_grid_alt(grid_size, gs_alt), :, :]
+    
+    if rain:
+        masked_rain = grid_obj.fields['radar_estimated_rain_rate']['data']
+        # Note this won't work if fill_value is nan!
+        masked_rain.data[(masked_rain.data == masked_rain.fill_value) 
+                    | np.isnan(masked_rain.data)] = 0
+        raw_rain = masked_rain.data[0, :, :]
+    else:
+        raw_rain=np.nan
     
     n_levels = params['LEVELS'].shape[0]
     frames = np.zeros([n_levels, grid_obj.nx, grid_obj.ny], dtype=int)
@@ -230,4 +240,4 @@ def extract_grid_data(grid_obj, field, grid_size, params):
     # Clear small echos
     frames_con = clear_small_echoes_system(frames_con, min_sizes)
 
-    return raw, frames_con, frames, sclasses
+    return raw, raw_rain, frames_con, frames, sclasses

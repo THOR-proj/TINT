@@ -23,6 +23,8 @@ from scipy.ndimage import center_of_mass
 # For debugging
 import matplotlib.pyplot as plt
 
+from numba import jit
+
 def get_object_center(obj_id, labeled_image):
     """ Returns index of center pixel of the given object id from labeled
     image. The center is calculated as the median pixel of the object extent;
@@ -46,9 +48,10 @@ def get_obj_extent(labeled_image, obj_label):
                   'obj_area': obj_area, 'obj_index': obj_index}
     return obj_extent
 
-
-def init_current_objects(raw1, raw2, first_frame, second_frame, pairs, 
-                         counter, raw_rain1=np.nan, raw_rain2=np.nan):
+@jit(nopython=True)
+def init_current_objects(raw1, raw2, raw_rain1, raw_rain2, 
+                         first_frame, second_frame, pairs, 
+                         counter, interval, rain):
     """ Returns a dictionary for objects with unique ids and their
     corresponding ids in frame1 and frame2. This function is called when
     echoes are detected after a period of no echoes. """
@@ -61,44 +64,73 @@ def init_current_objects(raw1, raw2, first_frame, second_frame, pairs,
     origin = np.array(['-1']*nobj) # What is origin for?
     # Store uids of objects in frame1 that have merged with objects in
     # frame 2. Store as uids.
-    mergers = [set() for i in range(len(uid))] 
+    mergers = [set() for i in range(len(uid))]
     new_mergers = [set() for i in range(len(uid))]
     parents = [set() for i in range(len(uid))]
+            
+    if rain:
+        max_rr = [np.zeros(raw_rain1.shape, dtype=np.float32) 
+                  for i in range(len(uid))]
+        tot_rain = [np.zeros(raw_rain1.shape, dtype=np.float32) 
+                    for i in range(len(uid))]
     
-    
+        for i in range(len(uid)):
+            cond = (first_frame==id1[i])
+            max_rr[i][cond] = raw_rain1[cond]
+            tot_rain[i][cond] = raw_rain1[cond]/3600*interval
+    else: 
+        max_rr = [np.nan for i in range(len(uid))]
+        tot_rain = [np.nan for i in range(len(uid))]
     
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
                        'mergers': mergers, 'new_mergers':new_mergers,
-                       'parents': parents, 'obs_num': obs_num, 'origin': origin}
+                       'parents': parents, 'obs_num': obs_num, 
+                       'origin': origin, 'max_rr': max_rr, 
+                       'tot_rain': tot_rain}
     current_objects = attach_last_heads(raw1, raw2, first_frame, second_frame,
                                         current_objects)
     return current_objects, counter
 
-
-def update_current_objects(raw1, raw2, frame0, frame1, frame2, pairs, old_objects, 
-                           counter, old_obj_merge):
+@jit(nopython=True)
+def update_current_objects(raw1, raw2, raw_rain1, raw_rain2, 
+                           frame0, frame1, frame2, pairs, old_objects, 
+                           counter, old_obj_merge, interval, rain):
     """ Removes dead objects, updates living objects, and assigns new uids to
     new-born objects. """
-    nobj = np.max(frame1)   
+    nobj = np.max(frame1)
     id1 = np.arange(nobj) + 1
     uid = np.array([], dtype='str')
     obs_num = np.array([], dtype='i')
     origin = np.array([], dtype='str')
     mergers = []
     parent = []
+    max_rr = []
+    tot_rain = []
     
     for obj in np.arange(nobj) + 1:
+        cond=(frame1==id1[obj-1])
+        obj_max_rr = np.zeros(raw_rain1.shape, dtype=np.float32)
+        obj_max_rr[cond] = raw_rain1[cond]
+        max_rr.append(obj_max_rr)
         if obj in old_objects['id2']:
-            obj_index = old_objects['id2'] == obj
-            uid = np.append(uid, old_objects['uid'][obj_index])
-            obs_num = np.append(obs_num, old_objects['obs_num'][obj_index] + 1)
-            origin = np.append(origin, old_objects['origin'][obj_index])
+            obj_index = (old_objects['id2'] == obj)
+            ind = np.argwhere(obj_index)[0,0]
+            uid = np.append(uid, old_objects['uid'][ind])
+            obs_num = np.append(obs_num, old_objects['obs_num'][ind]+1)
+            origin = np.append(origin, old_objects['origin'][ind])
+            obj_tot_rain = old_objects['tot_rain'][ind]
+            obj_tot_rain[cond] += raw_rain1[cond]/3600*interval
+            tot_rain.append(obj_tot_rain)
         else:
             #  obj_orig = get_origin_uid(obj, frame1, old_objects)
             obj_orig = '-1'
             origin = np.append(origin, obj_orig)
             uid = np.append(uid, counter.next_uid())
             obs_num = np.append(obs_num, 0)
+            
+            obj_tot_rain = np.zeros(raw_rain1.shape)
+            obj_tot_rain[cond] = raw_rain1[cond]/3600*interval
+            tot_rain.append(obj_tot_rain)
             
     id2 = pairs
     
@@ -131,7 +163,8 @@ def update_current_objects(raw1, raw2, frame0, frame1, frame2, pairs, old_object
         
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 'obs_num': obs_num,
                        'origin': origin, 'mergers': mergers, 
-                       'new_mergers': new_mergers, 'parents': parents}
+                       'new_mergers': new_mergers, 'parents': parents,
+                       'max_rr': max_rr, 'tot_rain': tot_rain}
                        
     current_objects = attach_last_heads(raw1, raw2, frame1, frame2, current_objects)
     return current_objects, counter
@@ -312,6 +345,10 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
     mergers = []
     parent = []
     updraft_list = []
+    max_rr = []
+    max_rr_loc = []
+    tot_rain = []
+    tot_rain_loc = []
     
     nobj = np.max(images)
     [levels, rows, columns] = images.shape
@@ -352,6 +389,21 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
             # Append parent(s) of obj
             parent.append(current_objects['parents'][obj-1])
             
+            # Append rain stats
+            obj_tot_rain = current_objects['tot_rain'][obj-1]
+            obj_max_rr = current_objects['max_rr'][obj-1]
+            
+            tot_rain_loc_obj = list(np.unravel_index(np.argmax(obj_tot_rain), 
+                                    obj_tot_rain.shape))
+            tot_rain_loc.append(tot_rain_loc_obj)
+
+            max_rr_loc_obj = list(np.unravel_index(np.argmax(obj_max_rr), 
+                                  obj_max_rr.shape))
+            max_rr_loc.append(max_rr_loc_obj)
+            
+            max_rr.append(np.max(obj_max_rr))
+            tot_rain.append(np.max(obj_tot_rain))
+                     
             # Get objects in images[i], i.e. the frame at i-th level
             obj_index = np.argwhere(images[i] == obj)
    
@@ -490,6 +542,10 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
         # in "y axis". Orientation given between -pi/2 and pi/2.
         'orientation': np.round(-np.rad2deg(orientation), 3),
         'updrafts': updraft_list,
+        'tot_rain': tot_rain,
+        'tot_rain_loc': tot_rain_loc,
+        'max_rr': max_rr,
+        'max_rr_loc': max_rr_loc
     }
     return objprop
 
@@ -530,6 +586,10 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'mergers': obj_props['mergers'],
         'parent': obj_props['parent'],
         'updrafts': obj_props['updrafts'],
+        'tot_rain': obj_props['tot_rain'],
+        'tot_rain_loc': obj_props['tot_rain_loc'],
+        'max_rr': obj_props['max_rr'],
+        'max_rr_loc': obj_props['max_rr_loc']
     })
      
     new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
@@ -628,8 +688,9 @@ def get_system_tracks(tracks_obj):
     # Get number of cores and ellipse fit properties 
     # at lowest interval assuming this is first
     # interval in list.
-    for prop in ['semi_major', 'semi_minor', 
-                 'eccentricity', 'orientation', 'updrafts'
+    for prop in ['semi_major', 'semi_minor', 'eccentricity', 
+                 'orientation', 'updrafts', 'tot_rain', 'tot_rain_loc', 
+                 'max_rr', 'max_rr_loc'
                  ]:
         prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
         system_tracks = system_tracks.merge(prop_lvl_0, left_index=True, 
