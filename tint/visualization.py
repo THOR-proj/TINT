@@ -86,7 +86,7 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                             tracers=False, ellipses='conv', legend=True,
                             uid_ind=None, center_ud=False, updraft_ind=None, 
                             box_rad=.75, wrf_winds=False, line_coords=False,
-                            angle=None, mp='lin', **kwargs):       
+                            angle=None, mp='lin', rain=True, **kwargs):       
                                                       
     # Initialise fig and ax if not passed as arguments
     if fig is None:
@@ -209,13 +209,39 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         ax.text(lon_low+.05, lat_low-0.05, mergers_str, 
                 transform=projection, fontsize=9)
                 
-        split_label = False
+        split_label = True
         if split_label:
             parent = list(frame_tracks_low['parent'].iloc[ind])
             parent_str = ", ".join(parent)
             ax.text(lon_low+.05, lat_low+0.1, parent_str, 
                     transform=projection, fontsize=9)
-        
+                    
+        if rain:
+            rain_ind = frame_tracks_low['tot_rain_loc'].iloc[ind]
+            rain_amount = frame_tracks_low['tot_rain'].iloc[ind]
+            x_rain = grid.x['data'][rain_ind[1]]
+            y_rain = grid.y['data'][rain_ind[0]]
+            lon_rain, lat_rain = cartesian_to_geographic(
+                x_rain, y_rain, projparams
+            )
+            ax.plot(lon_rain, lat_rain, marker='o', fillstyle='full',
+                    color='blue')
+            ax.text(lon_rain+.025, lat_rain-.025, 
+                    str(int(round(rain_amount)))+' mm', 
+                    transform=projection, fontsize=9)
+            
+            rain_ind = frame_tracks_low['max_rr_loc'].iloc[ind]
+            rain_amount = frame_tracks_low['max_rr'].iloc[ind]
+            x_rain = grid.x['data'][rain_ind[1]]
+            y_rain = grid.y['data'][rain_ind[0]]
+            lon_rain, lat_rain = cartesian_to_geographic(
+                x_rain, y_rain, projparams
+            )
+            ax.plot(lon_rain, lat_rain, marker='o', fillstyle='none',
+                    color='blue')
+            ax.text(lon_rain+.025, lat_rain+.025, str(int(round(rain_amount)))+' mm/h',
+                    transform=projection, fontsize=9)
+            
         # Plot velocities 
         dt = f_tobj.record.interval.total_seconds()
         add_velocities(ax, frame_tracks_low.iloc[ind], grid, 
@@ -269,7 +295,7 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
                 cmap=pyart.graph.cm_colorblind.HomeyerRainbow, 
                 alt_low=None, alt_high=None, isolated_only=False,
                 tracers=False, persist=False, projection=ccrs.PlateCarree(), 
-                scan_boundary=False, box_rad=.75, line_coords=False, 
+                scan_boundary=False, box_rad=.75, line_coords=False, rain=True,
                 **kwargs):
                               
     # Create a copy of tobj for use by this function

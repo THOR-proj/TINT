@@ -263,14 +263,15 @@ class Cell_tracks(object):
             if newRain:
                 # first nonempty scan after a period of empty scans
                 self.current_objects, self.counter = init_current_objects(
-                    raw1,raw2,raw_rain1,raw_rain2,frame1,frame2,
-                    pairs,self.counter,self.record.interval.total_seconds(),
-                    rain
+                    raw1, raw2, raw_rain1, raw_rain2, frame1, frame2,
+                    frames1, frames2, pairs, self.counter, 
+                    self.record.interval.total_seconds(), rain
                 )
                 newRain = False
             else:
                 self.current_objects, self.counter = update_current_objects(
-                    raw1,raw2,raw_rain1,raw_rain2,frame0,frame1,frame2,pairs,
+                    raw1,raw2,raw_rain1,raw_rain2,frame0,frame1,frame2,
+                    frames1, frames2, pairs,
                     self.current_objects,self.counter,obj_merge,
                     self.record.interval.total_seconds(),rain
                 )

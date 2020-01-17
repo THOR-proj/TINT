@@ -48,9 +48,11 @@ def get_obj_extent(labeled_image, obj_label):
                   'obj_area': obj_area, 'obj_index': obj_index}
     return obj_extent
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def init_current_objects(raw1, raw2, raw_rain1, raw_rain2, 
-                         first_frame, second_frame, pairs, 
+                         first_frame, second_frame, 
+                         frames1, frames2,
+                         pairs, 
                          counter, interval, rain):
     """ Returns a dictionary for objects with unique ids and their
     corresponding ids in frame1 and frame2. This function is called when
@@ -73,9 +75,9 @@ def init_current_objects(raw1, raw2, raw_rain1, raw_rain2,
                   for i in range(len(uid))]
         tot_rain = [np.zeros(raw_rain1.shape, dtype=np.float32) 
                     for i in range(len(uid))]
-    
+
         for i in range(len(uid)):
-            cond = (first_frame==id1[i])
+            cond = (np.any(frames1==id1[i], axis=0))
             max_rr[i][cond] = raw_rain1[cond]
             tot_rain[i][cond] = raw_rain1[cond]/3600*interval
     else: 
@@ -91,9 +93,11 @@ def init_current_objects(raw1, raw2, raw_rain1, raw_rain2,
                                         current_objects)
     return current_objects, counter
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def update_current_objects(raw1, raw2, raw_rain1, raw_rain2, 
-                           frame0, frame1, frame2, pairs, old_objects, 
+                           frame0, frame1, frame2,
+                           frames1, frames2, 
+                           pairs, old_objects, 
                            counter, old_obj_merge, interval, rain):
     """ Removes dead objects, updates living objects, and assigns new uids to
     new-born objects. """
@@ -108,7 +112,7 @@ def update_current_objects(raw1, raw2, raw_rain1, raw_rain2,
     tot_rain = []
     
     for obj in np.arange(nobj) + 1:
-        cond=(frame1==id1[obj-1])
+        cond=(np.any(frames1==id1[obj-1], axis=0))
         obj_max_rr = np.zeros(raw_rain1.shape, dtype=np.float32)
         obj_max_rr[cond] = raw_rain1[cond]
         max_rr.append(obj_max_rr)
@@ -155,11 +159,6 @@ def update_current_objects(raw1, raw2, raw_rain1, raw_rain2,
                               *((frame1==id1[i])))
                 if olap:
                     parents[i]=parents[i].union({old_objects['uid'][obj_index][0]})
-            
-    # Iterate through uids in current objects not in old objects.
-        # For each other uid in both current and old objects, check if old 
-        # and new frames overlap. If they do, declare the uid in previous frame
-        # the "parent" of that in the new frame. 
         
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 'obs_num': obs_num,
                        'origin': origin, 'mergers': mergers, 
