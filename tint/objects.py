@@ -63,9 +63,7 @@ def init_current_objects(raw1, raw2, raw_rain1, raw_rain2,
     uid = counter.next_uid(count=nobj)
     id2 = pairs
     obs_num = np.zeros(nobj, dtype='i')
-    origin = np.array(['-1']*nobj) # What is origin for?
-    # Store uids of objects in frame1 that have merged with objects in
-    # frame 2. Store as uids.
+    
     mergers = [set() for i in range(len(uid))]
     new_mergers = [set() for i in range(len(uid))]
     parents = [set() for i in range(len(uid))]
@@ -87,7 +85,7 @@ def init_current_objects(raw1, raw2, raw_rain1, raw_rain2,
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
                        'mergers': mergers, 'new_mergers':new_mergers,
                        'parents': parents, 'obs_num': obs_num, 
-                       'origin': origin, 'max_rr': max_rr, 
+                       'max_rr': max_rr, 
                        'tot_rain': tot_rain}
     current_objects = attach_last_heads(raw1, raw2, first_frame, second_frame,
                                         current_objects)
@@ -97,15 +95,15 @@ def init_current_objects(raw1, raw2, raw_rain1, raw_rain2,
 def update_current_objects(raw1, raw2, raw_rain1, raw_rain2, 
                            frame0, frame1, frame2,
                            frames1, frames2, 
-                           pairs, old_objects, 
-                           counter, old_obj_merge, interval, rain):
+                           acc_rain_list, acc_rain_uid_list,
+                           pairs, old_objects,
+                           counter, old_obj_merge, interval, rain, save_rain):
     """ Removes dead objects, updates living objects, and assigns new uids to
     new-born objects. """
     nobj = np.max(frame1)
     id1 = np.arange(nobj) + 1
     uid = np.array([], dtype='str')
     obs_num = np.array([], dtype='i')
-    origin = np.array([], dtype='str')
     mergers = []
     parent = []
     max_rr = []
@@ -121,14 +119,11 @@ def update_current_objects(raw1, raw2, raw_rain1, raw_rain2,
             ind = np.argwhere(obj_index)[0,0]
             uid = np.append(uid, old_objects['uid'][ind])
             obs_num = np.append(obs_num, old_objects['obs_num'][ind]+1)
-            origin = np.append(origin, old_objects['origin'][ind])
+
             obj_tot_rain = old_objects['tot_rain'][ind]
             obj_tot_rain[cond] += raw_rain1[cond]/3600*interval
             tot_rain.append(obj_tot_rain)
         else:
-            #  obj_orig = get_origin_uid(obj, frame1, old_objects)
-            obj_orig = '-1'
-            origin = np.append(origin, obj_orig)
             uid = np.append(uid, counter.next_uid())
             obs_num = np.append(obs_num, 0)
             
@@ -158,15 +153,25 @@ def update_current_objects(raw1, raw2, raw_rain1, raw_rain2,
                 olap = np.any((frame0==old_objects['id1'][obj_index])
                               *((frame1==id1[i])))
                 if olap:
-                    parents[i]=parents[i].union({old_objects['uid'][obj_index][0]})
-        
+                    parents[i]=parents[i].union(
+                        {old_objects['uid'][obj_index][0]}
+                    )
+                 
+    if save_rain:
+        dead_uids = set(old_objects['uid'])-set(uid)
+        for u in dead_uids:
+            u_ind = int(np.argwhere(old_objects['uid']==u))
+            acc_rain_list.append(old_objects['tot_rain'][u_ind])
+            acc_rain_uid_list.append(uid)
+            
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 'obs_num': obs_num,
-                       'origin': origin, 'mergers': mergers, 
+                       'mergers': mergers, 
                        'new_mergers': new_mergers, 'parents': parents,
                        'max_rr': max_rr, 'tot_rain': tot_rain}
                        
-    current_objects = attach_last_heads(raw1, raw2, frame1, frame2, current_objects)
-    return current_objects, counter
+    current_objects = attach_last_heads(raw1, raw2, frame1, 
+                                        frame2, current_objects)
+    return current_objects, counter, acc_rain_list, acc_rain_uid_list
 
 
 def attach_last_heads(raw1, raw2, frame1, frame2, current_objects):

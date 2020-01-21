@@ -11,6 +11,7 @@ import datetime
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 
 from .grid_utils import get_grid_size, get_radar_info, extract_grid_data
 from .helpers import Record, Counter
@@ -172,11 +173,13 @@ class Cell_tracks(object):
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
 
-    def get_tracks(self, grids, rain=True):
+    def get_tracks(self, grids, rain=True, save_rain=True):
         """ Obtains tracks given a list of pyart grid objects. This is the
         primary method of the tracks class. This method makes use of all of the
         functions and helper classes defined above. """
         start_time = datetime.datetime.now()
+        acc_rain_list = []
+        acc_rain_uid_list = []
 
         if self.record is None:
             # tracks object being initialized
@@ -269,11 +272,12 @@ class Cell_tracks(object):
                 )
                 newRain = False
             else:
-                self.current_objects, self.counter = update_current_objects(
+                self.current_objects, self.counter, acc_rain_list, acc_rain_uid_list = update_current_objects(
                     raw1,raw2,raw_rain1,raw_rain2,frame0,frame1,frame2,
-                    frames1, frames2, pairs,
-                    self.current_objects,self.counter,obj_merge,
-                    self.record.interval.total_seconds(),rain
+                    frames1, frames2, 
+                    acc_rain_list, acc_rain_uid_list,
+                    pairs,self.current_objects,self.counter,obj_merge,
+                    self.record.interval.total_seconds(),rain,save_rain
                 )
             obj_merge = obj_merge_new
             obj_props = get_object_prop(
@@ -283,12 +287,25 @@ class Cell_tracks(object):
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,
                                        self.current_objects, obj_props)
-            del grid_obj1, raw1, frames1, cores1, 
+            del raw1, frames1, cores1, 
             del global_shift, pairs, obj_props
             # scan loop end
+            
+        acc_rain = np.stack(acc_rain_list, axis=0)
+        acc_rain_uid = np.squeeze(np.array(acc_rain_uid_list))
+        import pdb
+        pdb.set_trace()
+        
+        x = grid_obj1.x['data'].data
+        y = grid_obj1.y['data'].data
+        acc_rain_da = xr.DataArray(acc_rain, coords=[acc_rain_uid, y, x], dims=['uid','y','x'])
+        
+        del grid_obj1
 
         self = post_tracks(self)
         self = get_system_tracks(self)
+        
+        
           
         self.__load()
         time_elapsed = datetime.datetime.now() - start_time
