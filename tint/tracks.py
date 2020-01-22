@@ -173,7 +173,7 @@ class Cell_tracks(object):
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
 
-    def get_tracks(self, grids, rain=True, save_rain=True):
+    def get_tracks(self, grids, rain=True, save_rain=True, dt=''):
         """ Obtains tracks given a list of pyart grid objects. This is the
         primary method of the tracks class. This method makes use of all of the
         functions and helper classes defined above. """
@@ -205,35 +205,45 @@ class Cell_tracks(object):
         
         while grid_obj2 is not None:
             grid_obj1 = grid_obj2
-            raw1 = raw2
-            raw_rain1 = raw_rain2
             if not newRain:
                 frame0 = copy.deepcopy(frame1)
             else:
                 frame0 = np.nan
+            raw1 = raw2
+            raw_rain1 = raw_rain2
             frame1 = frame2
             frames1 = frames2
             cores1 = cores2
             sclasses1 = sclasses2
 
             try:
+                # Check if next grid zero artificially
                 grid_obj2 = next(grids)
-            except StopIteration:
-                grid_obj2 = None
-
-            if grid_obj2 is not None:
-                self.record.update_scan_and_time(grid_obj1, grid_obj2)
-                        
-                raw2, raw_rain2, frames2, cores2, sclasses2 = extract_grid_data(
+                raw, raw_rain, frames, cores, sclasses = extract_grid_data(
                     grid_obj2, self.field, self.grid_size, self.params, rain
                 )
+                # Skip grids that are artificially zero
+                while (np.max(raw1)>30 and np.max(raw)==0):
+                    grid_obj2 = next(grids)
+                    raw, raw_rain, frames, cores, sclasses = extract_grid_data(
+                        grid_obj2, self.field, self.grid_size, self.params, rain
+                    )
+                    print('Skipping erroneous grid.                        ')                
+            except StopIteration:
+                grid_obj2 = None
+                
+            if grid_obj2 is not None:
+                              
+                [raw2, raw_rain2, frames2, cores2, sclasses2] = [raw, raw_rain, frames, cores, sclasses]
                 frame2 = frames2[self.params['TRACK_INTERVAL']]
+                
+                self.record.update_scan_and_time(grid_obj1, grid_obj2)
                 
                 # Check for gaps in record. If gap exists, tell tint to start
                 # define new objects in current grid. 
-                if self.record.interval_ratio != None:
+                if self.record.interval != None:
                     # Allow a couple of missing scans
-                    if self.record.interval_ratio < 0.25:
+                    if self.record.interval.seconds > 1700:
                         message = '\nTime discontinuity at {}.'.format(
                             self.record.time
                         )
@@ -248,6 +258,7 @@ class Cell_tracks(object):
                 self.record.update_scan_and_time(grid_obj1)
                 raw2 = None
                 frame2 = np.zeros_like(frame1)
+                frames2 = np.zeros_like(frames1)
 
             if np.max(frame1) == 0:
                 newRain = True
@@ -290,22 +301,31 @@ class Cell_tracks(object):
             del raw1, frames1, cores1, 
             del global_shift, pairs, obj_props
             # scan loop end
-            
-        acc_rain = np.stack(acc_rain_list, axis=0)
-        acc_rain_uid = np.squeeze(np.array(acc_rain_uid_list))
-        import pdb
-        pdb.set_trace()
         
-        x = grid_obj1.x['data'].data
-        y = grid_obj1.y['data'].data
-        acc_rain_da = xr.DataArray(acc_rain, coords=[acc_rain_uid, y, x], dims=['uid','y','x'])
+        if save_rain:    
+            acc_rain = np.stack(acc_rain_list, axis=0)
+            acc_rain_uid = np.array(acc_rain_uid_list)
+            if len(acc_rain_uid_list)>1:
+                acc_rain_uid = np.squeeze(acc_rain_uid)
+            
+            x = grid_obj1.x['data'].data
+            y = grid_obj1.y['data'].data
+            acc_rain_da = xr.DataArray(acc_rain, coords=[acc_rain_uid, y, x], dims=['uid','y','x'])
+            acc_rain_da.attrs = {
+                'long_name': 'Accumulated Rainfall', 
+                'units': 'mm', 
+                'standard_name': 'Accumulated Rainfall', 
+                'description': ('Derived from rainfall rate algorithm based on '
+                                + 'Thompson et al. 2016, integrated in time.')
+            }
+            acc_rain_da.to_netcdf('/g/data/w40/esh563/CPOL_analysis/'
+                                  + 'accumulated_rainfalls/'
+                                  + 'acc_rain_da_{}.nc'.format(dt))  
         
         del grid_obj1
 
         self = post_tracks(self)
         self = get_system_tracks(self)
-        
-        
           
         self.__load()
         time_elapsed = datetime.datetime.now() - start_time

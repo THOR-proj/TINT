@@ -158,16 +158,19 @@ def update_current_objects(raw1, raw2, raw_rain1, raw_rain2,
                     )
                  
     if save_rain:
-        dead_uids = set(old_objects['uid'])-set(uid)
+        if raw2 is None:
+            dead_uids = old_objects['uid']
+        else:
+            dead_uids = set(old_objects['uid'])-set(uid)
         for u in dead_uids:
             u_ind = int(np.argwhere(old_objects['uid']==u))
             acc_rain_list.append(old_objects['tot_rain'][u_ind])
-            acc_rain_uid_list.append(uid)
+            acc_rain_uid_list.append(u)
             
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 'obs_num': obs_num,
-                       'mergers': mergers, 
-                       'new_mergers': new_mergers, 'parents': parents,
-                       'max_rr': max_rr, 'tot_rain': tot_rain}
+                       'mergers': mergers, 'new_mergers': new_mergers, 
+                       'parents': parents, 'max_rr': max_rr, 
+                       'tot_rain': tot_rain}
                        
     current_objects = attach_last_heads(raw1, raw2, frame1, 
                                         frame2, current_objects)
@@ -202,9 +205,9 @@ def check_isolation(raw, filtered, grid_size, params, level):
     and have at most one peak. """
     nobj = np.max(filtered)
     min_size = params['MIN_SIZE'][level] / np.prod(grid_size[1:]/1000)
-    iso_filtered = get_filtered_frame(raw,
-                                      min_size,
-                                      params['ISO_THRESH'][level])
+    iso_filtered = get_filtered_frame(
+        raw,min_size,params['ISO_THRESH'][level]
+    )
     nobj_iso = np.max(iso_filtered)
     iso = np.empty(nobj, dtype='bool')
 
@@ -628,6 +631,12 @@ def post_tracks(tracks_obj):
     print('Calculating additional tracks properties.', flush=True)
     # Round max - for some reason works here but not in get_obj_props
     # Likely a weird floating point storage issue
+    
+    # Drop last scan so no nans in u_shift etc
+    tracks_obj.tracks.drop(
+        tracks_obj.tracks.index.max()[0], level='scan', inplace=True
+    )
+    
     tracks_obj.tracks['max'] = np.round(tracks_obj.tracks['max'], 2)
     
     # Smooth u_shift, v_shift

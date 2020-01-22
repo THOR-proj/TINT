@@ -86,7 +86,7 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
                             tracers=False, ellipses='conv', legend=True,
                             uid_ind=None, center_ud=False, updraft_ind=None, 
                             box_rad=.75, wrf_winds=False, line_coords=False,
-                            angle=None, mp='lin', rain=True, **kwargs):       
+                            angle=None, mp='lin', rain=True, split_label = False, **kwargs):       
                                                       
     # Initialise fig and ax if not passed as arguments
     if fig is None:
@@ -108,7 +108,10 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
     # Below perhaps not necessary!
     grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[m]')
     scan_ind = f_tobj.tracks.index.get_level_values('scan')
-    nframe = scan_ind[time_ind == grid_time][0]
+    try:
+        nframe = scan_ind[time_ind == grid_time][0]
+    except:
+        return False
     frame_tracks_low = tracks_low.loc[nframe].reset_index(level=['time'])
     frame_tracks_high = tracks_high.loc[nframe].reset_index(level=['time'])
     display = pyart.graph.GridMapDisplay(grid)
@@ -209,7 +212,6 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
         ax.text(lon_low+.05, lat_low-0.05, mergers_str, 
                 transform=projection, fontsize=9)
                 
-        split_label = True
         if split_label:
             parent = list(frame_tracks_low['parent'].iloc[ind])
             parent_str = ", ".join(parent)
@@ -288,6 +290,8 @@ def plot_tracks_horiz_cross(f_tobj, grid, alt, vmin=-8, vmax=64,
     if uid_ind is not None:
         ax.set_xlim(lvxlim[0], lvxlim[1])
         ax.set_ylim(lvylim[0], lvylim[1])
+        
+    return True
                                                       
 
 def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
@@ -355,17 +359,18 @@ def full_domain(tobj, grids, tmp_dir, dpi=100, vmin=-8, vmax=64,
         
         # Plot frame
         ax = fig_grid.add_subplot(1, 2, 1, projection=projection)
-        plot_tracks_horiz_cross(f_tobj, grid, alt_low, fig=fig_grid, 
-                                ax=ax, ellipses='conv', legend=True, 
-                                line_coords=line_coords, **kwargs)
+        success = plot_tracks_horiz_cross(f_tobj, grid, alt_low, fig=fig_grid, 
+                                          ax=ax, ellipses='conv', legend=True, 
+                                          line_coords=line_coords, **kwargs)
         ax = fig_grid.add_subplot(1, 2, 2, projection=projection)
-        plot_tracks_horiz_cross(f_tobj, grid, alt_high, ellipses='strat', 
-                                legend=True, fig=fig_grid, ax=ax, 
-                                line_coords=line_coords, **kwargs)
+        success = plot_tracks_horiz_cross(f_tobj, grid, alt_high, ellipses='strat', 
+                                          legend=True, fig=fig_grid, ax=ax, 
+                                          line_coords=line_coords, **kwargs)
                           
         # Save frame and cleanup
-        plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
-                    bbox_inches = 'tight', dpi=dpi)
+        if success:
+            plt.savefig(tmp_dir + '/frame_' + str(counter).zfill(3) + '.png',
+                        bbox_inches = 'tight', dpi=dpi)
         plt.close()
         del grid, ax
         gc.collect()
@@ -745,7 +750,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                          
             # Vertical cross section at alt_low
             ax = fig.add_subplot(2, 2, 1, projection=projection)
-            plot_tracks_horiz_cross(f_tobj, grid, alt_low, fig=fig, 
+            success = plot_tracks_horiz_cross(f_tobj, grid, alt_low, fig=fig, 
                                     ax=ax, ellipses='conv', legend=False, 
                                     uid_ind=uid, center_ud=center_ud, updraft_ind=j,
                                     angle=angle, line_coords=line_coords, 
@@ -754,7 +759,7 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
                                     
             # Vertical cross section at alt_high
             ax = fig.add_subplot(2, 2, 3, projection=projection)
-            plot_tracks_horiz_cross(f_tobj, grid, alt_high, fig=fig, 
+            success = plot_tracks_horiz_cross(f_tobj, grid, alt_high, fig=fig, 
                                     ax=ax, ellipses='strat', legend=False, 
                                     uid_ind=uid, center_ud=center_ud, updraft_ind=j,
                                     angle=angle, line_coords=line_coords, 
@@ -801,8 +806,9 @@ def updraft_view(tobj, grids, tmp_dir, uid=None, dpi=100,
             plt.tight_layout()
 
             # plot and save figure
-            fig.savefig(tmp_dir + '/frame_' + str(pframe).zfill(3) + '.png', 
-                        dpi=dpi)
+            if success:
+                fig.savefig(tmp_dir + '/frame_' + str(pframe).zfill(3) + '.png', 
+                            dpi=dpi)
             plt.close()
             pframe += 1
             gc.collect()
