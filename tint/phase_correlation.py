@@ -25,6 +25,7 @@ def get_ambient_flow(obj_extent, raw1, raw2, params, grid_size):
     col_ub = np.int(col_ub)
 
     dims = raw1.shape
+    #test
 
     row_lb = np.max([row_lb, 0])
     row_ub = np.min([row_ub, dims[0]])
