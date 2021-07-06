@@ -70,8 +70,9 @@ def clip_shift(shift, record, params):
         return shift
 
 
-def correct_shift(local_shift, current_objects, obj_id1, global_shift, record,
-                  params):
+def correct_shift(
+        local_shift, current_objects, obj_id1, global_shift, record,
+        params):
     """ Takes in flow vector based on local phase correlation (see
     get_std_flow) and compares it to the last headings of the object and
     the global_shift vector for that timestep. Corrects accordingly.
@@ -80,8 +81,8 @@ def correct_shift(local_shift, current_objects, obj_id1, global_shift, record,
     correspond to the objects in the current frame1. """
     global_shift = clip_shift(global_shift, record, params)
 
-    # Note last_heads is defined using object centers! These jump around a lot 
-    # when tracking large objects and should therefore probably not be used 
+    # Note last_heads is defined using object centers! These jump around a lot
+    # when tracking large objects and should therefore probably not be used
     # when tracking MCS systems!
 
     if current_objects is None:
@@ -169,7 +170,7 @@ def get_disparity(obj_found, image2, search_box, obj1_extent):
         size_changed = get_sizeChange(target_extent['obj_area'],
                                       obj1_extent['obj_area'])
         change = np.append(change, size_changed)
-    # Note that merger of systems may create a sudden size change 
+    # Note that merger of systems may create a sudden size change
     # that exaggerates cost function.
     disparity = dist_pred + change
     return disparity
@@ -218,16 +219,16 @@ def locate_all_objects(image1, image2, raw1, raw2, global_shift, current_objects
         obj1_extent = get_obj_extent(image1, obj_id1)
         shift = get_ambient_flow(obj1_extent, raw1,
                                  raw2, params, record.grid_size)
-         
+
         if shift is None:
             record.count_case(5)
             shift = global_shift
-            # Note in this case the object's u and v will be 
+            # Note in this case the object's u and v will be
             # global shift.
 
         shift = correct_shift(shift, current_objects, obj_id1,
                               global_shift, record, params)
-                              
+
         shift_meters = shift * record.grid_size[1:]
         [v, u] = shift_meters/record.interval.seconds
         u_shift.append(u)
@@ -249,31 +250,33 @@ def match_pairs(obj_match, params):
     """ Matches objects into pairs given a disparity matrix and removes
     bad matches. Bad matches have a disparity greater than the maximum
     threshold. """
-    
-    # Create a list of sets, where the i-th set will store the objects 
+
+    # Create a list of sets, where the i-th set will store the objects
     # from image1 that have merged with objects in image2
     # Maybe faster to use a 2D array?
     obj_merge = np.zeros(obj_match.shape, dtype=bool)
-    
+
     # Determine optimal pairs
     pairs = optimize.linear_sum_assignment(obj_match)
-  
+
     for id1 in pairs[0]:
         if obj_match[id1, pairs[1][id1]] > params['MAX_DISPARITY']:
-            # Set to -1 if object has died (or merged) 
+            # Set to -1 if object has died (or merged)
             pairs[1][id1] = -1
-            # Find the closest object in image2 to object with id1 
+            # Find the closest object in image2 to object with id1
             id2 = np.argmin(obj_match[id1])
-            # If this object was in the search radius of object id1, 
-            # add object id1 to obj_merge[id2]. 
+            # If this object was in the search radius of object id1,
+            # add object id1 to obj_merge[id2].
             if obj_match[id1, id2] < LARGE_NUM:
                 obj_merge[id1, id2] = True
-                     
+
     pairs = pairs[1] + 1  # ids in current_objects are 1-indexed
     return pairs, obj_merge
 
 
-def get_pairs(image1, image2, raw1, raw2, global_shift, current_objects, record, params):
+def get_pairs(
+        image1, image2, raw1, raw2, global_shift, current_objects,
+        record, params):
     """ Given two images, this function identifies the matching objects and
     pairs them appropriately. See disparity function. """
     nobj1 = np.max(image1)
@@ -284,14 +287,14 @@ def get_pairs(image1, image2, raw1, raw2, global_shift, current_objects, record,
         return
     elif nobj2 == 0:
         zero_pairs = np.zeros(nobj1)
-        zero_obj_merge = np.zeros((nobj1, np.max((nobj1, nobj2))), 
-                                  dtype=bool)
+        zero_obj_merge = np.zeros(
+            (nobj1, np.max((nobj1, nobj2))), dtype=bool)
         return zero_pairs, zero_obj_merge, [np.nan] * nobj1, [np.nan] * nobj1
 
-    obj_match, u_shift, v_shift = locate_all_objects(image1, image2,
-        raw1, raw2, global_shift, current_objects, record, params
-    )
-    
+    obj_match, u_shift, v_shift = locate_all_objects(
+        image1, image2, raw1, raw2, global_shift, current_objects,
+        record, params)
+
     pairs, obj_merge = match_pairs(obj_match, params)
 
     return pairs, obj_merge, u_shift, v_shift
