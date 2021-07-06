@@ -29,7 +29,7 @@ def parse_grid_datetime(grid_obj):
     dt = datetime.datetime.strptime(date + ' ' + time, '%Y-%m-%d %H:%M:%S')
     return dt
 
-@jit
+@jit()
 def get_grid_size(grid_obj):
     """ Calculates grid size per dimension given a grid object. """
     z_len = grid_obj.z['data'][-1] - grid_obj.z['data'][0]
@@ -76,11 +76,10 @@ def get_filtered_frame_steiner(grid_obj, field, grid_size, min_size,
     grid = copy.copy(masked.data)
     grid[grid==0] = np.nan
     
-    try: 
+    try:
         sclass = steiner_conv_strat(
-                grid, grid_obj.x['data'], grid_obj.y['data'], 
-                grid_size[1], grid_size[2]
-        )
+            grid, grid_obj.x['data'], grid_obj.y['data'], 
+            grid_size[1], grid_size[2])
     except:
         sclass = np.ones(grid.shape)
         print('\nSteiner Scheme Failed.')

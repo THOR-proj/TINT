@@ -199,8 +199,7 @@ class Cell_tracks(object):
             newRain = False
 
         raw2, raw_rain2, frames2, cores2, sclasses2 = extract_grid_data(
-            grid_obj2, self.field, self.grid_size, self.params, rain
-        )
+            grid_obj2, self.field, self.grid_size, self.params, rain)
         frame2 = frames2[self.params['TRACK_INTERVAL']]
         
         while grid_obj2 is not None:
@@ -234,7 +233,8 @@ class Cell_tracks(object):
                 
             if grid_obj2 is not None:
                               
-                [raw2, raw_rain2, frames2, cores2, sclasses2] = [raw, raw_rain, frames, cores, sclasses]
+                [raw2, raw_rain2, frames2, cores2, sclasses2] = [
+                    raw, raw_rain, frames, cores, sclasses]
                 frame2 = frames2[self.params['TRACK_INTERVAL']]
                 
                 self.record.update_scan_and_time(grid_obj1, grid_obj2)
@@ -245,8 +245,7 @@ class Cell_tracks(object):
                     # Allow a couple of missing scans
                     if self.record.interval.seconds > 1700:
                         message = '\nTime discontinuity at {}.'.format(
-                            self.record.time
-                        )
+                            self.record.time)
                         print(message, flush=True)
                         newRain = True
                         self.current_objects = None
@@ -271,30 +270,26 @@ class Cell_tracks(object):
             global_shift = get_global_shift(raw1, raw2, self.params)
             pairs, obj_merge_new, u_shift, v_shift = get_pairs(
                 frame1, frame2, raw1, raw2, global_shift, self.current_objects, 
-                self.record, self.params
-            )
+                self.record, self.params)
                                                                                  
             if newRain:
                 # first nonempty scan after a period of empty scans
                 self.current_objects, self.counter = init_current_objects(
                     raw1, raw2, raw_rain1, raw_rain2, frame1, frame2,
                     frames1, frames2, pairs, self.counter, 
-                    self.record.interval.total_seconds(), rain
-                )
+                    self.record.interval.total_seconds(), rain)
                 newRain = False
             else:
                 self.current_objects, self.counter, acc_rain_list, acc_rain_uid_list = update_current_objects(
                     raw1,raw2,raw_rain1,raw_rain2,frame0,frame1,frame2,
                     frames1, frames2, 
                     acc_rain_list, acc_rain_uid_list,
-                    pairs,self.current_objects,self.counter,obj_merge,
-                    self.record.interval.total_seconds(),rain,save_rain
-                )
+                    pairs, self.current_objects, self.counter, obj_merge,
+                    self.record.interval.total_seconds(), rain, save_rain)
             obj_merge = obj_merge_new
             obj_props = get_object_prop(
                 frames1, cores1, grid_obj1, u_shift, v_shift, sclasses1, 
-                self.field, self.record, self.params, self.current_objects
-            )
+                self.field, self.record, self.params, self.current_objects, rain)
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,
                                        self.current_objects, obj_props)
@@ -305,19 +300,20 @@ class Cell_tracks(object):
         if save_rain:    
             acc_rain = np.stack(acc_rain_list, axis=0)
             acc_rain_uid = np.array(acc_rain_uid_list)
-            if len(acc_rain_uid_list)>1:
+            if len(acc_rain_uid_list) > 1:
                 acc_rain_uid = np.squeeze(acc_rain_uid)
             
             x = grid_obj1.x['data'].data
             y = grid_obj1.y['data'].data
-            acc_rain_da = xr.DataArray(acc_rain, coords=[acc_rain_uid, y, x], dims=['uid','y','x'])
+            acc_rain_da = xr.DataArray(
+                acc_rain, coords=[acc_rain_uid, y, x], dims=['uid','y','x'])
             acc_rain_da.attrs = {
                 'long_name': 'Accumulated Rainfall', 
                 'units': 'mm', 
                 'standard_name': 'Accumulated Rainfall', 
-                'description': ('Derived from rainfall rate algorithm based on '
-                                + 'Thompson et al. 2016, integrated in time.')
-            }
+                'description': (
+                    'Derived from rainfall rate algorithm based on '
+                    + 'Thompson et al. 2016, integrated in time.')}
             acc_rain_da.to_netcdf('/g/data/w40/esh563/CPOL_analysis/'
                                   + 'accumulated_rainfalls/'
                                   + 'acc_rain_da_{}.nc'.format(dt))  

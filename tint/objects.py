@@ -83,7 +83,7 @@ def init_current_objects(raw1, raw2, raw_rain1, raw_rain2,
         tot_rain = [np.nan for i in range(len(uid))]
     
     current_objects = {'id1': id1, 'uid': uid, 'id2': id2, 
-                       'mergers': mergers, 'new_mergers':new_mergers,
+                       'mergers': mergers, 'new_mergers': new_mergers,
                        'parents': parents, 'obs_num': obs_num, 
                        'max_rr': max_rr, 
                        'tot_rain': tot_rain}
@@ -110,26 +110,31 @@ def update_current_objects(raw1, raw2, raw_rain1, raw_rain2,
     tot_rain = []
     
     for obj in np.arange(nobj) + 1:
-        cond=(np.any(frames1==id1[obj-1], axis=0))
-        obj_max_rr = np.zeros(raw_rain1.shape, dtype=np.float32)
-        obj_max_rr[cond] = raw_rain1[cond]
-        max_rr.append(obj_max_rr)
-        if obj in old_objects['id2']:
-            obj_index = (old_objects['id2'] == obj)
-            ind = np.argwhere(obj_index)[0,0]
-            uid = np.append(uid, old_objects['uid'][ind])
-            obs_num = np.append(obs_num, old_objects['obs_num'][ind]+1)
+        if rain:
+            cond=(np.any(frames1==id1[obj-1], axis=0))
+            obj_max_rr = np.zeros(raw_rain1.shape, dtype=np.float32)
+            obj_max_rr[cond] = raw_rain1[cond]
+            max_rr.append(obj_max_rr)
+            if obj in old_objects['id2']:
+                obj_index = (old_objects['id2'] == obj)
+                ind = np.argwhere(obj_index)[0,0]
+                uid = np.append(uid, old_objects['uid'][ind])
+                obs_num = np.append(obs_num, old_objects['obs_num'][ind]+1)
 
-            obj_tot_rain = old_objects['tot_rain'][ind]
-            obj_tot_rain[cond] += raw_rain1[cond]/3600*interval
-            tot_rain.append(obj_tot_rain)
+                obj_tot_rain = old_objects['tot_rain'][ind]
+                obj_tot_rain[cond] += raw_rain1[cond]/3600*interval
+                tot_rain.append(obj_tot_rain)
+            else:
+                uid = np.append(uid, counter.next_uid())
+                obs_num = np.append(obs_num, 0)
+                
+                obj_tot_rain = np.zeros(raw_rain1.shape)
+                obj_tot_rain[cond] = raw_rain1[cond]/3600*interval
+                tot_rain.append(obj_tot_rain)
         else:
-            uid = np.append(uid, counter.next_uid())
-            obs_num = np.append(obs_num, 0)
-            
-            obj_tot_rain = np.zeros(raw_rain1.shape)
-            obj_tot_rain[cond] = raw_rain1[cond]/3600*interval
-            tot_rain.append(obj_tot_rain)
+            max_rr.append(np.nan)
+            tot_rain.append(np.nan)
+             
             
     id2 = pairs
     
@@ -142,8 +147,8 @@ def update_current_objects(raw1, raw2, raw_rain1, raw_rain2,
             # Check for merger
             old_i = int(np.argwhere(old_objects['uid']==uid[i]))
             new_mergers[i] = set(old_objects['uid'][old_obj_merge[:,old_i]])
-            mergers[i]=new_mergers[i].union(old_objects['mergers'][old_i])
-            parents[i]=parents[i].union(old_objects['parents'][old_i])
+            mergers[i] = new_mergers[i].union(old_objects['mergers'][old_i])
+            parents[i] = parents[i].union(old_objects['parents'][old_i])
         else:
             # Check for splits
             recurring = set(old_objects['uid']).intersection(set(uid))
@@ -326,7 +331,7 @@ def identify_updrafts(raw3D, images, grid1, record, params, sclasses):
     return updrafts
 
 def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
-                    field, record, params, current_objects):
+                    field, record, params, current_objects, rain):
     """ Returns dictionary of object properties for all objects found in
     each level of images, where images are the labelled (filtered) 
     frames. """
@@ -397,19 +402,25 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
             parent.append(current_objects['parents'][obj-1])
             
             # Append rain stats
-            obj_tot_rain = current_objects['tot_rain'][obj-1]
-            obj_max_rr = current_objects['max_rr'][obj-1]
-            
-            tot_rain_loc_obj = list(np.unravel_index(np.argmax(obj_tot_rain), 
-                                    obj_tot_rain.shape))
-            tot_rain_loc.append(tot_rain_loc_obj)
+            if rain:
+                obj_tot_rain = current_objects['tot_rain'][obj-1]
+                obj_max_rr = current_objects['max_rr'][obj-1]
+                
+                tot_rain_loc_obj = list(np.unravel_index(np.argmax(obj_tot_rain), 
+                                        obj_tot_rain.shape))
+                tot_rain_loc.append(tot_rain_loc_obj)
 
-            max_rr_loc_obj = list(np.unravel_index(np.argmax(obj_max_rr), 
-                                  obj_max_rr.shape))
-            max_rr_loc.append(max_rr_loc_obj)
-            
-            max_rr.append(np.max(obj_max_rr))
-            tot_rain.append(np.max(obj_tot_rain))
+                max_rr_loc_obj = list(np.unravel_index(np.argmax(obj_max_rr), 
+                                      obj_max_rr.shape))
+                max_rr_loc.append(max_rr_loc_obj)
+                
+                max_rr.append(np.max(obj_max_rr))
+                tot_rain.append(np.max(obj_tot_rain))
+            else:
+                tot_rain_loc.append(np.nan)
+                max_rr_loc.append(np.nan)
+                max_rr.append(np.nan)
+                tot_rain.append(np.nan)
                      
             # Get objects in images[i], i.e. the frame at i-th level
             obj_index = np.argwhere(images[i] == obj)

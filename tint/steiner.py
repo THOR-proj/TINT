@@ -1,10 +1,97 @@
 import numpy as np
 
-from numba import jit
+from numba import njit
 from numba import int32
 
 
-@jit(nopython=True)
+@njit()
+def convective_radius(ze_bkg, area_relation):
+    """
+    Given a mean background reflectivity value, we determine via a step
+    function what the corresponding convective radius would be.
+    Higher background reflectivitives are expected to have larger
+    convective influence on surrounding areas, so a larger convective
+    radius would be prescribed.
+    """
+    if area_relation == 0:
+        if ze_bkg < 30:
+            conv_rad = 1000.
+        elif (ze_bkg >= 30) & (ze_bkg < 35.):
+            conv_rad = 2000.
+        elif (ze_bkg >= 35.) & (ze_bkg < 40.):
+            conv_rad = 3000.
+        elif (ze_bkg >= 40.) & (ze_bkg < 45.):
+            conv_rad = 4000.
+        else:
+            conv_rad = 5000.
+
+    if area_relation == 1:
+        if ze_bkg < 25:
+            conv_rad = 1000.
+        elif (ze_bkg >= 25) & (ze_bkg < 30.):
+            conv_rad = 2000.
+        elif (ze_bkg >= 30.) & (ze_bkg < 35.):
+            conv_rad = 3000.
+        elif (ze_bkg >= 35.) & (ze_bkg < 40.):
+            conv_rad = 4000.
+        else:
+            conv_rad = 5000.
+
+    if area_relation == 2:
+        if ze_bkg < 20:
+            conv_rad = 1000.
+        elif (ze_bkg >= 20) & (ze_bkg < 25.):
+            conv_rad = 2000.
+        elif (ze_bkg >= 25.) & (ze_bkg < 30.):
+            conv_rad = 3000.
+        elif (ze_bkg >= 30.) & (ze_bkg < 35.):
+            conv_rad = 4000.
+        else:
+            conv_rad = 5000.
+
+    if area_relation == 3:
+        if ze_bkg < 40:
+            conv_rad = 0.
+        elif (ze_bkg >= 40) & (ze_bkg < 45.):
+            conv_rad = 1000.
+        elif (ze_bkg >= 45.) & (ze_bkg < 50.):
+            conv_rad = 2000.
+        elif (ze_bkg >= 50.) & (ze_bkg < 55.):
+            conv_rad = 6000.
+        else:
+            conv_rad = 8000.
+
+    return conv_rad
+
+
+@njit()
+def peakedness(ze_bkg, peak_relation):
+    """
+    Given a background reflectivity value, we determine what the necessary
+    peakedness (or difference) has to be between a grid point's
+    reflectivity and the background reflectivity in order for that grid
+    point to be labeled convective.
+    """
+    if peak_relation == 0:
+        if ze_bkg < 0.:
+            peak = 10.
+        elif (ze_bkg >= 0.) and (ze_bkg < 42.43):
+            peak = 10. - ze_bkg ** 2 / 180.
+        else:
+            peak = 0.
+
+    elif peak_relation == 1:
+        if ze_bkg < 0.:
+            peak = 14.
+        elif (ze_bkg >= 0.) and (ze_bkg < 42.43):
+            peak = 14. - ze_bkg ** 2 / 180.
+        else:
+            peak = 4.
+
+    return peak
+
+
+@njit()
 def steiner_conv_strat(refl, x, y, dx, dy, intense=42, peak_relation=0,
                         area_relation=1, bkg_rad=11000, use_intense=True):
     """
@@ -16,88 +103,7 @@ def steiner_conv_strat(refl, x, y, dx, dy, intense=42, peak_relation=0,
     1 = Stratiform
     2 = Convective
     """
-    def convective_radius(ze_bkg, area_relation):
-        """
-        Given a mean background reflectivity value, we determine via a step
-        function what the corresponding convective radius would be.
-        Higher background reflectivitives are expected to have larger
-        convective influence on surrounding areas, so a larger convective
-        radius would be prescribed.
-        """
-        if area_relation == 0:
-            if ze_bkg < 30:
-                conv_rad = 1000.
-            elif (ze_bkg >= 30) & (ze_bkg < 35.):
-                conv_rad = 2000.
-            elif (ze_bkg >= 35.) & (ze_bkg < 40.):
-                conv_rad = 3000.
-            elif (ze_bkg >= 40.) & (ze_bkg < 45.):
-                conv_rad = 4000.
-            else:
-                conv_rad = 5000.
 
-        if area_relation == 1:
-            if ze_bkg < 25:
-                conv_rad = 1000.
-            elif (ze_bkg >= 25) & (ze_bkg < 30.):
-                conv_rad = 2000.
-            elif (ze_bkg >= 30.) & (ze_bkg < 35.):
-                conv_rad = 3000.
-            elif (ze_bkg >= 35.) & (ze_bkg < 40.):
-                conv_rad = 4000.
-            else:
-                conv_rad = 5000.
-
-        if area_relation == 2:
-            if ze_bkg < 20:
-                conv_rad = 1000.
-            elif (ze_bkg >= 20) & (ze_bkg < 25.):
-                conv_rad = 2000.
-            elif (ze_bkg >= 25.) & (ze_bkg < 30.):
-                conv_rad = 3000.
-            elif (ze_bkg >= 30.) & (ze_bkg < 35.):
-                conv_rad = 4000.
-            else:
-                conv_rad = 5000.
-
-        if area_relation == 3:
-            if ze_bkg < 40:
-                conv_rad = 0.
-            elif (ze_bkg >= 40) & (ze_bkg < 45.):
-                conv_rad = 1000.
-            elif (ze_bkg >= 45.) & (ze_bkg < 50.):
-                conv_rad = 2000.
-            elif (ze_bkg >= 50.) & (ze_bkg < 55.):
-                conv_rad = 6000.
-            else:
-                conv_rad = 8000.
-
-        return conv_rad
-
-    def peakedness(ze_bkg, peak_relation):
-        """
-        Given a background reflectivity value, we determine what the necessary
-        peakedness (or difference) has to be between a grid point's
-        reflectivity and the background reflectivity in order for that grid
-        point to be labeled convective.
-        """
-        if peak_relation == 0:
-            if ze_bkg < 0.:
-                peak = 10.
-            elif (ze_bkg >= 0.) and (ze_bkg < 42.43):
-                peak = 10. - ze_bkg ** 2 / 180.
-            else:
-                peak = 0.
-
-        elif peak_relation == 1:
-            if ze_bkg < 0.:
-                peak = 14.
-            elif (ze_bkg >= 0.) and (ze_bkg < 42.43):
-                peak = 14. - ze_bkg ** 2 / 180.
-            else:
-                peak = 4.
-
-        return peak
 
     sclass = np.zeros(refl.shape, dtype=int32)
     ny, nx = refl.shape
