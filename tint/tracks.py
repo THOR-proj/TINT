@@ -174,7 +174,7 @@ class Cell_tracks(object):
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
 
-    def get_tracks(self, grids, rain=False, save_rain=False, dt=''):
+    def get_tracks(self, grids, rain=False, save_rain=False, current_time=''):
         """ Obtains tracks given a list of pyart grid objects. This is the
         primary method of the tracks class. This method makes use of all of the
         functions and helper classes defined above. """
@@ -288,7 +288,8 @@ class Cell_tracks(object):
             obj_merge = obj_merge_new
             obj_props = get_object_prop(
                 frames1, cores1, grid_obj1, u_shift, v_shift, sclasses1,
-                self.field, self.record, self.params, self.current_objects, rain)
+                self.field, self.record, self.params, self.current_objects,
+                rain)
             self.record.add_uids(self.current_objects)
             self.tracks = write_tracks(self.tracks, self.record,
                                        self.current_objects, obj_props)
@@ -315,7 +316,7 @@ class Cell_tracks(object):
                     + 'Thompson et al. 2016, integrated in time.')}
             acc_rain_da.to_netcdf('/g/data/w40/esh563/CPOL_analysis/'
                                   + 'accumulated_rainfalls/'
-                                  + 'acc_rain_da_{}.nc'.format(dt))
+                                  + 'acc_rain_da_{}.nc'.format(current_time))
 
         del grid_obj1
 

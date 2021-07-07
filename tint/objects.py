@@ -478,8 +478,7 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
             for j in range(0, len(attrs)):
                 try:
                     lists[j].append(
-                        np.round(eval('ski_props[obj-1].' + attrs[j]), 3)
-                    )
+                        np.round(eval('ski_props[obj-1].' + attrs[j]), 3))
                 except:
                     lists[j].append(np.nan)
 
@@ -534,7 +533,7 @@ def get_object_prop(images, cores, grid1, u_shift, v_shift, sclasses,
         'id1': id1,
         'center': center,
         'u_shift': u_shift * levels,
-        'v_shift': v_shift * levels ,
+        'v_shift': v_shift * levels,
         'grid_x': grid_x,
         'grid_y': grid_y,
         'com_x': com_x,
@@ -642,8 +641,7 @@ def post_tracks(tracks_obj):
 
     # Drop last scan so no nans in u_shift etc
     tracks_obj.tracks.drop(
-        tracks_obj.tracks.index.max()[0], level='scan', inplace=True
-    )
+        tracks_obj.tracks.index.max()[0], level='scan', inplace=True)
 
     tracks_obj.tracks['max'] = np.round(tracks_obj.tracks['max'], 2)
 
@@ -663,25 +661,24 @@ def post_tracks(tracks_obj):
 
     dt = tracks_obj.record.interval.total_seconds()
     tmp_tracks = tmp_tracks.apply(
-        lambda x: np.round(((x[4] - x[0]) / (4 * dt)), 3))
-    tmp_tracks = tmp_tracks.rename(
-        columns={'grid_x': 'u', 'grid_y': 'v'})
+        lambda x: (x.values[4] - x.values[0]) / (4 * dt))
+    tmp_tracks = tmp_tracks.rename(columns={'grid_x': 'u', 'grid_y': 'v'})
+    tmp_tracks = tmp_tracks.drop(labels=['uid', 'level'], axis=1)
     tracks_obj.tracks = tracks_obj.tracks.merge(
         tmp_tracks, left_index=True, right_index=True)
 
     # Sort multi-index again as levels will be jumbled after rolling etc.
     tracks_obj.tracks = tracks_obj.tracks.sort_index()
 
-    import pdb; pdb.set_trace()
-
     # Calculate vertical displacement
     tmp_tracks = tracks_obj.tracks[['grid_x', 'grid_y']]
     tmp_tracks = tmp_tracks.groupby(
         level=['uid', 'scan', 'time'], as_index=False, group_keys=False)
     tmp_tracks = tmp_tracks.rolling(window=2, center=False)
-    tmp_tracks = tmp_tracks.apply(lambda x: np.round((x[1] - x[0]), 3))
+    tmp_tracks = tmp_tracks.apply(lambda x: (x.values[1] - x.values[0]))
     tmp_tracks = tmp_tracks.rename(
         columns={'grid_x': 'x_vert_disp', 'grid_y': 'y_vert_disp'})
+    tmp_tracks = tmp_tracks.drop(labels=['uid', 'scan', 'time'], axis=1)
     tracks_obj.tracks = tracks_obj.tracks.merge(
         tmp_tracks, left_index=True, right_index=True)
     tracks_obj.tracks = tracks_obj.tracks.sort_index()
