@@ -1,0 +1,76 @@
+
+    Attributes
+    ----------
+    params : dict
+        Parameters for the tracking algorithm.
+
+        FIELD_THRESH : units of 'field' attribute
+            The threshold used for object detection. Detected objects are
+            connnected pixels above this threshold.
+        ISO_THRESH : units of 'field' attribute
+            Used in isolated cell classification. Isolated cells must not be
+            connected to any other cell by contiguous pixels above this
+            threshold.
+        ISO_SMOOTH : pixels
+            Gaussian smoothing parameter in peak detection preprocessing. See
+            single_max in tint.objects.
+        MIN_SIZE : square kilometers
+            The minimum size threshold in square kilometres for an object to be
+            detected. See extract_grid_data in grid_utils.
+        SEARCH_MARGIN : meters
+            The radius of the search box around the predicted object center.
+        FLOW_MARGIN : meters
+            The margin size around the object extent on which to perform phase
+            correlation.
+        MAX_DISPARITY : float
+            Maximum allowable disparity value. Larger disparity values are
+            sent to LARGE_NUM.
+        MAX_FLOW_MAG : meters per second
+            Maximum allowable global shift magnitude. See get_global_shift in
+            tint.phase_correlation.
+        MAX_SHIFT_DISP : meters per second
+            Maximum magnitude of difference in meters per second for
+            two shifts to be considered in agreement.
+            See correct_shift in tint.matching.
+        GS_ALT : meters
+            Altitude in meters at which to perform phase correlation for
+            global shift calculation. See correct_shift in tint.matching.
+        LEVELS : n x 2 numpy array, meters
+            Each row represents range of vertical levels over which to
+            identify objects. Objects will then by matched across the
+            different vertical level ranges.
+        TRACK_INTERVAL: integer
+            Index i corresponding to the interval given in levels over
+            which to track across time.
+        BOUNDARY_GRID_CELLS: set
+            Set of tuples of grid indices for the boundary of the in
+            range area. Use empty set to ignore this test.
+        UPDRAFT_THRESH: float, DbZ
+            Threshold used when tracking local maxima across vertical levels
+            in order to define "updrafts".
+        UPDRAFT_START: float, metres
+            Height at which to begin tracking updrafts.
+
+    field : str
+        String specifying pyart grid field to be used for tracking. Default is
+        'reflectivity'.
+    grid_size : array
+        Array containing z, y, and x mesh size in meters respectively.
+    last_grid : Grid
+        Contains the most recent grid object tracked. This is used for dynamic
+        updates.
+    counter : Counter
+        See Counter class in helpers.py.
+    record : Record
+        See Record class.
+    current_objects : dict
+        Contains information about objects in the current scan.
+    tracks : DataFrame
+
+    __saved_record : Record
+        Deep copy of Record at the penultimate scan in the sequence. This and
+        following 2 attributes used for link-up in dynamic updates.
+    __saved_counter : Counter
+        Deep copy of Counter.
+    __saved_objects : dict
+        Deep copy of current_objects.

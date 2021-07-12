@@ -83,7 +83,7 @@ def get_filtered_frame_steiner(
             grid_size[1], grid_size[2])
     except:
         sclass = np.ones(grid.shape)
-        print('\nSteiner Scheme Failed.')
+        print('Steiner Scheme Failed.')
 
     sclass[sclass != 2] = 0
     frame = ndimage.label(sclass)[0]
@@ -187,7 +187,7 @@ def get_connected_components(frames):
     return frames_con, frames
 
 
-def extract_grid_data(grid_obj, field, grid_size, params, rain):
+def extract_grid_data(grid_obj, field, grid_size, params):
     """ Returns filtered grid frame and raw grid slice at global shift
     altitude. """
 
@@ -198,7 +198,7 @@ def extract_grid_data(grid_obj, field, grid_size, params, rain):
     gs_alt = params['GS_ALT']
     raw = masked.data[get_grid_alt(grid_size, gs_alt), :, :]
 
-    if rain:
+    if params['RAIN']:
         masked_rain = grid_obj.fields['radar_estimated_rain_rate']['data']
         # Note this won't work if fill_value is nan!
         cond1 = (masked_rain.data == masked_rain.fill_value)
@@ -214,9 +214,8 @@ def extract_grid_data(grid_obj, field, grid_size, params, rain):
 
     min_sizes = params['MIN_SIZE'] / np.prod(grid_size[1:]/1000)
 
-    # Calculate frames for each level interval
-    # Count down because we only want to calculate steiner if
-    # absolutely necessary
+    # Calculate frames for each layer.
+    # Count down because we only want to calculate steiner if really necessary
     for i in range(frames.shape[0]-1, -1, -1):
 
         [z_min, z_max] = get_level_indices(

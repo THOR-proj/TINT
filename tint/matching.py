@@ -152,8 +152,9 @@ def check_search_box(search_box, img_dims):
         search_box['x2'] = img_dims[0]
     if search_box['y2'] > img_dims[1]:
         search_box['y2'] = img_dims[1]
-    if ((search_box['x2'] - search_box['x1'] < 5) or
-            (search_box['y2'] - search_box['y1'] < 5)):
+    if (
+            (search_box['x2'] - search_box['x1'] < 5)
+            or (search_box['y2'] - search_box['y1'] < 5)):
         search_box['valid'] = False
     return search_box
 
@@ -199,49 +200,48 @@ def save_obj_match(obj_id1, obj_found, disparity, obj_match, params):
     return obj_match
 
 
-def locate_all_objects(image1, image2, raw1, raw2, global_shift, current_objects, record,
-                       params):
+def locate_all_objects(
+        data_dic, global_shift, current_objects, record, params):
     """ Matches all the objects in image1 to objects in image2. This is the
     main function called on a pair of images. """
-    nobj1 = np.max(image1)
-    nobj2 = np.max(image2)
+    nobj1 = np.max(data_dic['frame1'])
+    nobj2 = np.max(data_dic['frame2'])
 
     if (nobj2 == 0) or (nobj1 == 0):
         print('No echoes to track!')
         return
 
-    obj_match = np.full((nobj1, np.max((nobj1, nobj2))),
-                        LARGE_NUM, dtype='f')
+    obj_match = np.full(
+        (nobj1, np.max((nobj1, nobj2))), LARGE_NUM, dtype='f')
     u_shift = []
     v_shift = []
 
     for obj_id1 in np.arange(nobj1) + 1:
-        obj1_extent = get_obj_extent(image1, obj_id1)
-        shift = get_ambient_flow(obj1_extent, raw1,
-                                 raw2, params, record.grid_size)
+        obj1_extent = get_obj_extent(data_dic['frame1'], obj_id1)
+        shift = get_ambient_flow(
+            obj1_extent, data_dic['raw1'], data_dic['raw2'], params,
+            record.grid_size)
 
         if shift is None:
             record.count_case(5)
             shift = global_shift
-            # Note in this case the object's u and v will be
-            # global shift.
 
-        shift = correct_shift(shift, current_objects, obj_id1,
-                              global_shift, record, params)
+        shift = correct_shift(
+            shift, current_objects, obj_id1, global_shift, record, params)
 
         shift_meters = shift * record.grid_size[1:]
         [v, u] = shift_meters/record.interval.seconds
         u_shift.append(u)
         v_shift.append(v)
 
-        search_box = predict_search_extent(obj1_extent, shift,
-                                           params, record.grid_size)
-        search_box = check_search_box(search_box, image2.shape)
-        objs_found = find_objects(search_box, image2)
-        disparity = get_disparity_all(objs_found, image2,
-                                      search_box, obj1_extent)
-        obj_match = save_obj_match(obj_id1, objs_found, disparity, obj_match,
-                                   params)
+        search_box = predict_search_extent(
+            obj1_extent, shift, params, record.grid_size)
+        search_box = check_search_box(search_box, data_dic['frame2'].shape)
+        objs_found = find_objects(search_box, data_dic['frame2'])
+        disparity = get_disparity_all(
+            objs_found, data_dic['frame2'], search_box, obj1_extent)
+        obj_match = save_obj_match(
+            obj_id1, objs_found, disparity, obj_match, params)
 
     return obj_match, u_shift, v_shift
 
@@ -274,13 +274,11 @@ def match_pairs(obj_match, params):
     return pairs, obj_merge
 
 
-def get_pairs(
-        image1, image2, raw1, raw2, global_shift, current_objects,
-        record, params):
+def get_pairs(data_dic, global_shift, current_objects, record, params):
     """ Given two images, this function identifies the matching objects and
     pairs them appropriately. See disparity function. """
-    nobj1 = np.max(image1)
-    nobj2 = np.max(image2)
+    nobj1 = np.max(data_dic['frame1'])
+    nobj2 = np.max(data_dic['frame2'])
 
     if nobj1 == 0:
         print('No echoes found in the first scan.')
@@ -292,8 +290,7 @@ def get_pairs(
         return zero_pairs, zero_obj_merge, [np.nan] * nobj1, [np.nan] * nobj1
 
     obj_match, u_shift, v_shift = locate_all_objects(
-        image1, image2, raw1, raw2, global_shift, current_objects,
-        record, params)
+        data_dic, global_shift, current_objects, record, params)
 
     pairs, obj_merge = match_pairs(obj_match, params)
 

@@ -1,18 +1,5 @@
-"""
-========================================
-Cell Tracking (:mod:`tracking.core`)
-========================================
-.. currentmodule:: tracking.core
-TITAN cell tracking
-================
-.. autosummary::
-    :toctree: generated/
-    Cell_tracks
-
-"""
-
-#from .cell_tracking import Cell_tracks
-from .tracks import Cell_tracks
+# from .cell_tracking import Cell_tracks
+from .tracks import Tracks
 from .visualization import animate
 from . import testing
 

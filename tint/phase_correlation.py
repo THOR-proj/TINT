@@ -25,7 +25,6 @@ def get_ambient_flow(obj_extent, raw1, raw2, params, grid_size):
     col_ub = np.int(col_ub)
 
     dims = raw1.shape
-    #test
 
     row_lb = np.max([row_lb, 0])
     row_ub = np.min([row_ub, dims[0]])
@@ -51,7 +50,7 @@ def fft_flowvectors(im1, im2, global_shift=False):
     dims = np.array(im1.shape)
 
     pshift = np.argwhere(cov_smooth == np.max(cov_smooth))[0]
-    
+
     rs = np.ceil(dims[0]/2).astype('int')
     cs = np.ceil(dims[1]/2).astype('int')
 
@@ -88,7 +87,7 @@ def fft_shift(fft_mat):
         centered = np.concatenate((centered_b, centered_t), axis=1)
         # Thus centered is formed by shifting the entries of fft_mat
         # up/left by [rs, cs] indices, or equivalently down/right by
-        # (fft_mat.shape - [rs, cs]) indices, with edges wrapping. 
+        # (fft_mat.shape - [rs, cs]) indices, with edges wrapping.
         return centered
     else:
         print('input to fft_shift() should be a matrix')
