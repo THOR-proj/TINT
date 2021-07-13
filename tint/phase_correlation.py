@@ -85,7 +85,7 @@ def fft_shift(fft_mat):
         centered_t = np.concatenate((quad4, quad1), axis=0)
         centered_b = np.concatenate((quad3, quad2), axis=0)
         centered = np.concatenate((centered_b, centered_t), axis=1)
-        # Thus centered is formed by shifting the entries of fft_mat
+        # Centered is formed by shifting the entries of fft_mat
         # up/left by [rs, cs] indices, or equivalently down/right by
         # (fft_mat.shape - [rs, cs]) indices, with edges wrapping.
         return centered

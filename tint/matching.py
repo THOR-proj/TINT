@@ -1,18 +1,7 @@
-"""
-tint.matching
-=============
-
-Functions for object matching between adjacent radar scans.
-
-"""
-
 import numpy as np
-
 from scipy import optimize
-
 from .phase_correlation import get_ambient_flow
 from .objects import get_obj_extent
-
 
 LARGE_NUM = 1000
 
@@ -77,8 +66,8 @@ def correct_shift(
     get_std_flow) and compares it to the last headings of the object and
     the global_shift vector for that timestep. Corrects accordingly.
     Note: At the time of this function call, current_objects has not yet been
-    updated for the current frame1 and frame2, so the id2s in current_objects
-    correspond to the objects in the current frame1. """
+    updated for the current frame and frame_new, so the id2s in current_objects
+    correspond to the objects in the current frame. """
     global_shift = clip_shift(global_shift, record, params)
 
     # Note last_heads is defined using object centers! These jump around a lot
@@ -112,7 +101,7 @@ def correct_shift(
 
     else:
         case = 4
-        #corrected_shift = (local_shift + last_heads)/2
+        # corrected_shift = (local_shift + last_heads)/2
         corrected_shift = local_shift
 
     corrected_shift = np.round(corrected_shift, 2)
@@ -204,8 +193,8 @@ def locate_all_objects(
         data_dic, global_shift, current_objects, record, params):
     """ Matches all the objects in image1 to objects in image2. This is the
     main function called on a pair of images. """
-    nobj1 = np.max(data_dic['frame1'])
-    nobj2 = np.max(data_dic['frame2'])
+    nobj1 = np.max(data_dic['frame'])
+    nobj2 = np.max(data_dic['frame_new'])
 
     if (nobj2 == 0) or (nobj1 == 0):
         print('No echoes to track!')
@@ -217,9 +206,9 @@ def locate_all_objects(
     v_shift = []
 
     for obj_id1 in np.arange(nobj1) + 1:
-        obj1_extent = get_obj_extent(data_dic['frame1'], obj_id1)
+        obj1_extent = get_obj_extent(data_dic['frame'], obj_id1)
         shift = get_ambient_flow(
-            obj1_extent, data_dic['raw1'], data_dic['raw2'], params,
+            obj1_extent, data_dic['refl'], data_dic['refl_new'], params,
             record.grid_size)
 
         if shift is None:
@@ -236,10 +225,10 @@ def locate_all_objects(
 
         search_box = predict_search_extent(
             obj1_extent, shift, params, record.grid_size)
-        search_box = check_search_box(search_box, data_dic['frame2'].shape)
-        objs_found = find_objects(search_box, data_dic['frame2'])
+        search_box = check_search_box(search_box, data_dic['frame_new'].shape)
+        objs_found = find_objects(search_box, data_dic['frame_new'])
         disparity = get_disparity_all(
-            objs_found, data_dic['frame2'], search_box, obj1_extent)
+            objs_found, data_dic['frame_new'], search_box, obj1_extent)
         obj_match = save_obj_match(
             obj_id1, objs_found, disparity, obj_match, params)
 
@@ -277,8 +266,8 @@ def match_pairs(obj_match, params):
 def get_pairs(data_dic, global_shift, current_objects, record, params):
     """ Given two images, this function identifies the matching objects and
     pairs them appropriately. See disparity function. """
-    nobj1 = np.max(data_dic['frame1'])
-    nobj2 = np.max(data_dic['frame2'])
+    nobj1 = np.max(data_dic['frame'])
+    nobj2 = np.max(data_dic['frame_new'])
 
     if nobj1 == 0:
         print('No echoes found in the first scan.')

@@ -48,10 +48,10 @@ class Tracks(object):
             'ISO_THRESH': [10, 10, 10],  # DbZ
             # Interval in the above array used for tracking.
             'TRACK_INTERVAL': 0,
-            # Threshold for identifying "updrafts".
-            'UPDRAFT_THRESH': 25,  # DbZ
+            # Threshold for identifying "cells".
+            'CELL_THRESH': 25,  # DbZ
             # Altitude to start tracking updrafts.
-            'UPDRAFT_START': 3000,  # m
+            'CELL_START': 3000,  # m
             # Whether to collect object based rainfall totals
             'RAIN': False,  # bool
             # Whether to save the grids associated with the accumulated totals
@@ -107,26 +107,24 @@ class Tracks(object):
         """Find the next nonempty grid."""
         data = extract_grid_data(
             grid_obj2, self.field, self.grid_size, self.params)
-        data_names = ['raw', 'raw_rain', 'frames', 'cores', 'sclasses']
+        data_names = ['refl', 'rain', 'frames', 'cells', 'stein_class']
         for i in range(len(data_names)):
-            data_dic[data_names[i] + '2'] = data[i]
+            data_dic[data_names[i] + '_new'] = data[i]
         # Skip grids that are artificially zero
         while (
-                np.max(data_dic['raw1']) > 30
-                and np.max(data_dic['raw2']) == 0):
+                np.max(data_dic['refl']) > 30
+                and np.max(data_dic['refl_new']) == 0):
             grid_obj2 = next(grids)
             data = extract_grid_data(
                 grid_obj2, self.field, self.grid_size, self.params)
             for i in range(len(data_names)):
-                data_dic[data_names[i] + '2'] = data[i]
+                data_dic[data_names[i] + '_new'] = data[i]
             print('Skipping erroneous grid.')
         return grid_obj2, data_dic
 
     def get_tracks(self, grids):
         """Obtains tracks given a list of pyart grid objects."""
         start_time = datetime.datetime.now()
-        acc_rain_list = []
-        acc_rain_uid_list = []
 
         time_str = str(start_time)[0:-7]
         time_str = time_str.replace(" ", "_").replace(":", "_")
@@ -145,34 +143,34 @@ class Tracks(object):
             self.tracks.drop(self.record.scan + 1)  # last scan is overwritten
 
         if self.current_objects is None:
-            newRain = True
+            new_rain = True
         else:
-            newRain = False
+            new_rain = False
 
         data_dic = {}
         data = extract_grid_data(
             grid_obj2, self.field, self.grid_size, self.params)
-        data_names = ['raw', 'raw_rain', 'frames', 'cores', 'sclasses']
-        import pdb; pdb.set_trace()
+        data_names = ['refl', 'rain', 'frames', 'cells', 'stein_class']
         for i in range(len(data_names)):
-            data_dic[data_names[i] + '2'] = data[i]
-        data_dic['frame2'] = data_dic['frames2'][self.params['TRACK_INTERVAL']]
-        data_dic['frame1'] = copy.deepcopy(data_dic['frame2'])
+            data_dic[data_names[i] + '_new'] = data[i]
+        data_dic['frame_new'] = data_dic['frames_new'][
+            self.params['TRACK_INTERVAL']]
+        # For first grid, initialise the "current" frame to the "new" frame
+        data_dic['frame'] = copy.deepcopy(data_dic['frame_new'])
 
         while grid_obj2 is not None:
             # Set current grid equal to new grid from last iteration.
             grid_obj1 = grid_obj2
-            if not newRain:
+            if not new_rain:
                 # Set old old frame equal to current frame from last iteration.
-                data_dic['frame0'] = copy.deepcopy(data_dic['frame1'])
+                data_dic['frame_old'] = copy.deepcopy(data_dic['frame'])
             else:
                 # New rain, so no relevant old frame
-                data_dic['frame0'] = None
+                data_dic['frame_old'] = None
             # Set current datasets equal to new datasets from last iteration.
             for n in data_names + ['frame']:
-                data_dic[n + '1'] = data_dic[n + '2']
+                data_dic[n] = data_dic[n + '_new']
             try:
-                # Check if next grid zero artificially
                 grid_obj2 = next(grids)
                 grid_obj2, data_dic = self.get_next_grid(
                     grid_obj2, grids, data_dic)
@@ -181,7 +179,7 @@ class Tracks(object):
 
             if grid_obj2 is not None:
 
-                data_dic['frame2'] = data_dic['frames2'][
+                data_dic['frame_new'] = data_dic['frames_new'][
                     self.params['TRACK_INTERVAL']]
                 self.record.update_scan_and_time(grid_obj1, grid_obj2)
 
@@ -194,42 +192,40 @@ class Tracks(object):
                     message = 'Time discontinuity at {}.'.format(
                         self.record.time)
                     print(message)
-                    newRain = True
+                    new_rain = True
                     self.current_objects = None
             else:
                 # setup to write final scan
                 self.__save()
                 self.last_grid = grid_obj1
                 self.record.update_scan_and_time(grid_obj1)
-                data_dic['raw2'] = None
-                data_dic['frame2'] = np.zeros_like(data_dic['frame1'])
-                data_dic['frames2'] = np.zeros_like(data_dic['frames1'])
+                data_dic['refl_new'] = None
+                data_dic['frame_new'] = np.zeros_like(data_dic['frame'])
+                data_dic['frames_new'] = np.zeros_like(data_dic['frames'])
 
-            if np.max(data_dic['frame1']) == 0:
-                newRain = True
+            if np.max(data_dic['frame']) == 0:
+                new_rain = True
                 print('No objects found in scan {}.'.format(self.record.scan))
                 self.current_objects = None
                 continue
 
             global_shift = get_global_shift(
-                data_dic['raw1'], data_dic['raw2'], self.params)
+                data_dic['refl'], data_dic['refl_new'], self.params)
             pairs, obj_merge_new, u_shift, v_shift = get_pairs(
                 data_dic, global_shift, self.current_objects, self.record,
                 self.params)
 
-            if newRain:
+            if new_rain:
                 # first nonempty scan after a period of empty scans
                 self.current_objects, self.counter = init_current_objects(
                     data_dic, pairs, self.counter,
                     self.record.interval.total_seconds(), self.params)
-                newRain = False
+                new_rain = False
             else:
-                (
-                    self.current_objects, self.counter,
-                    acc_rain_list, acc_rain_uid_list) = update_current_objects(
-                    data_dic, acc_rain_list, acc_rain_uid_list,
-                    pairs, self.current_objects, self.counter, obj_merge,
-                    self.record.interval.total_seconds(), self.params)
+                self.current_objects, self.counter = update_current_objects(
+                    data_dic, pairs, self.current_objects, self.counter,
+                    obj_merge, self.record.interval.total_seconds(),
+                    self.params, grid_obj1)
             obj_merge = obj_merge_new
             obj_props = get_object_prop(
                 data_dic, grid_obj1, u_shift, v_shift,
@@ -238,27 +234,6 @@ class Tracks(object):
             self.tracks = write_tracks(
                 self.tracks, self.record, self.current_objects, obj_props)
             del global_shift, pairs, obj_props
-
-        if self.params['SAVE_RAIN']:
-            acc_rain = np.stack(acc_rain_list, axis=0)
-            acc_rain_uid = np.array(acc_rain_uid_list)
-            if len(acc_rain_uid_list) > 1:
-                acc_rain_uid = np.squeeze(acc_rain_uid)
-
-            x = grid_obj1.x['data'].data
-            y = grid_obj1.y['data'].data
-            acc_rain_da = xr.DataArray(
-                acc_rain, coords=[acc_rain_uid, y, x], dims=['uid', 'y', 'x'])
-            acc_rain_da.attrs = {
-                'long_name': 'Accumulated Rainfall',
-                'units': 'mm',
-                'standard_name': 'Accumulated Rainfall',
-                'description': (
-                    'Derived from rainfall rate algorithm based on '
-                    + 'Thompson et al. 2016, integrated in time.')}
-            acc_rain_da.to_netcdf('/g/data/w40/esh563/CPOL_analysis/'
-                                  + 'accumulated_rainfalls/'
-                                  + 'acc_rain_da_{}.nc'.format(time_str))
 
         del grid_obj1
 

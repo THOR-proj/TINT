@@ -13,11 +13,12 @@ import pandas as pd
 import pyart
 from scipy import ndimage
 from skimage.measure import regionprops
-from skimage.feature import peak_local_max
-
-from .grid_utils import get_filtered_frame, get_level_indices, get_grid_alt
-from .steiner import steiner_conv_strat
 from scipy.ndimage import center_of_mass
+
+from .grid_utils import get_filtered_frame, get_level_indices
+from .rain import update_rain_totals, init_rain_totals, get_object_rain_props
+from .rain import update_sys_tracks_rain
+from .cells import identify_cells
 
 
 def get_object_center(obj_id, labeled_image):
@@ -36,21 +37,23 @@ def get_obj_extent(labeled_image, obj_label):
 
     xlength = np.max(obj_index[:, 0]) - np.min(obj_index[:, 0]) + 1
     ylength = np.max(obj_index[:, 1]) - np.min(obj_index[:, 1]) + 1
-    obj_radius = np.max((xlength, ylength))/2
+    obj_radius = np.max((xlength, ylength)) / 2
     obj_center = np.round(np.median(obj_index, axis=0), 0)
     obj_area = len(obj_index[:, 0])
 
-    obj_extent = {'obj_center': obj_center, 'obj_radius': obj_radius,
-                  'obj_area': obj_area, 'obj_index': obj_index}
+    obj_extent = {
+        'obj_center': obj_center, 'obj_radius': obj_radius,
+        'obj_area': obj_area, 'obj_index': obj_index}
     return obj_extent
 
 
 def init_current_objects(data_dic, pairs, counter, interval, params):
     """Returns a dictionary for objects with unique ids and their
-    corresponding ids in frame1 and frame2. This function is called when
+    corresponding ids in frame and frame_new. This function is called when
     echoes are detected after a period of no echoes. """
 
-    nobj = np.max(data_dic['frame1'])
+    current_objects = {}
+    nobj = np.max(data_dic['frame'])
 
     id1 = np.arange(nobj) + 1
     uid = counter.next_uid(count=nobj)
@@ -62,69 +65,37 @@ def init_current_objects(data_dic, pairs, counter, interval, params):
     parents = [set() for i in range(len(uid))]
 
     if params['RAIN']:
-        max_rr = [
-            np.zeros(data_dic['raw_rain1'].shape, dtype=np.float32)
-            for i in range(len(uid))]
-        tot_rain = [
-            np.zeros(data_dic['raw_rain1'].shape, dtype=np.float32)
-            for i in range(len(uid))]
+        max_rr, tot_rain = init_rain_totals(data_dic, uid, id1, interval)
+        current_objects.update({'max_rr': max_rr, 'tot_rain': tot_rain})
 
-        for i in range(len(uid)):
-            cond = (np.any(data_dic['frames1'] == id1[i], axis=0))
-            max_rr[i][cond] = data_dic['raw_rain1'][cond]
-            tot_rain[i][cond] = data_dic['raw_rain1'][cond]/3600*interval
-    else:
-        max_rr = [
-            np.ones(data_dic['raw1'].shape, dtype=np.float32) * np.nan
-            for i in range(len(uid))]
-        tot_rain = [
-            np.ones(data_dic['raw1'].shape, dtype=np.float32) * np.nan
-            for i in range(len(uid))]
-
-    current_objects = {
+    current_objects.update({
         'id1': id1, 'uid': uid, 'id2': id2, 'mergers': mergers,
-        'new_mergers': new_mergers, 'parents': parents, 'obs_num': obs_num,
-        'max_rr': max_rr, 'tot_rain': tot_rain}
+        'new_mergers': new_mergers, 'parents': parents, 'obs_num': obs_num})
     current_objects = attach_last_heads(data_dic, current_objects)
     return current_objects, counter
 
 
 def update_current_objects(
-        data_dic, acc_rain_list, acc_rain_uid_list, pairs, old_objects,
-        counter, old_obj_merge, interval, params):
-    """ Removes dead objects, updates living objects, and assigns new uids to
+        data_dic, pairs, old_objects, counter,
+        old_obj_merge, interval, params, grid_obj):
+    """Removes dead objects, updates living objects, and assigns new uids to
     new-born objects. """
-    nobj = np.max(data_dic['frame1'])
+    current_objects = {}
+    nobj = np.max(data_dic['frame'])
     id1 = np.arange(nobj) + 1
     uid = np.array([], dtype='str')
     obs_num = np.array([], dtype='i')
     mergers = []
-    max_rr = []
-    tot_rain = []
 
     for obj in np.arange(nobj) + 1:
-
-        cond = (np.any(data_dic['frames1'] == id1[obj-1], axis=0))
-        obj_max_rr = np.zeros(data_dic['raw_rain1'].shape, dtype=np.float32)
-        obj_max_rr[cond] = data_dic['raw_rain1'][cond]
-        max_rr.append(obj_max_rr)
         if obj in old_objects['id2']:
             obj_index = (old_objects['id2'] == obj)
             ind = np.argwhere(obj_index)[0, 0]
             uid = np.append(uid, old_objects['uid'][ind])
             obs_num = np.append(obs_num, old_objects['obs_num'][ind]+1)
-
-            obj_tot_rain = old_objects['tot_rain'][ind]
-            obj_tot_rain[cond] += data_dic['raw_rain1'][cond]/3600*interval
-            tot_rain.append(obj_tot_rain)
         else:
             uid = np.append(uid, counter.next_uid())
             obs_num = np.append(obs_num, 0)
-            obj_tot_rain = np.zeros(data_dic['raw_rain1'].shape)
-            obj_tot_rain[cond] = data_dic['raw_rain1'][cond]/3600*interval
-            tot_rain.append(obj_tot_rain)
-
-    id2 = pairs
 
     new_mergers = [set() for i in range(len(uid))]
     mergers = [set() for i in range(len(uid))]
@@ -144,33 +115,29 @@ def update_current_objects(
                 obj_index = (old_objects['uid'] == list(recurring)[j])
                 # Check for overlap
                 olap = np.any(
-                    (data_dic['frame0'] == old_objects['id1'][obj_index])
-                    * ((data_dic['frame1'] == id1[i])))
+                    (data_dic['frame_old'] == old_objects['id1'][obj_index])
+                    * ((data_dic['frame'] == id1[i])))
                 if olap:
                     parents[i] = parents[i].union(
                         {old_objects['uid'][obj_index][0]})
 
-    if params['SAVE_RAIN']:
-        if data_dic['raw2'] is None:
-            dead_uids = old_objects['uid']
-        else:
-            dead_uids = set(old_objects['uid'])-set(uid)
-        for u in dead_uids:
-            u_ind = int(np.argwhere(old_objects['uid'] == u))
-            acc_rain_list.append(old_objects['tot_rain'][u_ind])
-            acc_rain_uid_list.append(u)
+    if params['RAIN']:
+        max_rr, tot_rain = update_rain_totals(
+            data_dic, old_objects, uid, interval, grid_obj, params)
+        current_objects.update({'max_rr': max_rr, 'tot_rain': tot_rain})
 
-    current_objects = {
+    id2 = pairs
+
+    current_objects.update({
         'id1': id1, 'uid': uid, 'id2': id2, 'obs_num': obs_num,
-        'mergers': mergers, 'new_mergers': new_mergers, 'parents': parents,
-        'max_rr': max_rr, 'tot_rain': tot_rain}
+        'mergers': mergers, 'new_mergers': new_mergers, 'parents': parents})
 
     current_objects = attach_last_heads(data_dic, current_objects)
-    return current_objects, counter, acc_rain_list, acc_rain_uid_list
+    return current_objects, counter
 
 
 def attach_last_heads(data_dic, current_objects):
-    """ Attaches last heading information to current_objects dictionary. """
+    """ Attaches last heading information to current_objects dictionary."""
     nobj = len(current_objects['uid'])
     heads = np.ma.empty((nobj, 2))
 
@@ -179,10 +146,10 @@ def attach_last_heads(data_dic, current_objects):
                 (current_objects['id1'][obj] > 0)
                 and (current_objects['id2'][obj] > 0)):
             center1 = center_of_mass(
-                data_dic['raw1'], labels=data_dic['frame1'],
+                data_dic['refl'], labels=data_dic['frame'],
                 index=current_objects['id1'][obj])
             center2 = center_of_mass(
-                data_dic['raw2'], labels=data_dic['frame2'],
+                data_dic['refl_new'], labels=data_dic['frame_new'],
                 index=current_objects['id2'][obj])
             heads[obj, :] = np.array(center2) - np.array(center1)
         else:
@@ -192,14 +159,14 @@ def attach_last_heads(data_dic, current_objects):
     return current_objects
 
 
-def check_isolation(raw, filtered, grid_size, params, level):
+def check_isolation(refl, filtered, grid_size, params, level):
     """ Returns list of booleans indicating object isolation. Isolated objects
     are not connected to any other objects by pixels greater than ISO_THRESH,
     and have at most one peak. """
     nobj = np.max(filtered)
     min_size = params['MIN_SIZE'][level] / np.prod(grid_size[1:]/1000)
     iso_filtered = get_filtered_frame(
-        raw, min_size, params['ISO_THRESH'][level])
+        refl, min_size, params['ISO_THRESH'][level])
     nobj_iso = np.max(iso_filtered)
     iso = np.empty(nobj, dtype='bool')
 
@@ -207,16 +174,16 @@ def check_isolation(raw, filtered, grid_size, params, level):
         obj_ind = np.where(iso_filtered == iso_id)
         objects = np.unique(filtered[obj_ind])
         objects = objects[objects != 0]
-        if len(objects) == 1 and single_max(obj_ind, raw, params):
+        if len(objects) == 1 and single_max(obj_ind, refl, params):
             iso[objects - 1] = True
         else:
             iso[objects - 1] = False
     return iso
 
 
-def single_max(obj_ind, raw, params):
+def single_max(obj_ind, refl, params):
     """ Returns True if object has at most one peak. """
-    max_proj = np.max(raw, axis=0)
+    max_proj = np.max(refl, axis=0)
     smooth = ndimage.filters.gaussian_filter(max_proj, params['ISO_SMOOTH'])
     padded = np.pad(smooth, 1, mode='constant')
     obj_ind = [axis + 1 for axis in obj_ind]  # adjust for padding
@@ -233,105 +200,21 @@ def single_max(obj_ind, raw, params):
     return True
 
 
-def get_border_indices(obj_ind, b_ind):
-    """ Determine the indices that intersect the range boundary of
-    the radar. """
-
-    return b_ind
-
-
-def identify_updrafts(raw3D, images, grid1, record, params, sclasses):
-    """ Determine "updrafts" by looking for local maxima at each
-    vertical level. """
-
-    [dz, dx, dy] = record.grid_size
-    z0 = get_grid_alt(record.grid_size, params['LEVELS'][0, 0])
-
-    if params['FIELD_THRESH'][0] == 'convective':
-        sclass = sclasses[0]
-    else:
-        sclass = steiner_conv_strat(
-            raw3D[z0], grid1.x['data'], grid1.y['data'], dx, dy)
-
-    # Get local maxima
-    local_max = []
-
-    for k in range(z0, grid1.nz):
-        l_max = peak_local_max(
-            raw3D[k], threshold_abs=params['UPDRAFT_THRESH'])
-        l_max = np.insert(
-            l_max, 0, np.ones(len(l_max), dtype=int)*k, axis=1)
-        local_max.append(l_max)
-
-    # Find pixels classified as convective by steiner
-    conv_ind = np.argwhere(sclass == 2)
-    conv_ind_set = set(
-        [tuple(conv_ind[i]) for i in range(len(conv_ind))])
-
-    # Define updrafts starting from local maxima at lowest level
-    # Append the starting level index - i.e. z0.
-    updrafts = [[local_max[0][j]] for j in range(len(local_max[0]))
-                if tuple(local_max[0][j][1:]) in conv_ind_set]
-
-    # Find first level with no local_max
-    try:
-        max_height = [
-            i for i in range(len(local_max))
-            if local_max[i].tolist() == []][0]
-    except:
-        max_height = len(local_max)
-
-    # Create a set to store indices of still
-    # existing updrafts as we check each vertical
-    # level of data.
-    current_inds = set(range(len(updrafts)))
-
-    for k in range(1, max_height):
-
-        previous = np.array([updrafts[i][k-1] for i in current_inds])
-        current = local_max[k]
-
-        if ((len(previous) == 0) or (len(current) == 0)):
-            break
-
-        # Calculate euclidean distance between indices
-        mc1, mp1 = np.meshgrid(current[:, 1], previous[:, 1])
-        mc2, mp2 = np.meshgrid(current[:, 2], previous[:, 2])
-
-        match = np.sqrt((mp1 - mc1) ** 2 + (mp2 - mc2) ** 2)
-
-        next_inds = copy.copy(current_inds)
-        minimums = np.argmin(match, axis=1)
-        for l in range(match.shape[0]):
-            minimum = minimums[l]
-            if (match[l, minimum] < 2):
-                updrafts[list(current_inds)[l]].append(current[minimum])
-            else:
-                next_inds = next_inds - set([list(current_inds)[l]])
-        # If any indices remain in current - add them to next_inds
-        current_inds = next_inds
-
-    updrafts = [
-        updrafts[i] for i in range(len(updrafts)) if (len(updrafts[i]) > 1)]
-
-    return updrafts
-
-
 def get_object_prop(
         data_dic, grid1, u_shift, v_shift, field, record,
         params, current_objects):
     """Returns dictionary of object properties for all objects found in
     each level of images, where images are the labelled (filtered)
     frames. """
-    [
-        id1, center, com_x, com_y, grid_x, grid_y, proj_area, longitude,
-        latitude, field_max, max_height, volume, level, touch_border,
-        semi_major, semi_minor, orientation, eccentricity, mergers, parent,
-        updraft_list, max_rr, max_rr_loc, tot_rain, tot_rain_loc
-    ] = [[] for i in range(25)]
+    properties = [
+        'id1', 'center', 'com_x', 'com_y', 'grid_x', 'grid_y', 'proj_area',
+        'lon', 'lat', 'field_max', 'max_height', 'volume',
+        'level', 'touch_border', 'semi_major', 'semi_minor', 'orientation',
+        'eccentricity', 'mergers', 'parent', 'cells']
+    obj_prop = {p: [] for p in properties}
 
-    nobj = np.max(data_dic['frames1'])
-    [levels, rows, columns] = data_dic['frames1'].shape
+    nobj = np.max(data_dic['frames'])
+    [levels, rows, columns] = data_dic['frames'].shape
 
     unit_dim = record.grid_size
     if unit_dim[-2] != unit_dim[-1]:
@@ -346,57 +229,25 @@ def get_object_prop(
     raw3D = grid1.fields[field]['data'].data  # Complete dataset
     z_values = grid1.z['data']/1000
 
-    all_updrafts = identify_updrafts(
-        raw3D, data_dic['frames1'], grid1, record, params,
-        data_dic['sclasses1'])
+    all_cells = identify_cells(
+        raw3D, data_dic['frames'], grid1, record, params,
+        data_dic['stein_class'])
 
     for i in range(levels):
 
-        # Get vertical indices of ith level
         [z_min, z_max] = get_level_indices(
             grid1, record.grid_size, params['LEVELS'][i, :])
-
-        # Caclulate ellipse fit properties
         ski_props = regionprops(
-            data_dic['frames1'][i], raw3D[z_min], cache=True)
+            data_dic['frames'][i], raw3D[z_min], cache=True)
 
         for obj in np.arange(nobj) + 1:
-            # Append current object number
-            id1.append(obj)
-
-            # Append list of objects that have merged with obj
-            mergers.append(current_objects['mergers'][obj-1])
-            # Append parent(s) of obj
-            parent.append(current_objects['parents'][obj-1])
-
-            # Append rain stats
-            if params['RAIN']:
-                obj_tot_rain = current_objects['tot_rain'][obj-1]
-                obj_max_rr = current_objects['max_rr'][obj-1]
-
-                tot_rain_loc_obj = list(
-                    np.unravel_index(
-                        np.argmax(obj_tot_rain), obj_tot_rain.shape))
-                tot_rain_loc.append(tot_rain_loc_obj)
-
-                max_rr_loc_obj = list(
-                    np.unravel_index(
-                        np.argmax(obj_max_rr), obj_max_rr.shape))
-                max_rr_loc.append(max_rr_loc_obj)
-
-                max_rr.append(np.max(obj_max_rr))
-                tot_rain.append(np.max(obj_tot_rain))
-            else:
-                tot_rain_loc.append(np.nan)
-                max_rr_loc.append(np.nan)
-                max_rr.append(np.nan)
-                tot_rain.append(np.nan)
+            obj_prop['id1'].append(obj)
+            obj_prop['mergers'].append(current_objects['mergers'][obj-1])
+            obj_prop['parent'].append(current_objects['parents'][obj-1])
+            obj_prop['level'].append(i)
 
             # Get objects in images[i], i.e. the frame at i-th level
-            obj_index = np.argwhere(data_dic['frames1'][i] == obj)
-
-            # 2D frame stats
-            level.append(i)
+            obj_index = np.argwhere(data_dic['frames'][i] == obj)
 
             # Work out how many gridcells touch the border
             obj_ind_list = obj_index.tolist()
@@ -404,24 +255,18 @@ def get_object_prop(
                 [tuple(obj_ind_list[i]) for i in range(len(obj_ind_list))])
             b_intersect = obj_ind_set.intersection(
                 params['BOUNDARY_GRID_CELLS'])
-            touch_border.append(len(b_intersect))
+            obj_prop['touch_border'].append(len(b_intersect))
 
-            # Append median object index as measure of center
-            center.append(np.median(obj_index, axis=0))
-
-            # Append area of vertical projection.
-            proj_area.append(obj_index.shape[0] * unit_area)
+            obj_prop['center'].append(np.median(obj_index, axis=0))
+            obj_prop['proj_area'].append(obj_index.shape[0] * unit_area)
 
             # Append mean object index (centroid) in grid units
-            # Note, y component is zeroth index of this_centroid,
-            # x component is first index of this_centroid, unit_dim
-            # is list [dz, dx, dy].
             g_y = ski_props[obj-1].centroid[0] * unit_dim[2]
             g_y += grid1.y['data'][0]
             g_x = ski_props[obj-1].centroid[1] * unit_dim[1]
             g_x += grid1.x['data'][0]
-            grid_x.append(np.round(g_x, 1))
-            grid_y.append(np.round(g_y, 1))
+            obj_prop['grid_x'].append(np.round(g_x, 1))
+            obj_prop['grid_y'].append(np.round(g_y, 1))
 
             # Append object center of mass (reflectivity weighted
             # centroid) in grid units
@@ -429,103 +274,81 @@ def get_object_prop(
             g_y += grid1.y['data'][0]
             g_x = ski_props[obj-1].weighted_centroid[1] * unit_dim[1]
             g_x += grid1.x['data'][0]
-            com_x.append(np.round(g_x, 1))
-            com_y.append(np.round(g_y, 1))
+            obj_prop['com_x'].append(np.round(g_x, 1))
+            obj_prop['com_y'].append(np.round(g_y, 1))
 
             # Append centroid in lat, lon units.
             projparams = grid1.get_projparams()
             lon, lat = pyart.core.transforms.cartesian_to_geographic(
                 g_x, g_y, projparams)
-            longitude.append(np.round(lon[0], 5))
-            latitude.append(np.round(lat[0], 5))
+            obj_prop['lon'].append(np.round(lon[0], 5))
+            obj_prop['lat'].append(np.round(lat[0], 5))
 
             # Append ellipse properties
             # Note semi_major, semi_minor are stored in `index'
             # units which effectively assumes dx = dy.
-            attrs = ['major_axis_length', 'minor_axis_length',
-                     'eccentricity', 'orientation']
-            lists = [semi_major, semi_minor, eccentricity, orientation]
+            attrs = [
+                'major_axis_length', 'minor_axis_length',
+                'eccentricity', 'orientation']
+            lists = ['semi_major', 'semi_minor', 'eccentricity', 'orientation']
             for j in range(0, len(attrs)):
                 try:
-                    lists[j].append(
+                    obj_prop[lists[j]].append(
                         np.round(eval('ski_props[obj-1].' + attrs[j]), 3))
-                except:
-                    lists[j].append(np.nan)
+                except AttributeError:
+                    obj_prop[lists[j]].append(np.nan)
 
             # Calculate raw3D slices
             raw3D_i = raw3D[z_min:z_max, :, :]
             obj_slices = [raw3D_i[:, ind[0], ind[1]] for ind in obj_index]
 
             if params['FIELD_THRESH'][i] == 'convective':
-                sclasses_i = data_dic['sclasses1'][i]
-                sclasses_slices = [sclasses_i[ind[0], ind[1]]
-                                   for ind in obj_index]
-                field_max.append(np.max(obj_slices))
-                filtered_slices = [sclasses_slice == 2
-                                   for sclasses_slice in sclasses_slices]
+                stein_class_i = data_dic['stein_class'][i]
+                stein_class_slices = [
+                    stein_class_i[ind[0], ind[1]] for ind in obj_index]
+                obj_prop['field_max'].append(np.max(obj_slices))
+                filtered_slices = [
+                    stein_class_slice == 2
+                    for stein_class_slice in stein_class_slices]
             else:
-                field_max.append(np.max(obj_slices))
-                filtered_slices = [obj_slice > params['FIELD_THRESH'][i]
-                                   for obj_slice in obj_slices]
+                obj_prop['field_max'].append(np.max(obj_slices))
+                filtered_slices = [
+                    obj_slice > params['FIELD_THRESH'][i]
+                    for obj_slice in obj_slices]
 
             # Append maximum height
             heights = [np.arange(raw3D_i.shape[0])[ind]
                        for ind in filtered_slices]
-            max_height.append(np.max(np.concatenate(heights)) * unit_alt
-                              + z_values[z_min])
+            obj_prop['max_height'].append(
+                np.max(np.concatenate(heights)) * unit_alt + z_values[z_min])
 
-            # Append volume
             # Note volume isn't necessarily consistent with proj_area.
-            # proj_area is calculated from boolean vertical projection,
-            # whereas volume doesn't perform vertical projection.
-            volume.append(np.sum(filtered_slices) * unit_vol)
+            obj_prop['volume'].append(np.sum(filtered_slices) * unit_vol)
 
             # Append reflectivity cells based on vertically
             # overlapping reflectivity maxima.
             if i == 0:
-                all_updrafts_0 = [all_updrafts[i][0].tolist()
-                                  for i in range(len(all_updrafts))]
-                updraft_obj_inds = [i for i in range(len(all_updrafts_0))
-                                    if all_updrafts_0[i][1:]
-                                    in obj_index.tolist()]
-                updrafts_obj = [all_updrafts[i] for i in updraft_obj_inds]
-                updraft_list.append(updrafts_obj)
+                all_cells_0 = [
+                    all_cells[i][0].tolist()
+                    for i in range(len(all_cells))]
+                cell_obj_inds = [
+                    i for i in range(len(all_cells_0))
+                    if all_cells_0[i][1:] in obj_index.tolist()]
+                cells_obj = [all_cells[i] for i in cell_obj_inds]
+                obj_prop['cells'].append(cells_obj)
             else:
-                updraft_list.append([])
+                obj_prop['cells'].append([])
 
-    objprop = {
-        'id1': id1,
-        'center': center,
-        'u_shift': u_shift * levels,
-        'v_shift': v_shift * levels,
-        'grid_x': grid_x,
-        'grid_y': grid_y,
-        'com_x': com_x,
-        'com_y': com_y,
-        'proj_area': proj_area,
-        'field_max': field_max,
-        'max_height': max_height,
-        'volume': volume,
-        'lon': longitude,
-        'lat': latitude,
-        'touch_border': touch_border,
-        'level': level,
-        'semi_major': semi_major,
-        'semi_minor': semi_minor,
-        'eccentricity': eccentricity,
-        'mergers': mergers,
-        'parent': parent,
-        # Add orientation
-        # Negative sign corrects for descending indexing convention
-        # in "y axis". Orientation given between -pi/2 and pi/2.
-        'orientation': np.round(-np.rad2deg(orientation), 3),
-        'updrafts': updraft_list,
-        'tot_rain': tot_rain,
-        'tot_rain_loc': tot_rain_loc,
-        'max_rr': max_rr,
-        'max_rr_loc': max_rr_loc
-    }
-    return objprop
+    if params['RAIN']:
+        rain_props = get_object_rain_props(data_dic, current_objects)
+        obj_prop.update({
+            'tot_rain': rain_props[0], 'max_rr': rain_props[1],
+            'tot_rain_loc': rain_props[2], 'max_rr_loc': rain_props[3]})
+
+    obj_prop.update({
+        'u_shift': u_shift * levels, 'v_shift': v_shift * levels,
+        'orientation': np.round(-np.rad2deg(obj_prop['orientation']), 3)})
+    return obj_prop
 
 
 def write_tracks(old_tracks, record, current_objects, obj_props):
@@ -536,37 +359,9 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     nlvl = max(obj_props['level'])+1
     scan_num = [record.scan] * nobj * nlvl
     uid = current_objects['uid'].tolist() * nlvl
-
-    new_tracks = pd.DataFrame({
-        'scan': scan_num,
-        'uid': uid,
-        'time': record.time,
-        'grid_x': obj_props['grid_x'],
-        'grid_y': obj_props['grid_y'],
-        'com_x': obj_props['com_x'],
-        'com_y': obj_props['com_y'],
-        'u_shift': obj_props['u_shift'],
-        'v_shift': obj_props['v_shift'],
-        'lon': obj_props['lon'],
-        'lat': obj_props['lat'],
-        'proj_area': obj_props['proj_area'],
-        'vol': obj_props['volume'],
-        'max': obj_props['field_max'],
-        'max_alt': obj_props['max_height'],
-        'touch_border': obj_props['touch_border'],
-        'level': obj_props['level'],
-        'semi_major': obj_props['semi_major'],
-        'semi_minor': obj_props['semi_minor'],
-        'eccentricity': obj_props['eccentricity'],
-        'orientation': obj_props['orientation'],
-        'mergers': obj_props['mergers'],
-        'parent': obj_props['parent'],
-        'updrafts': obj_props['updrafts'],
-        'tot_rain': obj_props['tot_rain'],
-        'tot_rain_loc': obj_props['tot_rain_loc'],
-        'max_rr': obj_props['max_rr'],
-        'max_rr_loc': obj_props['max_rr_loc']})
-
+    da_dic = {'scan': scan_num, 'uid': uid, 'time': record.time}
+    da_dic.update(obj_props)
+    new_tracks = pd.DataFrame(da_dic)
     new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
     new_tracks.sort_index(inplace=True)
     tracks = old_tracks.append(new_tracks)
@@ -574,22 +369,19 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
 
 
 def smooth(group_df, r=3, n=2):
-
     group_df_smoothed = copy.deepcopy(group_df)
 
     # Smooth middle cases.
     if len(group_df) >= (2*n+1):
         group_df_smoothed = group_df.rolling(
-            window=(2*n+1), center=True
-        ).mean()
+            window=(2*n+1), center=True).mean()
 
     # Deal with end cases.
-    new_n = min(n, int(np.ceil(len(group_df)/2)))
+    new_n = min(n, int(np.ceil(len(group_df) / 2)))
     for k in range(0, new_n):
         # Use a k+1 window on both sides to smooth
         fwd = np.mean(group_df.iloc[:k+2])
         bwd = np.mean(group_df.iloc[-k-2:])
-
         group_df_smoothed.iloc[k] = fwd
         group_df_smoothed.iloc[-1-k] = bwd
 
@@ -599,14 +391,13 @@ def smooth(group_df, r=3, n=2):
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
     print('Calculating additional tracks properties.')
-    # Round max - for some reason works here but not in get_obj_props
-    # Likely a weird floating point storage issue
 
     # Drop last scan so no nans in u_shift etc
     tracks_obj.tracks.drop(
         tracks_obj.tracks.index.max()[0], level='scan', inplace=True)
 
-    tracks_obj.tracks['max'] = np.round(tracks_obj.tracks['max'], 2)
+    tracks_obj.tracks['field_max'] = np.round(
+        tracks_obj.tracks['field_max'], 2)
 
     # Smooth u_shift, v_shift
     tmp_tracks = tracks_obj.tracks[['u_shift', 'v_shift']]
@@ -656,24 +447,24 @@ def get_system_tracks(tracks_obj):
     # Get position and velocity at tracking level.
     system_tracks = tracks_obj.tracks[
         ['grid_x', 'grid_y', 'com_x', 'com_y', 'lon', 'lat', 'u', 'v',
-         'mergers', 'parent', 'u_shift', 'v_shift']
-    ]
+         'mergers', 'parent', 'u_shift', 'v_shift']]
     system_tracks = system_tracks.xs(
-        tracks_obj.params['TRACK_INTERVAL'], level='level'
-    )
+        tracks_obj.params['TRACK_INTERVAL'], level='level')
 
-    # Get number of cores and ellipse fit properties
-    # at lowest interval assuming this is first
-    # interval in list.
-    for prop in ['semi_major', 'semi_minor', 'eccentricity',
-                 'orientation', 'updrafts', 'tot_rain', 'tot_rain_loc',
-                 'max_rr', 'max_rr_loc']:
+    # Get number of cells and ellipse fit properties
+    # at lowest interval assuming this is first interval in list.
+    for prop in [
+            'semi_major', 'semi_minor', 'eccentricity',
+            'orientation', 'cells']:
         prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
         system_tracks = system_tracks.merge(prop_lvl_0, left_index=True,
                                             right_index=True)
 
+    if tracks_obj.params['RAIN']:
+        system_tracks = update_sys_tracks_rain(tracks_obj, system_tracks)
+
     # Calculate system maximum
-    maximum = tracks_obj.tracks[['max']]
+    maximum = tracks_obj.tracks[['field_max']]
     maximum = maximum.max(level=['scan', 'time', 'uid'])
     system_tracks = system_tracks.merge(maximum, left_index=True,
                                         right_index=True)
@@ -685,7 +476,7 @@ def get_system_tracks(tracks_obj):
                                         right_index=True)
 
     # Calculate maximum altitude
-    m_alt = tracks_obj.tracks[['max_alt']]
+    m_alt = tracks_obj.tracks[['max_height']]
     m_alt = m_alt.max(level=['scan', 'time', 'uid'])
     system_tracks = system_tracks.merge(m_alt, left_index=True,
                                         right_index=True)
