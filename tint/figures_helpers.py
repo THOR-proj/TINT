@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from matplotlib import rcParams
 from matplotlib.patches import Ellipse
 import matplotlib.lines as mlines
@@ -6,6 +7,7 @@ import glob
 import xarray as xr
 from scipy.interpolate import griddata
 from pyart.core.transforms import cartesian_to_geographic
+import cartopy.crs as ccrs
 
 
 def init_fonts():
@@ -14,6 +16,91 @@ def init_fonts():
     rcParams.update({'font.serif': 'Liberation Serif'})
     rcParams.update({'mathtext.fontset': 'dejavuserif'})
     rcParams.update({'font.size': 12})
+
+
+def add_tracked_objects(tracks, grid, date_time, params, ax):
+
+    projection = ccrs.PlateCarree()
+    tmp_tracks = tracks.tracks.xs(date_time, level='time')
+    import pdb; pdb.set_trace()
+    uids = np.unique(tmp_tracks.index.get_level_values('uid').values)
+    lgd_han = []
+    for uid in uids:
+        # Plot object labels
+        # Drop other objects from frame_tracks
+        tmp_tracks_uid = tmp_tracks.xs(uid, level='uid')
+
+        lon = tmp_tracks_uid.xs(0, level='level')['lon'].iloc[0]
+        lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
+        mergers = list(tmp_tracks_uid.xs(0, level='level')['mergers'].iloc[0])
+        label = ", ".join(mergers)
+
+        ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
+        ax.text(lon+.05, lat-0.05, label, transform=projection, fontsize=9)
+
+        if params['label_splits']:
+            parent = list(
+                tmp_tracks_uid.xs(0, level='level')['parent'].iloc[0])
+            label = ", ".join(parent)
+            ax.text(lon+.05, lat+0.1, label, transform=projection, fontsize=9)
+
+        # if rain:
+        #     rain_ind = frame_tracks_low['tot_rain_loc'].iloc[ind]
+        #     rain_amount = frame_tracks_low['tot_rain'].iloc[ind]
+        #     x_rain = grid.x['data'][rain_ind[1]]
+        #     y_rain = grid.y['data'][rain_ind[0]]
+        #     lon_rain, lat_rain = cartesian_to_geographic(
+        #         x_rain, y_rain, projparams)
+        #     ax.plot(
+        #         lon_rain, lat_rain, marker='o', fillstyle='full', color='blue')
+        #     ax.text(
+        #         lon_rain+.025, lat_rain-.025,
+        #         str(int(round(rain_amount)))+' mm',
+        #         transform=projection, fontsize=9)
+        #
+        #     rain_ind = frame_tracks_low['max_rr_loc'].iloc[ind]
+        #     rain_amount = frame_tracks_low['max_rr'].iloc[ind]
+        #     x_rain = grid.x['data'][rain_ind[1]]
+        #     y_rain = grid.y['data'][rain_ind[0]]
+        #     lon_rain, lat_rain = cartesian_to_geographic(
+        #         x_rain, y_rain, projparams)
+        #     ax.plot(
+        #         lon_rain, lat_rain, marker='o', fillstyle='none', color='blue')
+        #     ax.text(
+        #         lon_rain+.025, lat_rain+.025,
+        #         str(int(round(rain_amount)))+' mm/h',
+        #         transform=projection, fontsize=9)
+
+        # Plot velocities
+        lgd_vel = add_velocities(
+            ax, tracks, grid, uid, date_time, var_list=['shift'], c_list=['m'],
+            labels=['System Velocity'])
+        [lgd_han.append(h) for h in lgd_vel]
+
+        # Plot stratiform offset
+        lgd_so = add_stratiform_offset(ax, tracks, grid, uid, date_time)
+        lgd_han.append(lgd_so)
+
+        add_ellipses(ax, tracks, grid, uid, date_time)
+
+        # # Plot reflectivity cells
+        # if cell_ind is None:
+        #     add_cells(
+        #         ax, grid, frame_tracks_low.iloc[ind], hgt_ind, ud_hgt_ind,
+        #         projparams, grid_size)
+        # else:
+        #     add_cells(
+        #         ax, grid, frame_tracks_low.iloc[ind], hgt_ind, ud_hgt_ind,
+        #         projparams, grid_size, cell_ind=cell_ind)
+        # # Plot WRF winds if necessary
+        # if wrf_winds:
+        #     plot_horiz_winds(ax, grid, alt, mp=mp)
+        #     lgd_winds = mlines.Line2D(
+        #         [], [], color='pink', linestyle='-', linewidth=1.5,
+        #         label='2 m/s Vertical Velocity')
+        #     lgd_han.append(lgd_winds)
+        if params['legend']:
+            plt.legend(handles=lgd_han)
 
 
 def add_ellipses(ax, frame_tracks_ind, projparams):
@@ -80,37 +167,58 @@ def add_boundary(ax, tracks, grid, projparams):
     return ax
 
 
+def add_stratiform_offset(ax, tracks, grid, uid, date_time):
+    tmp_tracks = tracks.tracks.xs((date_time, uid), level=('time', 'uid'))
+    lon_low = tmp_tracks.xs(0, level='level')['lon'].iloc[0]
+    lat_low = tmp_tracks.xs(0, level='level')['lat'].iloc[0]
+    num_levels = len(tracks.params['LEVELS'])
+    lon_high = tmp_tracks.xs(num_levels-1, level='level')['lon'].iloc[0]
+    lat_high = tmp_tracks.xs(num_levels-1, level='level')['lat'].iloc[0]
+    ax.plot(
+        [lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
+    lgd_so = mlines.Line2D(
+        [], [], color='b', linestyle='--', linewidth=2.0,
+        label='Stratiform Offset')
+    return lgd_so
+
+
 def add_velocities(
-        ax, frame_tracks_ind, grid, projparams, dt,
-        var_list=['shift', 'prop', 'shear', 'cl'],
-        c_list=['m', 'green', 'red', 'orange'],
-        labels=[
+        ax, tracks, grid, uid, date_time, var_list=None, c_list=None,
+        labels=None):
+
+    if var_list is None:
+        var_list = ['shift', 'prop', 'shear', 'cl']
+    if c_list is None:
+        c_list = ['m', 'green', 'red', 'orange']
+    if labels is None:
+        labels = [
             'System Velocity', 'Propagation', '0-3 km Shear',
-            'Mean Cloud-Layer Winds']):
-    lon = frame_tracks_ind['lon']
-    lat = frame_tracks_ind['lat']
-    x = frame_tracks_ind['grid_x']
-    y = frame_tracks_ind['grid_y']
+            'Mean Cloud-Layer Winds']
+
+    dt = tracks.record.interval.total_seconds()
+    projparams = grid.get_projparams()
+    tmp_tracks = tracks.tracks.xs(
+        (date_time, uid, 0), level=('time', 'uid', 'level'))
+
+    lon = tmp_tracks['lon'].iloc[0]
+    lat = tmp_tracks['lat'].iloc[0]
+    x = tmp_tracks['grid_x'].iloc[0]
+    y = tmp_tracks['grid_y'].iloc[0]
 
     for i in range(len(var_list)):
-        u = frame_tracks_ind['u_' + var_list[i]]
-        v = frame_tracks_ind['v_' + var_list[i]]
-        [new_lon, new_lat] = cartesian_to_geographic(x + 4*u*dt, y + 4*v*dt,
-                                                     projparams)
-        ax.arrow(lon, lat, new_lon[0]-lon, new_lat[0]-lat,
-                 color=c_list[i], head_width=0.024, head_length=0.040)
-
-
-def create_vel_leg_han(
-    c_list=['m', 'green', 'red', 'orange'],
-    labels=[
-        'System Velocity', 'Propagation',
-        'Low-Level Shear', 'Mean Cloud-Layer Winds']):
+        u = tmp_tracks['u_' + var_list[i]].iloc[0]
+        v = tmp_tracks['v_' + var_list[i]].iloc[0]
+        [new_lon, new_lat] = cartesian_to_geographic(
+            x + 4 * u * dt, y + 4 * v * dt, projparams)
+        ax.arrow(
+            lon, lat, new_lon[0]-lon, new_lat[0]-lat, color=c_list[i],
+            head_width=0.024, head_length=0.040)
     lgd_han = []
     for i in range(len(c_list)):
         lgd_line = mlines.Line2D(
             [], [], color=c_list[i], linestyle='-', label=labels[i])
         lgd_han.append(lgd_line)
+
     return lgd_han
 
 
@@ -130,8 +238,8 @@ def plot_wrf_winds(
     V = winds.V
     W = winds.W
 
-    x = np.arange(-145000, 145000+2500, 2500)/1000
-    z = np.arange(0, 20500, 500)/1000
+    x = np.arange(-145000, 145000+2500, 2500) / 1000
+    z = np.arange(0, 20500, 500) / 1000
 
     if quiver:
         if direction == 'lat':
@@ -139,8 +247,9 @@ def plot_wrf_winds(
         else:
             ax.quiver(x[::2], z[::2], V.values[::2, ::2], W.values[::2, ::2])
     else:
-        ax.contour(x, z, W, colors='pink', linewidths=1.5,
-                   levels=[-2, 2], linestyles=['--', '-'])
+        ax.contour(
+            x, z, W, colors='pink', linewidths=1.5, levels=[-2, 2],
+            linestyles=['--', '-'])
 
 
 def plot_vert_winds_line(

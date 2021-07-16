@@ -14,7 +14,6 @@ import pandas as pd
 from scipy import ndimage
 import networkx
 from networkx.algorithms.components.connected import connected_components
-from numba import jit
 import copy
 
 from .steiner import steiner_conv_strat
@@ -29,7 +28,6 @@ def parse_grid_datetime(grid_obj):
     return dt
 
 
-@jit()
 def get_grid_size(grid_obj):
     """ Calculates grid size per dimension given a grid object. """
     z_len = grid_obj.z['data'][-1] - grid_obj.z['data'][0]
@@ -51,7 +49,7 @@ def get_radar_info(grid_obj):
 
 def get_grid_alt(grid_size, alt_meters=1500):
     """ Returns next z-index above alt_meters. """
-    return np.int(np.ceil(alt_meters/grid_size[0]))
+    return np.int32(np.ceil(alt_meters/grid_size[0]))
 
 
 def get_vert_projection(grid, thresh=40, z_min=None, z_max=None):
@@ -117,7 +115,7 @@ def clear_small_echoes_system(images_con, min_sizes):
     for obj in small_objects:
         images_con[images_con == obj] = 0
 
-    relabeled_images_con = np.zeros(images_con.shape, dtype=int)
+    relabeled_images_con = np.zeros(images_con.shape, dtype=np.int32)
 
     for new_objs, old_objs in enumerate(set(images_con.flatten().tolist())):
         relabeled_images_con[images_con == old_objs] = new_objs
@@ -170,7 +168,7 @@ def get_connected_components(frames):
 
     # Create new objects based on connected components
     new_objs = list(connected_components(overlap_graph))
-    frames_con = np.zeros(frames.shape, dtype=int)
+    frames_con = np.zeros(frames.shape, dtype=np.int32)
     for i in range(len(new_objs)):
         frames_con[np.isin(frames, list(new_objs[i]))] = i + 1
 
@@ -209,7 +207,7 @@ def extract_grid_data(grid_obj, field, grid_size, params):
         raw_rain = np.ones(raw.shape) * np.nan
 
     n_levels = params['LEVELS'].shape[0]
-    frames = np.zeros([n_levels, grid_obj.nx, grid_obj.ny], dtype=int)
+    frames = np.zeros([n_levels, grid_obj.nx, grid_obj.ny], dtype=np.int32)
     sclasses = [None]*n_levels
 
     min_sizes = params['MIN_SIZE'] / np.prod(grid_size[1:]/1000)

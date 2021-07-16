@@ -465,25 +465,25 @@ def get_system_tracks(tracks_obj):
 
     # Calculate system maximum
     maximum = tracks_obj.tracks[['field_max']]
-    maximum = maximum.max(level=['scan', 'time', 'uid'])
+    maximum = maximum.groupby(level=['scan', 'time', 'uid']).max()
     system_tracks = system_tracks.merge(maximum, left_index=True,
                                         right_index=True)
 
     # Calculate maximum area
     proj_area = tracks_obj.tracks[['proj_area']]
-    proj_area = proj_area.max(level=['scan', 'time', 'uid'])
+    proj_area = proj_area.groupby(level=['scan', 'time', 'uid']).max()
     system_tracks = system_tracks.merge(proj_area, left_index=True,
                                         right_index=True)
 
     # Calculate maximum altitude
     m_alt = tracks_obj.tracks[['max_height']]
-    m_alt = m_alt.max(level=['scan', 'time', 'uid'])
-    system_tracks = system_tracks.merge(m_alt, left_index=True,
-                                        right_index=True)
+    m_alt = m_alt.groupby(level=['scan', 'time', 'uid']).max()
+    system_tracks = system_tracks.merge(
+        m_alt, left_index=True, right_index=True)
 
     # Get touch_border for system
     t_border = tracks_obj.tracks[['touch_border']]
-    t_border = t_border.max(level=['scan', 'time', 'uid'])
+    t_border = t_border.groupby(level=['scan', 'time', 'uid']).max()
     system_tracks = system_tracks.merge(t_border, left_index=True,
                                         right_index=True)
 
