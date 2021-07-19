@@ -1,16 +1,23 @@
 import gc
 import numpy as np
 from matplotlib import pyplot as plt
-import matplotlib.lines as mlines
 import cartopy.crs as ccrs
 import copy
 import pyart
 from pyart.core.transforms import cartesian_to_geographic
 import warnings
+from matplotlib import rcParams
 
-from .grid_utils import get_grid_alt, parse_grid_datetime
-from .figures_helpers import init_fonts, add_velocities, add_stratiform_offset
-from .figures_helpers import add_tracked_objects
+from ..grid_utils import get_grid_alt, parse_grid_datetime
+from .horizontal_helpers import add_tracked_objects
+
+
+def init_fonts():
+    # Initialise fonts
+    rcParams.update({'font.family': 'serif'})
+    rcParams.update({'font.serif': 'Liberation Serif'})
+    rcParams.update({'mathtext.fontset': 'dejavuserif'})
+    rcParams.update({'font.size': 12})
 
 
 def check_params(user_params):
@@ -18,7 +25,8 @@ def check_params(user_params):
     params = {
         'uid_ind': None, 'cell_ind': None, 'box_rad': 0.75,
         'line_coords': False, 'center_cell': False, 'label_splits': True,
-        'legend': True}
+        'legend': True, 'winds': False, 'winds_fn': None,
+        'colorbar_flag': True}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
@@ -92,14 +100,11 @@ def add_crosshair(
         display.plot_crosshairs(lon=crosshair_lon, lat=crosshair_lat)
 
 
-def horizontal_cross_section(
-        tracks, grid, params={}, alt=None, fig=None, ax=None, date_time=None,
-        uid_ind=None, cell_ind=None, angle=None):
-
+def init_cross_section(tracks, grid, params, alt, fig, ax, date_time):
     params = check_params(params)
 
     if alt is None:
-        alt = tracks.params['GS_ALT']
+        alt = tracks.params['LEVELS'][0, 0]
 
     time_ind = tracks.tracks.index.get_level_values('time')
     time_ind = np.array(time_ind).astype('datetime64[m]')
@@ -118,19 +123,26 @@ def horizontal_cross_section(
         ax = fig.add_subplot(1, 1, 1, projection=projection)
 
     display = pyart.graph.GridMapDisplay(grid)
-    projparams = grid.get_projparams()
-    grid_size = tracks.grid_size
-    hgt_ind = get_grid_alt(grid_size, alt)
-
-    up_start_ind = tracks.params['CELL_START']
-    up_start_ind = get_grid_alt(grid_size, up_start_ind)
-    ud_hgt_ind = hgt_ind - up_start_ind
+    alt_ind = get_grid_alt(tracks.grid_size, alt)
 
     cmap = pyart.graph.cm_colorblind.HomeyerRainbow
     [vmin, vmax] = [-8, 64]
+    return [
+        params, alt, fig, ax, date_time, display, alt_ind, cmap,
+        vmin, vmax, projection]
+
+
+def horizontal_cross_section(
+        tracks, grid, params={}, alt=None, fig=None, ax=None, date_time=None):
+
+    init_cs = init_cross_section(tracks, grid, params, alt, fig, ax, date_time)
+    [
+        params, alt, fig, ax, date_time, display, alt_ind, cmap,
+        vmin, vmax, projection] = init_cs
     display.plot_grid(
-        tracks.field, level=hgt_ind, vmin=vmin, vmax=vmax, cmap=cmap,
-        transform=projection, ax=ax)
+        tracks.field, level=alt_ind, vmin=vmin, vmax=vmax, cmap=cmap,
+        transform=projection, ax=ax, colorbar_label='Reflectivity [DbZ]',
+        colorbar_flag=params['colorbar_flag'])
     # # Set labels
     ax.set_title('Altitude {} m'.format(alt))
     ax.set_xlabel('Longitude')
@@ -142,96 +154,7 @@ def horizontal_cross_section(
 
     box = get_bounding_box(tracks, date_time, params)
     add_crosshair(tracks, grid, date_time, params, ax, display, box[0], box[1])
-    add_tracked_objects(tracks, grid, date_time, params, ax)
-
-    # Plot objects
-    # for ind, uid in enumerate(frame_tracks_low.index):
-    #
-    #     # Plot object labels
-    #     lon_low = frame_tracks_low['lon'].iloc[ind]
-    #     lat_low = frame_tracks_low['lat'].iloc[ind]
-    #     mergers = list(frame_tracks_low['mergers'].iloc[ind])
-    #     mergers_str = ", ".join(mergers)
-    #
-    #     ax.text(
-    #         lon_low-.05, lat_low+0.05, uid, transform=projection, fontsize=12)
-    #     ax.text(
-    #         lon_low+.05, lat_low-0.05, mergers_str, transform=projection,
-    #         fontsize=9)
-    #
-    #     if split_label:
-    #         parent = list(frame_tracks_low['parent'].iloc[ind])
-    #         parent_str = ", ".join(parent)
-    #         ax.text(lon_low+.05, lat_low+0.1, parent_str,
-    #                 transform=projection, fontsize=9)
-    #
-    #     if rain:
-    #         rain_ind = frame_tracks_low['tot_rain_loc'].iloc[ind]
-    #         rain_amount = frame_tracks_low['tot_rain'].iloc[ind]
-    #         x_rain = grid.x['data'][rain_ind[1]]
-    #         y_rain = grid.y['data'][rain_ind[0]]
-    #         lon_rain, lat_rain = cartesian_to_geographic(
-    #             x_rain, y_rain, projparams)
-    #         ax.plot(
-    #             lon_rain, lat_rain, marker='o', fillstyle='full', color='blue')
-    #         ax.text(
-    #             lon_rain+.025, lat_rain-.025,
-    #             str(int(round(rain_amount)))+' mm',
-    #             transform=projection, fontsize=9)
-    #
-    #         rain_ind = frame_tracks_low['max_rr_loc'].iloc[ind]
-    #         rain_amount = frame_tracks_low['max_rr'].iloc[ind]
-    #         x_rain = grid.x['data'][rain_ind[1]]
-    #         y_rain = grid.y['data'][rain_ind[0]]
-    #         lon_rain, lat_rain = cartesian_to_geographic(
-    #             x_rain, y_rain, projparams)
-    #         ax.plot(
-    #             lon_rain, lat_rain, marker='o', fillstyle='none', color='blue')
-    #         ax.text(
-    #             lon_rain+.025, lat_rain+.025,
-    #             str(int(round(rain_amount)))+' mm/h',
-    #             transform=projection, fontsize=9)
-    #
-    #     # Plot velocities
-    #     dt = f_tracks.record.interval.total_seconds()
-    #     add_velocities(
-    #         ax, frame_tracks_low.iloc[ind], grid, projparams, dt,
-    #         var_list=['shift'], c_list=['m'], labels=['System Velocity'])
-    #     lgd_han = create_vel_leg_han(c_list=['m'], labels=['System Velocity'])
-    #
-    #     # Plot stratiform offset
-    #     lon_high = frame_tracks_high['lon'].iloc[ind]
-    #     lat_high = frame_tracks_high['lat'].iloc[ind]
-    #     ax.plot([lon_low, lon_high], [lat_low, lat_high],
-    #             '--b', linewidth=2.0,)
-    #     lgd_strat = mlines.Line2D([], [], color='b', linestyle='--',
-    #                               linewidth=2.0, label='Stratiform Offset')
-    #     lgd_han.append(lgd_strat)
-    #
-    #     # Plot ellipses if required
-    #     if ellipses=='conv':
-    #         add_ellipses(ax, frame_tracks_low.iloc[ind], projparams)
-    #     if ellipses=='strat':
-    #         add_ellipses(ax, frame_tracks_high.iloc[ind], projparams)
-    #
-    #     # Plot reflectivity cells
-    #     if cell_ind is None:
-    #         add_cells(
-    #             ax, grid, frame_tracks_low.iloc[ind], hgt_ind, ud_hgt_ind,
-    #             projparams, grid_size)
-    #     else:
-    #         add_cells(
-    #             ax, grid, frame_tracks_low.iloc[ind], hgt_ind, ud_hgt_ind,
-    #             projparams, grid_size, cell_ind=cell_ind)
-    #     # Plot WRF winds if necessary
-    #     if wrf_winds:
-    #         plot_horiz_winds(ax, grid, alt, mp=mp)
-    #         lgd_winds = mlines.Line2D(
-    #             [], [], color='pink', linestyle='-', linewidth=1.5,
-    #             label='2 m/s Vertical Velocity')
-    #         lgd_han.append(lgd_winds)
-    #     if legend:
-    #         plt.legend(handles=lgd_han)
+    add_tracked_objects(tracks, grid, date_time, params, ax, alt)
 
     # If focusing on one object, restrict axis limits around object
     if params['uid_ind'] is not None:
@@ -239,6 +162,184 @@ def horizontal_cross_section(
         ax.set_ylim(box[3][0], box[3][1])
 
     return True
+
+
+def vertical_cross_section(
+        tracks, grid, params={}, alt=None, fig=None, ax=None, date_time=None,
+        direction='cross'):
+
+    init_cs = init_cross_section(tracks, grid, params, alt, fig, ax, date_time)
+    [
+        params, alt, fig, ax, date_time, display, alt_ind, cmap,
+        vmin, vmax, projection] = init_cs
+
+    # if alt_low is None:
+    #     alt_low = f_tracks.params['GS_ALT']
+    # if alt_high is None:
+    #     alt_high = f_tracks.params['GS_ALT']
+    #
+    # # Calculate mean height of first and last vertical TINT levels
+    # low = f_tracks.params['LEVELS'][0].mean()/1000
+    # high = f_tracks.params['LEVELS'][-1].mean()/1000
+    #
+    # # Restrict to uid
+    # cell = f_tracks.tracks.xs(uid, level='uid')
+    # cell = cell.reset_index(level=['time'])
+    #
+    # # Get low and high data
+    # n_lvl = f_tracks.params['LEVELS'].shape[0]
+    # cell_low = cell.xs(0, level='level')
+    # cell_high = cell.xs(n_lvl-1, level='level')
+    #
+    # # Restrict to specific time
+    # cell_low = cell_low.iloc[nframe]
+    # cell_high = cell_high.iloc[nframe]
+    #
+    # # Convert coordinates to those of new grid
+    # old_x_low = cell_low['grid_x']
+    # old_y_low = cell_low['grid_y']
+    # old_low = np.array([old_x_low, old_y_low])
+    # new_low = np.transpose(A).dot(old_low)
+    # [new_x_low, new_y_low] = new_low.tolist()
+    #
+    # # Convert coordinates to those of new grid
+    # old_x_high = cell_high['grid_x']
+    # old_y_high = cell_high['grid_y']
+    # old_high = np.array([old_x_high, old_y_high])
+    # new_high = np.transpose(A).dot(old_high)
+    # [new_x_high, new_y_high] = new_high.tolist()
+    #
+    # tx_met = new_x_low
+    # ty_met = new_y_low
+    # tx_low = new_x_low/1000
+    # tx_high = new_x_high/1000
+    # ty_low = new_y_low/1000
+    # ty_high = new_y_high/1000
+    #
+    # xlim = (tx_met + np.array([-75000, 75000]))/1000
+    # ylim = (ty_met + np.array([-75000, 75000]))/1000
+    #
+    # # Get center location
+    # if center_ud:
+    #     ud = np.array(cell_low['cells'][cell_ind])
+    #     x_draft_old = grid.x['data'][ud[:, 2]].data
+    #     y_draft_old = grid.y['data'][ud[:, 1]].data
+    #
+    #     drafts_old = np.array([x_draft_old, y_draft_old])
+    #     drafts_new = np.array([np.transpose(A).dot(drafts_old[:, i])
+    #                           for i in range(drafts_old.shape[1])])
+    #
+    #     x_draft = grid.x['data'][ud[0, 2]]
+    #     y_draft = grid.y['data'][ud[0, 1]]
+    #     ud_old = np.array([x_draft, y_draft])
+    #
+    #     # Get new coordinates
+    #     ud_new = np.transpose(A).dot(ud_old)
+    #     [x_draft_new, y_draft_new] = ud_new.tolist()
+    #
+    #     z0 = get_grid_alt(
+    #         f_tracks.record.grid_size, f_tracks.params['CELL_START'])
+    # else:
+    x_draft_new = new_x_low
+    y_draft_new = new_y_low
+
+    if direction == 'lat':
+        display.plot_latitude_slice(
+            field, lon=lon, lat=lat, title_flag=False, colorbar_flag=False,
+            edges=False, vmin=vmin, vmax=vmax, mask_outside=False, cmap=cmap,
+            ax=ax)
+        [h_low, h_high] = [tx_low, tx_high]
+        if center_ud:
+            h_draft = grid.x['data'][ud[:, 2]]/1000
+            z_draft = grid.z['data'][z0:len(h_draft)+z0]/1000
+        h_lim = xlim
+        t_string = 'Latitude Cross Section'
+        x_label = 'East West Distance From Origin [km]'
+
+    elif direction == 'lon':
+        display.plot_longitude_slice(
+            field, lon=lon, lat=lat, title_flag=False, colorbar_flag=False,
+            edges=False, vmin=vmin, vmax=vmax, mask_outside=False, cmap=cmap,
+            ax=ax)
+        [h_low, h_high] = [ty_low, ty_high]
+        if center_ud:
+            h_draft = grid.y['data'][ud[:, 1]]/1000
+            z_draft = grid.z['data'][z0:len(h_draft) + z0] / 1000
+        h_lim = ylim
+        t_string = 'Longitude Cross Section'
+        x_label = 'North South Distance From Origin [km]'
+
+    # if direction == 'parallel':
+    #
+    #     new_grid = new_grid.sel(y=y_draft_new, method='nearest').squeeze()
+    #
+    #     extent = [new_grid.x[0]/1000, new_grid.x[-1]/1000,
+    #               new_grid.z[0]/1000, new_grid.z[-1]/1000]
+    #     ax.imshow(new_grid.reflectivity, vmin=vmin, vmax=vmax, cmap=cmap,
+    #               interpolation='none', origin='lower',
+    #               extent=extent, aspect='auto')
+    #
+    #     [h_low, h_high] = [tx_low, tx_high]
+    #     if center_ud:
+    #         h_draft = drafts_new[:, 0] / 1000
+    #         z_draft = grid.z['data'][z0: len(h_draft) + z0] / 1000
+    #
+    #     h_lim = xlim
+    #     t_string = 'Along Line Cross Section'
+    #     x_label = 'Along Line Distance From Origin [km]'
+    #
+    # elif direction == 'cross':
+    #
+    #     if average_along_line:
+    #         cond = ((new_grid.x <= x_draft_new + semi_major*2500/2)
+    #                 & (new_grid.x >= x_draft_new - semi_major*2500/2))
+    #         new_grid = new_grid.where(cond).dropna(dim='x', how='all')
+    #         new_grid = new_grid.mean(dim='x')
+    #     else:
+    #         new_grid = new_grid.sel(x=x_draft_new, method='nearest').squeeze()
+    #
+    #     extent = [new_grid.y[0]/1000, new_grid.y[-1]/1000,
+    #               new_grid.z[0]/1000, new_grid.z[-1]/1000]
+    #     ax.imshow(new_grid.reflectivity, vmin=vmin, vmax=vmax, cmap=cmap,
+    #               interpolation='none', origin='lower',
+    #               extent=extent, aspect='auto')
+    #
+    #     [h_low, h_high] = [ty_low, ty_high]
+    #     if center_ud:
+    #         h_draft = drafts_new[:,1]/1000
+    #         z_draft = grid.z['data'][z0:len(h_draft)+z0]/1000
+    #
+    #     h_lim = ylim
+    #     if average_along_line:
+    #         t_string = 'Line Perpendicular Mean Cross Section'
+    #     else:
+    #         t_string = 'Line Perpendicular Cross Section'
+    #     x_label = 'Line Perpendicular Distance From Origin [km]'
+
+    # Plot system tilt
+    ax.plot([h_low, h_high], [low, high], '--b', linewidth=2.0)
+
+    # Plot cell tracks
+    if center_ud:
+        ax.plot(h_draft, z_draft, '-', color=color,
+                linewidth=1.0)
+
+    # Plot wrf winds if necessary
+    # if wrf_winds:
+    #     plot_vert_winds_line(
+    #         ax, new_wrf, x_draft_new, y_draft_new, direction, quiver=quiver,
+    #         semi_major=semi_major, average_along_line=average_along_line)
+
+    ax.set_xlim(h_lim[0], h_lim[1])
+    ax.set_xticks(np.arange(h_lim[0], h_lim[1], 25))
+    ax.set_xticklabels(
+        np.round((np.arange(h_lim[0], h_lim[1], 25)), 1))
+
+    ax.set_title(t_string)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel('Distance Above Origin [km]')
+
+    del display
 
 
 def two_level_view(tracks, grid, out_dir, date_time=None, alt=None):
@@ -281,8 +382,9 @@ def two_level_view(tracks, grid, out_dir, date_time=None, alt=None):
 
     # Save frame and cleanup
     if success:
-        plt.savefig(out_dir + '/frame_' + str(counter).zfill(3) + '.png',
-                    bbox_inches = 'tight', dpi=dpi)
+        plt.savefig(
+            out_dir + '/frame_' + str(counter).zfill(3) + '.png',
+            bbox_inches = 'tight', dpi=dpi)
     plt.close()
     del grid, ax
     gc.collect()
@@ -362,159 +464,6 @@ def full_view(
         plt.close()
         del grid, ax
         gc.collect()
-
-
-def plot_obj_line_cross(
-        f_tracks, grid, new_grid, A, uid, nframe, semi_major, new_wrf=None,
-        fig=None, ax=None, vmin=-8, vmax=64, alt_low=None, alt_high=None,
-        scan_boundary=False, center_ud=False, cell_ind=0, direction='cross',
-        color='k', wrf_winds=False, average_along_line=False, quiver=False,
-        mp='lin', **kwargs):
-
-    cmap = pyart.graph.cm_colorblind.HomeyerRainbow,
-    display = pyart.graph.GridMapDisplay(grid)
-
-    if alt_low is None:
-        alt_low = f_tracks.params['GS_ALT']
-    if alt_high is None:
-        alt_high = f_tracks.params['GS_ALT']
-
-    # Calculate mean height of first and last vertical TINT levels
-    low = f_tracks.params['LEVELS'][0].mean()/1000
-    high = f_tracks.params['LEVELS'][-1].mean()/1000
-
-    # Restrict to uid
-    cell = f_tracks.tracks.xs(uid, level='uid')
-    cell = cell.reset_index(level=['time'])
-
-    # Get low and high data
-    n_lvl = f_tracks.params['LEVELS'].shape[0]
-    cell_low = cell.xs(0, level='level')
-    cell_high = cell.xs(n_lvl-1, level='level')
-
-    # Restrict to specific time
-    cell_low = cell_low.iloc[nframe]
-    cell_high = cell_high.iloc[nframe]
-
-    # Convert coordinates to those of new grid
-    old_x_low = cell_low['grid_x']
-    old_y_low = cell_low['grid_y']
-    old_low = np.array([old_x_low, old_y_low])
-    new_low = np.transpose(A).dot(old_low)
-    [new_x_low, new_y_low] = new_low.tolist()
-
-    # Convert coordinates to those of new grid
-    old_x_high = cell_high['grid_x']
-    old_y_high = cell_high['grid_y']
-    old_high = np.array([old_x_high, old_y_high])
-    new_high = np.transpose(A).dot(old_high)
-    [new_x_high, new_y_high] = new_high.tolist()
-
-    tx_met = new_x_low
-    ty_met = new_y_low
-    tx_low = new_x_low/1000
-    tx_high = new_x_high/1000
-    ty_low = new_y_low/1000
-    ty_high = new_y_high/1000
-
-    xlim = (tx_met + np.array([-75000, 75000]))/1000
-    ylim = (ty_met + np.array([-75000, 75000]))/1000
-
-    # Get center location
-    if center_ud:
-        ud = np.array(cell_low['cells'][cell_ind])
-        x_draft_old = grid.x['data'][ud[:, 2]].data
-        y_draft_old = grid.y['data'][ud[:, 1]].data
-
-        drafts_old = np.array([x_draft_old, y_draft_old])
-        drafts_new = np.array([np.transpose(A).dot(drafts_old[:, i])
-                              for i in range(drafts_old.shape[1])])
-
-        x_draft = grid.x['data'][ud[0, 2]]
-        y_draft = grid.y['data'][ud[0, 1]]
-        ud_old = np.array([x_draft, y_draft])
-
-        # Get new coordinates
-        ud_new = np.transpose(A).dot(ud_old)
-        [x_draft_new, y_draft_new] = ud_new.tolist()
-
-        z0 = get_grid_alt(
-            f_tracks.record.grid_size, f_tracks.params['CELL_START'])
-    else:
-        x_draft_new = new_x_low
-        y_draft_new = new_y_low
-
-    if direction == 'parallel':
-
-        new_grid = new_grid.sel(y=y_draft_new, method='nearest').squeeze()
-
-        extent = [new_grid.x[0]/1000, new_grid.x[-1]/1000,
-                  new_grid.z[0]/1000, new_grid.z[-1]/1000]
-        ax.imshow(new_grid.reflectivity, vmin=vmin, vmax=vmax, cmap=cmap,
-                  interpolation='none', origin='lower',
-                  extent=extent, aspect='auto')
-
-        [h_low, h_high] = [tx_low, tx_high]
-        if center_ud:
-            h_draft = drafts_new[:, 0] / 1000
-            z_draft = grid.z['data'][z0: len(h_draft) + z0] / 1000
-
-        h_lim = xlim
-        t_string = 'Along Line Cross Section'
-        x_label = 'Along Line Distance From Origin [km]'
-
-    elif direction == 'cross':
-
-        if average_along_line:
-            cond = ((new_grid.x <= x_draft_new + semi_major*2500/2)
-                    & (new_grid.x >= x_draft_new - semi_major*2500/2))
-            new_grid = new_grid.where(cond).dropna(dim='x', how='all')
-            new_grid = new_grid.mean(dim='x')
-        else:
-            new_grid = new_grid.sel(x=x_draft_new, method='nearest').squeeze()
-
-        extent = [new_grid.y[0]/1000, new_grid.y[-1]/1000,
-                  new_grid.z[0]/1000, new_grid.z[-1]/1000]
-        ax.imshow(new_grid.reflectivity, vmin=vmin, vmax=vmax, cmap=cmap,
-                  interpolation='none', origin='lower',
-                  extent=extent, aspect='auto')
-
-        [h_low, h_high] = [ty_low, ty_high]
-        if center_ud:
-            h_draft = drafts_new[:,1]/1000
-            z_draft = grid.z['data'][z0:len(h_draft)+z0]/1000
-
-        h_lim = ylim
-        if average_along_line:
-            t_string = 'Line Perpendicular Mean Cross Section'
-        else:
-            t_string = 'Line Perpendicular Cross Section'
-        x_label = 'Line Perpendicular Distance From Origin [km]'
-
-    # Plot system tilt
-    ax.plot([h_low, h_high], [low, high], '--b', linewidth=2.0)
-
-    # Plot cell tracks
-    if center_ud:
-        ax.plot(h_draft, z_draft, '-', color=color,
-                linewidth=1.0)
-
-    # Plot wrf winds if necessary
-    if wrf_winds:
-        plot_vert_winds_line(
-            ax, new_wrf, x_draft_new, y_draft_new, direction, quiver=quiver,
-            semi_major=semi_major, average_along_line=average_along_line)
-
-    ax.set_xlim(h_lim[0], h_lim[1])
-    ax.set_xticks(np.arange(h_lim[0], h_lim[1], 25))
-    ax.set_xticklabels(
-        np.round((np.arange(h_lim[0], h_lim[1], 25)), 1))
-
-    ax.set_title(t_string)
-    ax.set_xlabel(x_label)
-    ax.set_ylabel('Distance Above Origin [km]')
-
-    del display
 
 
 def plot_obj_vert_cross(
