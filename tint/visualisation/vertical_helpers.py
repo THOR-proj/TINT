@@ -1,88 +1,58 @@
-def get_line_grid(grid_time, angle, mp='lin'):
-    print('Interpolating WRF')
-    # Get reflectivity data
-    base = '/g/data/w40/esh563/{0}d04_ref/{0}d04_ref_'.format(mp)
-    wrf = xr.open_dataset(base + str(grid_time) + '.nc')
+import numpy as np
+import matplotlib.lines as mlines
+import xarray as xr
+from scipy.interpolate import griddata
 
-    # Get rotation matrix
+
+def add_stratiform_offset(ax, tracks, grid, date_time, params):
+    tmp_tracks = tracks.tracks.xs(
+        (date_time, params['uid_ind']),
+        level=('time', 'uid'))
+    low = tracks.params['LEVELS'][0].mean() / 1000
+    high = tracks.params['LEVELS'][-1].mean() / 1000
+
+    x_low = tmp_tracks.xs(0, level='level')['grid_x'].iloc[0]
+    y_low = tmp_tracks.xs(0, level='level')['grid_y'].iloc[0]
+    num_levels = len(tracks.params['LEVELS'])
+    x_high = tmp_tracks.xs(num_levels-1, level='level')['grid_x'].iloc[0]
+    y_high = tmp_tracks.xs(num_levels-1, level='level')['grid_y'].iloc[0]
+    [x_low, x_high, y_low, y_high] = [
+        coord / 1000 for coord in [x_low, x_high, y_low, y_high]]
+
+    if params['line_coords']:
+        A = get_rotation(
+            tmp_tracks.xs(0, level='level')['orientation'].iloc[0])
+        [x_low, y_low] = np.transpose(A).dot(np.array([x_low, y_low]))
+        [x_high, y_high] = np.transpose(A).dot(np.array([x_high, y_high]))
+
+    if params['direction'] in ['lat', 'parallel']:
+        [h_low, h_high] = [x_low, x_high]
+    elif params['direction'] in ['lon', 'perpendicular']:
+        [h_low, h_high] = [y_low, y_high]
+
+    ax.plot([h_low, h_high], [low, high], '--b', linewidth=2.0, zorder=3)
+    lgd_so = mlines.Line2D(
+        [], [], color='b', linestyle='--', linewidth=2.0,
+        label='Stratiform Offset')
+    return lgd_so
+
+
+def get_rotation(angle):
     A = np.array([
         [np.cos(np.deg2rad(angle)), -np.sin(np.deg2rad(angle))],
         [np.sin(np.deg2rad(angle)), np.cos(np.deg2rad(angle))]])
-
-    new_var_list = []
-
-    for var_name in ['U', 'V', 'W']:
-
-        var = wrf[var_name].values.squeeze()
-
-        x = wrf.x.values
-        y = wrf.y.values
-        z = wrf.z.values
-
-        xp = np.arange(-210000, 210000+2500, 2500)
-        yp = np.arange(-210000, 210000+2500, 2500)
-
-        Xp, Yp = np.mgrid[-210000:210000+2500:2500, -210000:210000+2500:2500]
-
-        new_var = np.ones((len(z), len(xp), len(yp))) * np.nan
-
-        points_old = []
-        for i in range(len(x)):
-            for j in range(len(y)):
-                points_old.append(np.array([x[i], y[j]]))
-
-        points_new = []
-        for i in range(len(points_old)):
-            points_new.append(A.dot(points_old[i]))
-
-        for k in range(len(z)):
-            values = []
-            for i in range(len(x)):
-                for j in range(len(y)):
-                    values.append(var[k, i, j])
-
-            new_var[k, :, :] = griddata(points_new, values, (Xp, Yp))
-
-        # x is line parallel, y is line perpendicular
-        # Little confusing how relative position of dimensions has changed.
-        new_var = xr.Dataset({
-            var_name: (['z', 'y', 'x'],  new_var)},
-            coords={'z': z, 'y': yp, 'x': xp})
-
-        new_var_list.append(new_var)
-
-    new_wrf = xr.merge(new_var_list)
-
-    return new_wrf
+    return A
 
 
-def get_line_grid(f_tracks, grid, uid, nframe):
-    print('Interpolating grid')
-    # Get raw grid data
-    raw = grid.fields['reflectivity']['data'].data
-    raw[raw == -9999] = np.nan
-    # Get appropriate tracks data
-    cell = f_tracks.tracks.xs(uid, level='uid')
-    cell = cell.reset_index(level=['time'])
-    cell_low = cell.xs(0, level='level')
-    cell_low = cell_low.iloc[nframe]
-    # Get appropriate transformation angle
-    angle = cell_low.orientation
-    semi_major = cell_low.semi_major
+def interp_var(
+        x, y, z, var, angle, var_name, min=-210000, max=210000, step=2500):
     # Get rotation matrix
-    A = np.array([[np.cos(np.deg2rad(angle)), -np.sin(np.deg2rad(angle))],
-                  [np.sin(np.deg2rad(angle)), np.cos(np.deg2rad(angle))]])
-
-    x = grid.x['data'].data
-    y = grid.y['data'].data
-    z = grid.z['data'].data
-
-    xp = np.arange(-210000, 210000+2500, 2500)
-    yp = np.arange(-210000, 210000+2500, 2500)
-
-    Xp, Yp = np.mgrid[-210000:210000+2500:2500, -210000:210000+2500:2500]
-
-    new_grid = np.ones((len(z), len(xp), len(yp))) * np.nan
+    A = get_rotation(angle)
+    xp = np.arange(min, max + step, step)
+    yp = np.arange(min, max + step, step)
+    Xp, Yp = np.mgrid[
+        min: max + step: step, min: max + step: step]
+    new_var = np.ones((len(z), len(xp), len(yp))) * np.nan
 
     points_old = []
     for i in range(len(x)):
@@ -97,17 +67,42 @@ def get_line_grid(f_tracks, grid, uid, nframe):
         values = []
         for i in range(len(x)):
             for j in range(len(y)):
-                values.append(raw[k, i, j])
+                values.append(var[k, i, j])
+        new_var[k, :, :] = griddata(points_new, values, (Xp, Yp))
 
-        new_grid[k, :, :] = griddata(points_new, values, (Xp, Yp))
-
-    # x is line parallel, y is line perpendicular
-    # Little confusing how relative position of dimensions has changed.
-    new_grid = xr.Dataset(
-        {'reflectivity': (['z', 'y', 'x'],  new_grid)},
+    # x is now line parallel, y is now line perpendicular
+    new_var = xr.Dataset({
+        var_name: (['z', 'y', 'x'],  new_var)},
         coords={'z': z, 'y': yp, 'x': xp})
 
-    return new_grid, A, angle, semi_major
+    return new_var
+
+
+def get_line_grid(ds, angle, vars=['U', 'V', 'W', 'reflectivity']):
+    print('Interpolating onto line coordinates.')
+    new_var_list = []
+
+    for var_name in vars:
+        var = ds[var_name].values.squeeze()
+        x = ds.x.values
+        y = ds.y.values
+        z = ds.z.values
+        new_var = interp_var(x, y, z, var, angle, var_name)
+        new_var_list.append(new_var)
+
+    return xr.merge(new_var_list)
+
+
+def format_pyart(grid):
+    raw = grid.fields['reflectivity']['data'].data
+    raw[raw == -9999] = np.nan
+    x = grid.x['data'].data
+    y = grid.y['data'].data
+    z = grid.z['data'].data
+    ds = xr.Dataset(
+        {'reflectivity': (['z', 'y', 'x'],  raw)},
+        coords={'z': z, 'y': y, 'x': x})
+    return ds
 
 
 def plot_wrf_winds(

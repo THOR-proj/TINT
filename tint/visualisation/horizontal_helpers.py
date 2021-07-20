@@ -119,7 +119,7 @@ def add_ellipses(ax, tracks, grid, uid, date_time, alt):
     lon, lat = cartesian_to_geographic(centroid[0], centroid[1], projparams)
 
     ell = Ellipse(
-        tuple([lon, lat]), minor_axis, major_axis, orientation,
+        tuple([lon, lat]), major_axis, minor_axis, orientation,
         linewidth=1.5, fill=False)
 
     ell.set_clip_box(ax.bbox)

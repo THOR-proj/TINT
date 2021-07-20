@@ -347,7 +347,8 @@ def get_object_prop(
 
     obj_prop.update({
         'u_shift': u_shift * levels, 'v_shift': v_shift * levels,
-        'orientation': np.round(-np.rad2deg(obj_prop['orientation']), 3)})
+        'orientation': np.round(
+            np.rad2deg(np.array(obj_prop['orientation'])), 3)})
     return obj_prop
 
 
