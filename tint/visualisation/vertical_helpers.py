@@ -1,7 +1,11 @@
 import numpy as np
 import matplotlib.lines as mlines
+import matplotlib.patheffects as pe
 import xarray as xr
 from scipy.interpolate import griddata
+
+from tint.grid_utils import get_grid_alt
+from tint.visualisation.figures import get_center_coords
 
 
 def add_stratiform_offset(ax, tracks, grid, date_time, params):
@@ -30,11 +34,48 @@ def add_stratiform_offset(ax, tracks, grid, date_time, params):
     elif params['direction'] in ['lon', 'perpendicular']:
         [h_low, h_high] = [y_low, y_high]
 
-    ax.plot([h_low, h_high], [low, high], '--b', linewidth=2.0, zorder=3)
+    ax.plot(
+        [h_low, h_high], [low, high], '-w', linewidth=2, zorder=3,
+        path_effects=[pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
     lgd_so = mlines.Line2D(
-        [], [], color='b', linestyle='--', linewidth=2.0,
-        label='Stratiform Offset')
+        [], [], color='w', linestyle='-', linewidth=2,
+        label='Stratiform Offset',
+        path_effects=[pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
     return lgd_so
+
+
+def add_cell(ax, tracks, grid, date_time, params):
+    tmp_tracks = tracks.tracks.xs(
+        (date_time, params['uid_ind'], 0), level=('time', 'uid', 'level'))
+    cell = np.array(tmp_tracks['cells'].iloc[0][params['cell_ind']])
+    x = grid.x['data'].data[cell[:, 2]]
+    y = grid.y['data'].data[cell[:, 1]]
+
+    if params['line_coords']:
+        cell_coords = np.array([x, y])
+        A = get_rotation(tmp_tracks['orientation'].iloc[0])
+        cell_coords = np.array([
+            np.transpose(A).dot(cell_coords[:, i])
+            for i in range(cell_coords.shape[1])])
+        [x, y] = [cell_coords[:, 0], cell_coords[:, 1]]
+
+    z0 = get_grid_alt(tracks.record.grid_size, tracks.params['CELL_START'])
+    z = grid.z['data'].data[z0: len(x)+z0]
+
+    if params['direction'] in ['lat', 'parallel']:
+        h = x
+    elif params['direction'] in ['lon', 'perpendicular']:
+        h = y
+
+    colors = ['k']
+    color = colors[np.mod(params['cell_ind'], len(colors))]
+    ax.plot(
+        h / 1000, z / 1000, color='w', linewidth=2,
+        path_effects=[pe.Stroke(linewidth=6, foreground=color), pe.Normal()])
+    lgd_cell = mlines.Line2D(
+        [], [], color='w', linestyle='-', linewidth=2, label='Convective Cell',
+        path_effects=[pe.Stroke(linewidth=6, foreground=color), pe.Normal()])
+    return lgd_cell
 
 
 def get_rotation(angle):
@@ -93,6 +134,10 @@ def get_line_grid(ds, angle, vars=['U', 'V', 'W', 'reflectivity']):
     return xr.merge(new_var_list)
 
 
+def rebase_horizontal_winds():
+    return
+
+
 def format_pyart(grid):
     raw = grid.fields['reflectivity']['data'].data
     raw[raw == -9999] = np.nan
@@ -103,6 +148,32 @@ def format_pyart(grid):
         {'reflectivity': (['z', 'y', 'x'],  raw)},
         coords={'z': z, 'y': y, 'x': x})
     return ds
+
+
+def add_winds(ds, ax, tracks, grid, date_time, params):
+    # import pdb; pdb.set_trace()
+    lon, lat, x, y = get_center_coords(tracks, grid, params, date_time)
+    if params['direction'] in ['lat', 'parallel']:
+        ds = ds.sel(y=y, method='nearest').squeeze()
+        ax.quiver(
+            ds.x[::2] / 1000, ds.z[::2] / 1000, ds.U.values[::2, ::2],
+            ds.W.values[::2, ::2], zorder=4)
+    elif params['direction'] in ['lon', 'perpendicular']:
+        if params['line_coords']:
+            tmp_tracks = tracks.tracks.xs(
+                (date_time, params['uid_ind'], 0),
+                level=('time', 'uid', 'level'))
+            semi_major = tmp_tracks['semi_major'].iloc[0]
+            cond = ((ds.x <= x + semi_major * 2500 / 2)
+                    & (ds.x >= x - semi_major * 2500 / 2))
+            ds = ds.where(cond).dropna(dim='x', how='all').mean(dim='x')
+        else:
+            ds = ds.sel(x=x, method='nearest').squeeze()
+        ax.quiver(
+            ds.y[::2] / 1000, ds.z[::2] / 1000, ds.V.values[::2, ::2],
+            ds.W.values[::2, ::2], zorder=4)
+
+    return
 
 
 def plot_wrf_winds(

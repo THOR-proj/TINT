@@ -1,7 +1,7 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import matplotlib.lines as mlines
+import matplotlib.patheffects as pe
 import xarray as xr
 from pyart.core.transforms import cartesian_to_geographic
 import cartopy.crs as ccrs
@@ -13,7 +13,10 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
 
     projection = ccrs.PlateCarree()
     tmp_tracks = tracks.tracks.xs(date_time, level='time')
-    uids = np.unique(tmp_tracks.index.get_level_values('uid').values)
+    if params['uid_ind'] is None:
+        uids = np.unique(tmp_tracks.index.get_level_values('uid').values)
+    else:
+        uids = [params['uid_ind']]
     lgd_han = []
     for uid in uids:
         tmp_tracks_uid = tmp_tracks.xs(uid, level='uid')
@@ -23,8 +26,16 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         mergers = list(tmp_tracks_uid.xs(0, level='level')['mergers'].iloc[0])
         label = ", ".join(mergers)
 
-        ax.text(lon-.05, lat+0.05, uid, transform=projection, fontsize=12)
-        ax.text(lon+.05, lat-0.05, label, transform=projection, fontsize=9)
+        ax.text(
+            lon-.05, lat+0.05, uid, transform=projection, fontsize=16,
+            zorder=5, fontweight='bold', color='w',
+            path_effects=[
+                pe.Stroke(linewidth=3, foreground='k'), pe.Normal()])
+        ax.text(
+            lon+.05, lat-0.05, label, transform=projection, fontsize=12,
+            zorder=5, fontweight='bold', color='w',
+            path_effects=[
+                pe.Stroke(linewidth=4, foreground='k'), pe.Normal()])
 
         if params['label_splits']:
             parent = list(
@@ -36,25 +47,26 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         lgd_vel = add_velocities(
             ax, tracks, grid, uid, date_time, var_list=['shift'], c_list=['m'],
             labels=['System Velocity'])
-        [lgd_han.append(h) for h in lgd_vel]
 
         # Plot stratiform offset
         lgd_so = add_stratiform_offset(ax, tracks, grid, uid, date_time)
-        lgd_han.append(lgd_so)
 
-        add_ellipses(ax, tracks, grid, uid, date_time, alt)
-        add_cells(ax, tracks, grid, uid, date_time, alt)
+        lgd_ellipse = add_ellipses(ax, tracks, grid, uid, date_time, alt)
+        lgd_cell = add_cells(ax, tracks, grid, uid, date_time, alt)
+
         if tracks.params['RAIN']:
             add_rain()
 
-        if params['winds']:
-            lgd_winds = add_winds(ax, tracks, grid, uid, date_time, alt, params)
-            lgd_han.append(lgd_winds)
+    if params['winds']:
+        lgd_winds = add_winds(ax, tracks, uid, date_time, alt, params)
+        lgd_han.append(lgd_winds)
 
-        if params['legend']:
-            legend = plt.legend(handles=lgd_han, loc=2)
-            legend.get_frame().set_alpha(None)
-            legend.get_frame().set_facecolor((1, 1, 1, 1))
+    lgd_han.append(lgd_so)
+    [lgd_han.append(h) for h in lgd_vel]
+    lgd_han.append(lgd_cell)
+    lgd_han.append(lgd_ellipse)
+
+    return lgd_han
 
 
 def reduce_tracks(tracks, uid, date_time, alt):
@@ -120,19 +132,22 @@ def add_ellipses(ax, tracks, grid, uid, date_time, alt):
 
     ell = Ellipse(
         tuple([lon, lat]), major_axis, minor_axis, orientation,
-        linewidth=1.5, fill=False)
+        linewidth=1.5, fill=False, zorder=3, color='grey', linestyle='--')
+    lgd_ellipse = mlines.Line2D(
+        [], [], color='grey', linewidth=1.5, label='Best Fit Ellipse',
+        linestyle='--')
 
     ell.set_clip_box(ax.bbox)
-    ell.set_alpha(0.4)
+    # ell.set_alpha(0.4)
     ax.add_artist(ell)
-    return ell
+    return lgd_ellipse
 
 
 def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
     projparams = grid.get_projparams()
     tmp_tracks = reduce_tracks(tracks, uid, date_time, alt)
     alt_ind = get_grid_alt(get_grid_size(grid), alt)
-    colors = ['m', 'lime', 'darkorange', 'k', 'b', 'darkgreen', 'yellow']
+    colors = ['k']
     if cell_ind is None:
         cell_list = range(len(tmp_tracks['cells'].values[0]))
     else:
@@ -149,11 +164,17 @@ def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
             y_cell = grid.y['data'][y_ind]
             lon_cell, lat_cell = cartesian_to_geographic(
                 x_cell, y_cell, projparams)
+            color = colors[np.mod(j, len(colors))]
             ax.scatter(
-                lon_cell, lat_cell, marker='x', s=30,
-                c=colors[np.mod(j, len(colors))], zorder=3)
+                lon_cell, lat_cell, marker='o', s=8, linewidth=1, c='w',
+                zorder=2, path_effects=[
+                    pe.Stroke(linewidth=5, foreground=color), pe.Normal()])
+    lgd_cell = mlines.Line2D(
+        [], [], color='w', marker='o', markersize=2, linewidth=1,
+        linestyle='None', label='Convective Cells', path_effects=[
+            pe.Stroke(linewidth=5, foreground='k'), pe.Normal()])
 
-    return ax
+    return lgd_cell
 
 
 def add_boundary(ax, tracks, grid, projparams):
@@ -177,10 +198,12 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time):
     lon_high = tmp_tracks.xs(num_levels-1, level='level')['lon'].iloc[0]
     lat_high = tmp_tracks.xs(num_levels-1, level='level')['lat'].iloc[0]
     ax.plot(
-        [lon_low, lon_high], [lat_low, lat_high], '--b', linewidth=2.0)
+        [lon_low, lon_high], [lat_low, lat_high], '-w', linewidth=2, zorder=4,
+        path_effects=[pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
     lgd_so = mlines.Line2D(
-        [], [], color='b', linestyle='--', linewidth=2.0,
-        label='Stratiform Offset')
+        [], [], color='w', linestyle='-', linewidth=2,
+        label='Stratiform Offset',
+        path_effects=[pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
     return lgd_so
 
 
@@ -213,12 +236,15 @@ def add_velocities(
         [new_lon, new_lat] = cartesian_to_geographic(
             x + 4 * u * dt, y + 4 * v * dt, projparams)
         ax.arrow(
-            lon, lat, new_lon[0]-lon, new_lat[0]-lat, color=c_list[i],
-            head_width=0.024, head_length=0.040)
+            lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=4,
+            head_width=0.024, head_length=0.040, path_effects=[
+                pe.Stroke(linewidth=6, foreground=c_list[i]), pe.Normal()])
     lgd_han = []
     for i in range(len(c_list)):
         lgd_line = mlines.Line2D(
-            [], [], color=c_list[i], linestyle='-', label=labels[i])
+            [], [], color='w', linestyle='-', label=labels[i], linewidth=2,
+            path_effects=[
+                pe.Stroke(linewidth=6, foreground=c_list[i]), pe.Normal()])
         lgd_han.append(lgd_line)
 
     return lgd_han
@@ -232,7 +258,7 @@ def format_data(
 
 
 def add_winds(
-        ax, tracks, grid, uid, date_time, alt, params,
+        ax, tracks, grid, date_time, alt, params,
         horizontal=True, vertical=True):
     # Load WRF winds corresponding to this grid
     winds = xr.open_dataset(params['winds_fn'])

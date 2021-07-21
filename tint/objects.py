@@ -14,6 +14,8 @@ import pyart
 from scipy import ndimage
 from skimage.measure import regionprops
 from scipy.ndimage import center_of_mass
+from skimage.morphology.convex_hull import convex_hull_image
+import cv2 as cv
 
 from .grid_utils import get_filtered_frame, get_level_indices
 from .rain import update_rain_totals, init_rain_totals, get_object_rain_props
@@ -238,7 +240,8 @@ def get_object_prop(
         [z_min, z_max] = get_level_indices(
             grid1, record.grid_size, params['LEVELS'][i, :])
         ski_props = regionprops(
-            data_dic['frames'][i], raw3D[z_min], cache=True)
+            data_dic['frames'][i], raw3D[z_min].astype(float),
+            cache=False)
 
         for obj in np.arange(nobj) + 1:
             obj_prop['id1'].append(obj)
@@ -265,8 +268,6 @@ def get_object_prop(
             g_y += grid1.y['data'][0]
             g_x = ski_props[obj-1].centroid[1] * unit_dim[1]
             g_x += grid1.x['data'][0]
-            obj_prop['grid_x'].append(np.round(g_x, 1))
-            obj_prop['grid_y'].append(np.round(g_y, 1))
 
             # Append object center of mass (reflectivity weighted
             # centroid) in grid units
@@ -277,26 +278,30 @@ def get_object_prop(
             obj_prop['com_x'].append(np.round(g_x, 1))
             obj_prop['com_y'].append(np.round(g_y, 1))
 
+            hull = convex_hull_image(data_dic['frames'][i] == obj)
+            contours = cv.findContours(
+                hull.astype(np.uint8), cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[0]
+
+            [(x_c, y_c), (a, b), phi] = cv.fitEllipseDirect(contours[0])
+            g_y = y_c * unit_dim[2] + grid1.y['data'][0]
+            g_x = x_c * unit_dim[1] + grid1.x['data'][0]
+            obj_prop['grid_x'].append(np.round(g_x, 1))
+            obj_prop['grid_y'].append(np.round(g_y, 1))
+            obj_prop['semi_major'].append(a)
+            obj_prop['semi_minor'].append(b)
+            if a >= b:
+                ecc = np.sqrt(1 - (b / a) ** 2)
+            else:
+                ecc = np.sqrt(1 - (a / b) ** 2)
+            obj_prop['eccentricity'].append(ecc)
+            obj_prop['orientation'].append(phi)
+
             # Append centroid in lat, lon units.
             projparams = grid1.get_projparams()
             lon, lat = pyart.core.transforms.cartesian_to_geographic(
                 g_x, g_y, projparams)
             obj_prop['lon'].append(np.round(lon[0], 5))
             obj_prop['lat'].append(np.round(lat[0], 5))
-
-            # Append ellipse properties
-            # Note semi_major, semi_minor are stored in `index'
-            # units which effectively assumes dx = dy.
-            attrs = [
-                'major_axis_length', 'minor_axis_length',
-                'eccentricity', 'orientation']
-            lists = ['semi_major', 'semi_minor', 'eccentricity', 'orientation']
-            for j in range(0, len(attrs)):
-                try:
-                    obj_prop[lists[j]].append(
-                        np.round(eval('ski_props[obj-1].' + attrs[j]), 3))
-                except AttributeError:
-                    obj_prop[lists[j]].append(np.nan)
 
             # Calculate raw3D slices
             raw3D_i = raw3D[z_min:z_max, :, :]
@@ -347,8 +352,9 @@ def get_object_prop(
 
     obj_prop.update({
         'u_shift': u_shift * levels, 'v_shift': v_shift * levels,
-        'orientation': np.round(
-            np.rad2deg(np.array(obj_prop['orientation'])), 3)})
+        # 'orientation': np.round(
+        #     np.rad2deg(np.array(obj_prop['orientation'])), 3)})
+        'orientation': np.round(obj_prop['orientation'], 3)})
     return obj_prop
 
 
