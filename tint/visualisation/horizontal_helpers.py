@@ -35,7 +35,7 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
             lon+.05, lat-0.05, label, transform=projection, fontsize=12,
             zorder=5, fontweight='bold', color='w',
             path_effects=[
-                pe.Stroke(linewidth=4, foreground='k'), pe.Normal()])
+                pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
 
         if params['label_splits']:
             parent = list(

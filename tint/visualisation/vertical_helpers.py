@@ -3,9 +3,9 @@ import matplotlib.lines as mlines
 import matplotlib.patheffects as pe
 import xarray as xr
 from scipy.interpolate import griddata
+from pyart.core.transforms import cartesian_to_geographic
 
 from tint.grid_utils import get_grid_alt
-from tint.visualisation.figures import get_center_coords
 
 
 def add_stratiform_offset(ax, tracks, grid, date_time, params):
@@ -122,7 +122,6 @@ def interp_var(
 def get_line_grid(ds, angle, vars=['U', 'V', 'W', 'reflectivity']):
     print('Interpolating onto line coordinates.')
     new_var_list = []
-
     for var_name in vars:
         var = ds[var_name].values.squeeze()
         x = ds.x.values
@@ -134,8 +133,17 @@ def get_line_grid(ds, angle, vars=['U', 'V', 'W', 'reflectivity']):
     return xr.merge(new_var_list)
 
 
-def rebase_horizontal_winds():
-    return
+def rebase_horizontal_winds(ds, angle):
+    print('Calculating horizontal winds in new basis.')
+    A = get_rotation(angle)
+    for i in range(len(ds.z.values)):
+        [U, V] = [ds.U.values[i, :, :], ds.V.values[i, :, :]]
+        winds = np.array([U.flatten(), V.flatten()])
+        new_winds = np.transpose(A).dot(winds)
+        shape = ds.U.values[i, :].shape
+        ds.U.values[i, :] = new_winds[0].reshape(shape)
+        ds.V.values[i, :] = new_winds[1].reshape(shape)
+    return ds
 
 
 def format_pyart(grid):
@@ -150,14 +158,74 @@ def format_pyart(grid):
     return ds
 
 
+def get_center_coords(tracks, grid, params, date_time):
+    if params['uid_ind'] is not None:
+        tmp_tracks = tracks.tracks.xs(
+            (date_time, params['uid_ind'], 0), level=('time', 'uid', 'level'))
+        if params['center_cell']:
+            cell = np.array(tmp_tracks['cells'].iloc[0][params['cell_ind']])
+            x = grid.x['data'].data[cell[0, 2]]
+            y = grid.y['data'].data[cell[0, 1]]
+            projparams = grid.get_projparams()
+            lon, lat = cartesian_to_geographic(x, y, projparams)
+        else:
+            lon = tmp_tracks['lon'].iloc[0]
+            lat = tmp_tracks['lat'].iloc[0]
+            x = tmp_tracks['grid_x'].iloc[0]
+            y = tmp_tracks['grid_y'].iloc[0]
+        if params['line_coords']:
+            A = get_rotation(tmp_tracks['orientation'].iloc[0])
+            [x, y] = np.transpose(A).dot(np.array([x, y]))
+    else:
+        lon = tracks.radar_info['radar_lon']
+        lat = tracks.radar_info['radar_lat']
+        [x, y] = [0, 0]
+
+    return lon, lat, x, y
+
+
+def add_quiver(ds, ax, params):
+    if params['direction'] in ['lat', 'parallel']:
+        [x, U] = [ds.x, ds.U.values]
+    else:
+        [x, U] = [ds.y, ds.V.values]
+    q_hdl = ax.quiver(
+        x[::2] / 1000, ds.z[::2] / 1000, U[::2, ::2],
+        ds.W.values[::2, ::2], zorder=2, color='k')
+    ax.quiverkey(
+        q_hdl, .9, 1.025, 10, '10 m/s', labelpos='E',
+        coordinates='axes')
+
+
+def add_streamplot(ds, ax, params):
+    if params['direction'] in ['lat', 'parallel']:
+        [x, U] = [ds.x, ds.U.values]
+    else:
+        [x, U] = [ds.y, ds.V.values]
+    if params['line_average']:
+        density = 5
+    else:
+        density = 1.5
+    ax.streamplot(
+        x[::2] / 1000, ds.z[::2] / 1000, U[::2, ::2],
+        ds.W.values[::2, ::2], zorder=2, color='k', density=density,
+        linewidth=1.25)
+    lgd_wind = mlines.Line2D(
+        [], [], color='k', linestyle='-', marker='>', linewidth=1.25,
+        label='Relative Streamlines')
+    return lgd_wind
+
+
 def add_winds(ds, ax, tracks, grid, date_time, params):
     # import pdb; pdb.set_trace()
     lon, lat, x, y = get_center_coords(tracks, grid, params, date_time)
     if params['direction'] in ['lat', 'parallel']:
         ds = ds.sel(y=y, method='nearest').squeeze()
-        ax.quiver(
-            ds.x[::2] / 1000, ds.z[::2] / 1000, ds.U.values[::2, ::2],
-            ds.W.values[::2, ::2], zorder=4)
+        if params['streamplot']:
+            lgd_wind = add_streamplot(ds, ax, params)
+        else:
+            add_quiver(ds, ax, params)
+            lgd_wind = None
     elif params['direction'] in ['lon', 'perpendicular']:
         if params['line_coords']:
             tmp_tracks = tracks.tracks.xs(
@@ -169,85 +237,10 @@ def add_winds(ds, ax, tracks, grid, date_time, params):
             ds = ds.where(cond).dropna(dim='x', how='all').mean(dim='x')
         else:
             ds = ds.sel(x=x, method='nearest').squeeze()
-        ax.quiver(
-            ds.y[::2] / 1000, ds.z[::2] / 1000, ds.V.values[::2, ::2],
-            ds.W.values[::2, ::2], zorder=4)
-
-    return
-
-
-def plot_wrf_winds(
-        ax, grid, x_draft, y_draft, direction, quiver=False, mp='lin'):
-    grid_time = np.datetime64(grid.time['units'][14:]).astype('datetime64[s]')
-    # Load WRF winds corresponding to this grid
-    base = '/g/data/w40/esh563/{0}d04_ref/{0}d04_ref_'.format(mp)
-    fn = glob.glob(base + str(grid_time) + '.nc')
-    winds = xr.open_dataset(fn[0])
-    if direction == 'lat':
-        winds = winds.sel(y=y_draft, method='nearest')
-    else:
-        winds = winds.sel(x=x_draft, method='nearest')
-    winds = winds.squeeze()
-    U = winds.U
-    V = winds.V
-    W = winds.W
-
-    x = np.arange(-145000, 145000+2500, 2500) / 1000
-    z = np.arange(0, 20500, 500) / 1000
-
-    if quiver:
-        if direction == 'lat':
-            ax.quiver(x[::2], z[::2], U.values[::2, ::2], W.values[::2, ::2])
+        if params['streamplot']:
+            lgd_wind = add_streamplot(ds, ax, params)
         else:
-            ax.quiver(x[::2], z[::2], V.values[::2, ::2], W.values[::2, ::2])
-    else:
-        ax.contour(
-            x, z, W, colors='pink', linewidths=1.5, levels=[-2, 2],
-            linestyles=['--', '-'])
+            add_quiver(ds, ax, params)
+            lgd_wind = None
 
-
-def plot_vert_winds_line(
-        ax, new_wrf, x_draft_new, y_draft_new, direction, quiver=False,
-        average_along_line=False, semi_major=None):
-
-    if direction == 'parallel':
-        new_wrf = new_wrf.sel(y=y_draft_new, method='nearest')
-        x = new_wrf.x / 1000
-    else:
-        if average_along_line:
-            cond = ((new_wrf.x <= x_draft_new + semi_major*2500/2)
-                    & (new_wrf.x >= x_draft_new - semi_major*2500/2))
-            new_wrf = new_wrf.where(cond).dropna(dim='x', how='all')
-            new_wrf = new_wrf.mean(dim='x')
-        else:
-            new_wrf = new_wrf.sel(x=x_draft_new, method='nearest')
-        x = new_wrf.y / 1000
-    new_wrf = new_wrf.squeeze()
-    U = new_wrf.U
-    V = new_wrf.V
-    W = new_wrf.W
-
-    z = np.arange(0, 20500, 500)/1000
-
-    if quiver:
-        if direction == 'parallel':
-            ax.quiver(x[::2], z[::2], U.values[::2, ::2], W.values[::2, ::2])
-        else:
-            ax.quiver(x[::2], z[::2], V.values[::2, ::2], W.values[::2, ::2])
-    else:
-        if average_along_line:
-            if W.min() > -1:
-                levels = [1]
-                linestyles = ['-']
-            else:
-                levels = [-1, 1]
-                linestyles = ['--', '-']
-        else:
-            if W.min() > -2:
-                levels = [2]
-                linestyles = ['-']
-            else:
-                levels = [-2, 2]
-                linestyles = ['--', '-']
-        ax.contour(x, z, W, colors='pink', linewidths=1.5,
-                   levels=levels, linestyles=linestyles)
+    return lgd_wind

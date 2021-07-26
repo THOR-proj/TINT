@@ -202,6 +202,29 @@ def single_max(obj_ind, refl, params):
     return True
 
 
+def get_ellipse(data_dic, grid1, record, obj, level_ind):
+
+    unit_dim = record.grid_size
+    hull = convex_hull_image(data_dic['frames'][level_ind] == obj)
+    contours = cv.findContours(
+        hull.astype(np.uint8), cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[0]
+
+    [(x_c, y_c), (a, b), phi] = cv.fitEllipseDirect(contours[0])
+    grid_y = y_c * unit_dim[2] + grid1.y['data'][0]
+    grid_x = x_c * unit_dim[1] + grid1.x['data'][0]
+    if a >= b:
+        semi_major = a
+        semi_minor = b
+        orientation = phi
+    else:
+        semi_major = b
+        semi_minor = a
+        orientation = phi - 90
+    orientation = ((orientation + 90) % 180) - 90
+    ecc = np.sqrt(1 - (semi_minor / semi_major) ** 2)
+    return grid_x, grid_y, semi_major, semi_minor, ecc, orientation
+
+
 def get_object_prop(
         data_dic, grid1, u_shift, v_shift, field, record,
         params, current_objects):
@@ -278,28 +301,16 @@ def get_object_prop(
             obj_prop['com_x'].append(np.round(g_x, 1))
             obj_prop['com_y'].append(np.round(g_y, 1))
 
-            hull = convex_hull_image(data_dic['frames'][i] == obj)
-            contours = cv.findContours(
-                hull.astype(np.uint8), cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[0]
-
-            [(x_c, y_c), (a, b), phi] = cv.fitEllipseDirect(contours[0])
-            g_y = y_c * unit_dim[2] + grid1.y['data'][0]
-            g_x = x_c * unit_dim[1] + grid1.x['data'][0]
-            obj_prop['grid_x'].append(np.round(g_x, 1))
-            obj_prop['grid_y'].append(np.round(g_y, 1))
-            obj_prop['semi_major'].append(a)
-            obj_prop['semi_minor'].append(b)
-            if a >= b:
-                ecc = np.sqrt(1 - (b / a) ** 2)
-            else:
-                ecc = np.sqrt(1 - (a / b) ** 2)
-            obj_prop['eccentricity'].append(ecc)
-            obj_prop['orientation'].append(phi)
+            ellipse = get_ellipse(data_dic, grid1, record, obj, i)
+            props = [
+                'grid_x', 'grid_y', 'semi_major', 'semi_minor',
+                'eccentricity', 'orientation']
+            [obj_prop[props[i]].append(ellipse[i]) for i in range(len(props))]
 
             # Append centroid in lat, lon units.
             projparams = grid1.get_projparams()
             lon, lat = pyart.core.transforms.cartesian_to_geographic(
-                g_x, g_y, projparams)
+                ellipse[0], ellipse[1], projparams)
             obj_prop['lon'].append(np.round(lon[0], 5))
             obj_prop['lat'].append(np.round(lat[0], 5))
 

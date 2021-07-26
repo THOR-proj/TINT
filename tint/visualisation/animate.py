@@ -19,7 +19,6 @@ def animate(
     basename = os.path.basename(outfile_name)
     if len(dest_dir) == 0:
         dest_dir = os.getcwd()
-
     tmp_dir = tempfile.mkdtemp()
 
     try:
