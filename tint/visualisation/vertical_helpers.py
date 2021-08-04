@@ -5,10 +5,11 @@ import xarray as xr
 from scipy.interpolate import griddata
 from pyart.core.transforms import cartesian_to_geographic
 
-from tint.grid_utils import get_grid_alt
+from tint.grid_utils import get_grid_alt, get_grid_size
 
 
 def add_stratiform_offset(ax, tracks, grid, date_time, params):
+    angle = None
     tmp_tracks = tracks.tracks.xs(
         (date_time, params['uid_ind']),
         level=('time', 'uid'))
@@ -33,6 +34,8 @@ def add_stratiform_offset(ax, tracks, grid, date_time, params):
         [h_low, h_high] = [x_low, x_high]
     elif params['direction'] in ['lon', 'perpendicular']:
         [h_low, h_high] = [y_low, y_high]
+        [dz, dh] = [high - low, h_high - h_low]
+        angle = np.rad2deg(np.arctan2(dz, dh))
 
     ax.plot(
         [h_low, h_high], [low, high], '-w', linewidth=2, zorder=3,
@@ -41,7 +44,7 @@ def add_stratiform_offset(ax, tracks, grid, date_time, params):
         [], [], color='w', linestyle='-', linewidth=2,
         label='Stratiform Offset',
         path_effects=[pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
-    return lgd_so
+    return lgd_so, angle
 
 
 def add_cell(ax, tracks, grid, date_time, params):
@@ -119,10 +122,10 @@ def interp_var(
     return new_var
 
 
-def get_line_grid(ds, angle, vars=['U', 'V', 'W', 'reflectivity']):
+def get_line_grid(ds, angle, variables=['U', 'V', 'W', 'reflectivity']):
     print('Interpolating onto line coordinates.')
     new_var_list = []
-    for var_name in vars:
+    for var_name in variables:
         var = ds[var_name].values.squeeze()
         x = ds.x.values
         y = ds.y.values
@@ -216,15 +219,43 @@ def add_streamplot(ds, ax, params):
     return lgd_wind
 
 
-def add_winds(ds, ax, tracks, grid, date_time, params):
-    # import pdb; pdb.set_trace()
+def get_streamline_angles(ds, ax, tracks, grid, date_time, params):
     lon, lat, x, y = get_center_coords(tracks, grid, params, date_time)
+    [dz, dy, dx] = get_grid_size(grid)
+    tmp_tracks = tracks.tracks.xs(
+        (date_time, params['uid_ind'], 0), level=('time', 'uid', 'level'))
+    semi_minor = tmp_tracks['semi_minor'].iloc[0]
+    cond = ((ds.y <= y + semi_minor * dy / 2)
+            & (ds.y >= y - semi_minor * dy / 2))
+    tmp_ds = ds.where(cond).dropna(dim='y', how='all')
+    w_max = tmp_ds.W.max().values
+    w_cond = tmp_ds.W.values > 1
+    angles = np.arctan2(
+        tmp_ds.W.values[w_cond], tmp_ds.V.values[w_cond]).flatten()
+    angles = angles[~np.isnan(angles)]
+    angles = np.rad2deg(angles)
+    if len(angles) == 0:
+        angle = np.nan
+        max_count = np.nan
+    else:
+        hist = np.histogram(angles, bins=72, range=(0, 180))
+        labels = hist[1][:-1] + np.diff(hist[1]) / 2
+        angle = labels[np.argmax(hist[0])]
+        max_count = np.max(hist[0])
+
+    return angle, w_max, len(angles), np.prod(w_cond.shape), max_count
+
+
+def add_winds(ds, ax, tracks, grid, date_time, params):
+    lon, lat, x, y = get_center_coords(tracks, grid, params, date_time)
+    angle = None
+    [dz, dy, dx] = get_grid_size(grid)
     if params['direction'] in ['lat', 'parallel']:
-        ds = ds.sel(y=y, method='nearest').squeeze()
+        tmp_ds = ds.sel(y=y, method='nearest').squeeze()
         if params['streamplot']:
-            lgd_wind = add_streamplot(ds, ax, params)
+            lgd_wind = add_streamplot(tmp_ds, ax, params)
         else:
-            add_quiver(ds, ax, params)
+            add_quiver(tmp_ds, ax, params)
             lgd_wind = None
     elif params['direction'] in ['lon', 'perpendicular']:
         if params['line_coords']:
@@ -232,15 +263,66 @@ def add_winds(ds, ax, tracks, grid, date_time, params):
                 (date_time, params['uid_ind'], 0),
                 level=('time', 'uid', 'level'))
             semi_major = tmp_tracks['semi_major'].iloc[0]
-            cond = ((ds.x <= x + semi_major * 2500 / 2)
-                    & (ds.x >= x - semi_major * 2500 / 2))
-            ds = ds.where(cond).dropna(dim='x', how='all').mean(dim='x')
+            cond = ((ds.x <= x + semi_major * dx / 2)
+                    & (ds.x >= x - semi_major * dx / 2))
+            tmp_ds = ds.where(cond).dropna(dim='x', how='all').mean(dim='x')
+            angle, w_max, n_angles, n_obs, max_count = get_streamline_angles(
+                tmp_ds, ax, tracks, grid, date_time, params)
         else:
-            ds = ds.sel(x=x, method='nearest').squeeze()
+            tmp_ds = ds.sel(x=x, method='nearest').squeeze()
         if params['streamplot']:
-            lgd_wind = add_streamplot(ds, ax, params)
+            lgd_wind = add_streamplot(tmp_ds, ax, params)
         else:
-            add_quiver(ds, ax, params)
+            add_quiver(tmp_ds, ax, params)
             lgd_wind = None
 
-    return lgd_wind
+    return lgd_wind, angle, w_max, n_angles, n_obs, max_count
+
+
+def transform_ds(ds, tracks, params, date_time, variables):
+
+    tmp_tracks = tracks.tracks.xs(
+        (date_time, params['uid_ind'], 0), level=('time', 'uid', 'level'))
+    ds = get_line_grid(
+        ds, tmp_tracks['orientation'].iloc[0], variables=variables)
+    if params['winds']:
+        if params['relative_winds']:
+            ds['U'] = ds['U'] - tmp_tracks['u_shift'].values
+            ds['V'] = ds['V'] - tmp_tracks['v_shift'].values
+        ds = rebase_horizontal_winds(
+            ds, tmp_tracks['orientation'].iloc[0])
+    return ds, tmp_tracks
+
+
+def setup_line_coords(ds, tracks, params, date_time, variables):
+    if not params['load_line_coords_winds']:
+        ds, tmp_tracks = transform_ds(
+            ds, tracks, params, date_time, variables)
+    else:
+        try:
+            tmp_tracks = tracks.tracks.xs(
+                (date_time, params['uid_ind'], 0),
+                level=('time', 'uid', 'level'))
+            fn = '{}/{}_{}.nc'.format(
+                params['save_dir'], params['uid_ind'], date_time)
+            ds = xr.open_dataset(fn)
+            print('Transformed data loaded from disk.')
+        except FileNotFoundError:
+            params['load_line_coords_winds'] = False
+            print('Transformed data not found. Calculating.')
+            ds, tmp_tracks = transform_ds(
+                ds, tracks, params, date_time, variables)
+    return ds, tmp_tracks
+
+
+def setup_perpendicular_coords(ds, x, tmp_tracks, params):
+    if params['line_average']:
+        semi_major = tmp_tracks['semi_major'].iloc[0]
+        cond = ((ds.x <= x + semi_major * 2500 / 2)
+                & (ds.x >= x - semi_major * 2500 / 2))
+        ds_plot = ds.where(cond).dropna(dim='x', how='all').mean(dim='x')
+        t_string = 'Line Perpendicular Mean Cross Section'
+    else:
+        ds_plot = ds.sel(x=x, method='nearest').squeeze()
+        t_string = 'Line Perpendicular Cross Section'
+    return ds_plot, t_string

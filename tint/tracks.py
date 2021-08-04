@@ -18,7 +18,7 @@ from .objects import post_tracks, get_system_tracks
 class Tracks(object):
     """Determine storm tracks from list of pyart grids. """
 
-    def __init__(self, params={}, field='reflectivity', b_path=None):
+    def __init__(self, params={}, field='reflectivity'):
 
         # Parameter Defaults
         self.params = {
@@ -55,13 +55,6 @@ class Tracks(object):
             'RAIN': False,  # bool
             # Whether to save the grids associated with the accumulated totals
             'SAVE_RAIN': False}  # bool
-
-        if b_path is not None:
-            with open(b_path, 'rb') as f:
-                b_ind_set = pickle.load(f)
-            self.params['BOUNDARY_GRID_CELLS'] = b_ind_set
-        else:
-            self.params['BOUNDARY_GRID_CELLS'] = set()
 
         # Load user specified parameters.
         for p in params:
@@ -121,7 +114,21 @@ class Tracks(object):
             print('Skipping erroneous grid.')
         return grid_obj2, data_dic
 
-    def get_tracks(self, grids):
+    def get_boundary_inds(self, grid, b_path=None):
+        if b_path is not None:
+            with open(b_path, 'rb') as f:
+                b_ind_set = pickle.load(f)
+        else:
+            nx = len(grid.x['data'])
+            ny = len(grid.y['data'])
+            s1 = [(0, i) for i in range(nx)]
+            s2 = [(ny, i) for i in range(nx)]
+            s3 = [(i, 0) for i in range(ny)]
+            s4 = [(i, nx) for i in range(ny)]
+            b_ind_set = set(s1+s2+s3+s4)
+        self.params['BOUNDARY_GRID_CELLS'] = b_ind_set
+
+    def get_tracks(self, grids, b_path=None):
         """Obtains tracks given a list of pyart grid objects."""
         start_time = datetime.datetime.now()
 
@@ -145,6 +152,8 @@ class Tracks(object):
             new_rain = True
         else:
             new_rain = False
+
+        self.get_boundary_inds(grid_obj2, b_path)
 
         data_dic = {}
         data = extract_grid_data(

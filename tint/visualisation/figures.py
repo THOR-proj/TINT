@@ -7,6 +7,7 @@ from pyart.core.transforms import cartesian_to_geographic
 import warnings
 from matplotlib import rcParams
 import xarray as xr
+import pandas as pd
 
 from tint.grid_utils import get_grid_alt, parse_grid_datetime
 import tint.visualisation.horizontal_helpers as hh
@@ -29,7 +30,8 @@ def check_params(user_params):
         'legend': True, 'winds': False, 'winds_fn': None,
         'colorbar_flag': True, 'direction': None, 'line_average': False,
         'crosshair': True, 'streamplot': True, 'dpi': 200, 'save_dir': None,
-        'relative_winds': False}
+        'relative_winds': False, 'data_fn': None,
+        'load_line_coords_winds': None, 'save_ds': False}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
@@ -162,6 +164,13 @@ def horizontal_cross_section(
         legend.get_frame().set_alpha(None)
         legend.get_frame().set_facecolor((1, 1, 1, 1))
 
+    # Save frame and cleanup
+    if params['save_dir'] is not None:
+        plt.savefig(
+            '{}/{}m_cross_{}.png'.format(
+                params['save_dir'], params['alt'], date_time),
+            bbox_inches='tight', dpi=params['dpi'], facecolor='w')
+
     return True
 
 
@@ -179,23 +188,18 @@ def vertical_cross_section(
     lgd_han = []
 
     ds = vh.format_pyart(grid)
-    vars = ['reflectivity']
+    variables = ['reflectivity']
     if params['winds']:
         winds_ds = xr.open_dataset(params['winds_fn'])
+        winds_ds = winds_ds[['U', 'V', 'W']]
         ds = xr.merge([ds, winds_ds])
-        vars += ['U', 'V', 'W']
+        variables += ['U', 'V', 'W']
 
     if params['line_coords']:
-        tmp_tracks = tracks.tracks.xs(
-            (date_time, params['uid_ind'], 0), level=('time', 'uid', 'level'))
-        ds = vh.get_line_grid(ds, tmp_tracks['orientation'].iloc[0], vars=vars)
-        if params['winds']:
-            if params['relative_winds']:
-                ds['U'] = ds['U'] - tmp_tracks['u_shift'].values
-                ds['V'] = ds['V'] - tmp_tracks['v_shift'].values
-            ds = vh.rebase_horizontal_winds(
-                ds, tmp_tracks['orientation'].iloc[0])
+        ds, tmp_tracks = vh.setup_line_coords(
+            ds, tracks, params, date_time, variables)
 
+    print('Adding reflectivity.')
     if params['direction'] == 'lat':
         display.plot_latitude_slice(
             tracks.field, lon=lon, lat=lat, colorbar_flag=True, edges=False,
@@ -228,15 +232,8 @@ def vertical_cross_section(
         x_label = 'Along Line Distance From Radar [km]'
 
     elif params['direction'] == 'perpendicular':
-        if params['line_average']:
-            semi_major = tmp_tracks['semi_major'].iloc[0]
-            cond = ((ds.x <= x + semi_major * 2500 / 2)
-                    & (ds.x >= x - semi_major * 2500 / 2))
-            ds_plot = ds.where(cond).dropna(dim='x', how='all').mean(dim='x')
-            t_string = 'Line Perpendicular Mean Cross Section'
-        else:
-            ds_plot = ds.sel(x=x, method='nearest').squeeze()
-            t_string = 'Line Perpendicular Cross Section'
+        ds_plot, t_string = vh.setup_perpendicular_coords(
+            ds, x, tmp_tracks, params)
         extent = [
             ds_plot.y[0] / 1000, ds_plot.y[-1] / 1000,
             ds_plot.z[0] / 1000, ds_plot.z[-1] / 1000]
@@ -247,11 +244,15 @@ def vertical_cross_section(
         h_lim = y_lim
         x_label = 'Line Perpendicular Distance From Radar [km]'
 
-    lgd_so = vh.add_stratiform_offset(ax, tracks, grid, date_time, params)
+    print('Adding stratiform offset.')
+    lgd_so, so_angle = vh.add_stratiform_offset(
+        ax, tracks, grid, date_time, params)
     lgd_han.append(lgd_so)
 
     if params['winds']:
-        lgd_winds = vh.add_winds(ds, ax, tracks, grid, date_time, params)
+        print('Adding winds.')
+        lgd_winds, sl_angle, w_max, n_angles, n_obs, max_count = vh.add_winds(
+            ds, ax, tracks, grid, date_time, params)
         if params['streamplot']:
             lgd_han.append(lgd_winds)
 
@@ -278,7 +279,60 @@ def vertical_cross_section(
     ax.set_title(t_string)
     ax.set_aspect(2)
 
+    # Save frame and cleanup
+    if params['save_dir'] is not None:
+        plt.savefig(
+            '{}/{}_cross_{}.png'.format(
+                params['save_dir'], params['direction'], date_time),
+            bbox_inches='tight', dpi=params['dpi'], facecolor='w')
+        plt.close()
+
+    # Save frame and cleanup
+    if params['data_fn'] is not None:
+        print('Saving data.')
+        save_tilt_data(
+            sl_angle, w_max, n_angles, n_obs, max_count, so_angle,
+            date_time, params)
+        if not params['load_line_coords_winds'] and params['save_ds']:
+            fn = '{}/{}_{}.nc'.format(
+                params['save_dir'], params['uid_ind'], date_time)
+            ds.to_netcdf(fn)
+
     del display
+
+    return
+
+
+def save_tilt_data(
+        sl_angle, w_max, n_angles, n_obs, max_count, so_angle,
+        date_time, params):
+    df_dic = {
+        'time': [date_time], 'uid': [params['uid_ind']],
+        'streamline_angle': [sl_angle], 'w_max': [w_max],
+        'n_angles': [n_angles], 'n_obs': [n_obs], 'max_count': [max_count],
+        'stratiform_offset_angle': [so_angle]}
+    df = pd.DataFrame(df_dic)
+    df.set_index(['time', 'uid'], inplace=True)
+    df.sort_index(inplace=True)
+
+    try:
+        dtypes = {
+            'uid': str, 'streamline_angle': float,
+            'stratiform_offset_angle': float, 'w_max': float,
+            'n_angles': float, 'n_obs': float, 'max_count': float}
+        old_df = pd.read_csv(
+            '{}/{}.csv'.format(params['save_dir'], params['data_fn']),
+            dtype=dtypes, parse_dates=['time'])
+
+        old_df.set_index(['time', 'uid'], inplace=True)
+        df = old_df.append(df)
+        df.sort_index(inplace=True)
+    except FileNotFoundError:
+        print('Creating new CSV file to store angle data.')
+
+    fn = '{}/{}.csv'.format(params['save_dir'], params['data_fn'])
+    df.reset_index(inplace=True)
+    df.to_csv(fn, index=False)
 
     return
 
@@ -383,5 +437,51 @@ def object(tracks, grid, params, date_time=None, alt=None):
         plt.savefig(
             '{}/frame_{}.png'.format(params['save_dir'], date_time),
             bbox_inches='tight', dpi=params['dpi'], facecolor='w')
+        plt.show()
         plt.close()
     gc.collect()
+
+
+def concat_angles(base_dir, save_path, max_uid):
+    data = pd.read_csv(
+        '{}/vertical_cross_section_0_frames/angles.csv'.format(base_dir))
+    for i in range(1, max_uid+1):
+        new_data = pd.read_csv(
+            '{}/vertical_cross_section_{}_frames/angles.csv'.format(
+                base_dir, i))
+        data = pd.concat([data, new_data])
+    data.to_csv(save_path)
+    return data
+
+
+def angle_correlation(csv_path, save_path, fig=None, ax=None):
+
+    if fig is None:
+        init_fonts()
+        fig = plt.figure(figsize=(6, 6))
+    if ax is None:
+        ax = fig.add_subplot(1, 1, 1)
+
+    data = pd.read_csv(csv_path)
+    sl_angles = data['streamline_angle'].values
+    so_angles = data['stratiform_offset_angle'].values
+
+    ax.plot([90, 90], [0, 180], '--', color='gray')
+    ax.plot([0, 180], [90, 90], '--', color='gray')
+    ax.scatter(sl_angles, so_angles, marker='.')
+
+    ax.set_xlim(0, 180)
+    ax.set_xticks(np.arange(0, 200, 20))
+    ax.set_xticklabels(np.arange(0, 200, 20).astype(int))
+    ax.set_xlabel('Streamline Angle [Degrees]')
+    ax.set_ylim(0, 180)
+    ax.set_yticks(np.arange(0, 200, 20))
+    ax.set_yticklabels(np.arange(0, 200, 20).astype(int))
+    ax.set_ylabel('Stratiform Offset Angle [Degrees]')
+    ax.set_title('Correlation between Stratiform Offset and Streamlines')
+    ax.set_aspect(1)
+
+    save_dir = '/home/student.unimelb.edu.au/shorte1/Documents/'
+    save_dir += 'TINT_figures/correlation.png'
+
+    plt.savefig(save_path, dpi=200)

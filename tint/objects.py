@@ -202,14 +202,23 @@ def single_max(obj_ind, refl, params):
     return True
 
 
-def get_ellipse(data_dic, grid1, record, obj, level_ind):
+def get_ellipse(data_dic, grid1, record, obj, level_ind, u_shift, v_shift):
 
     unit_dim = record.grid_size
     hull = convex_hull_image(data_dic['frames'][level_ind] == obj)
     contours = cv.findContours(
         hull.astype(np.uint8), cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[0]
 
-    [(x_c, y_c), (a, b), phi] = cv.fitEllipseDirect(contours[0])
+    try:
+        [(x_c, y_c), (a, b), phi] = cv.fitEllipseDirect(contours[0])
+    except cv.error:
+        print('Could not fit ellipse. Retrying with padded contour.')
+        new_contour = []
+        for r in contours[0]:
+            [new_contour.append(r) for i in range(3)]
+        new_contour = np.array(new_contour)
+        [(x_c, y_c), (a, b), phi] = cv.fitEllipseDirect(new_contour)
+
     grid_y = y_c * unit_dim[2] + grid1.y['data'][0]
     grid_x = x_c * unit_dim[1] + grid1.x['data'][0]
     if a >= b:
@@ -220,7 +229,14 @@ def get_ellipse(data_dic, grid1, record, obj, level_ind):
         semi_major = b
         semi_minor = a
         orientation = phi - 90
-    orientation = ((orientation + 90) % 180) - 90
+    orientation = orientation % 180
+    # Ensure pos y of new coordinates in same half plane as velocity direction
+    [n_x, n_y] = [
+        np.cos(np.deg2rad(orientation + 90)),
+        np.sin(np.deg2rad(orientation + 90))]
+    if (u_shift[0] * n_x + v_shift[0] * n_y) < 0:
+        orientation += 180
+
     ecc = np.sqrt(1 - (semi_minor / semi_major) ** 2)
     return grid_x, grid_y, semi_major, semi_minor, ecc, orientation
 
@@ -232,7 +248,7 @@ def get_object_prop(
     each level of images, where images are the labelled (filtered)
     frames. """
     properties = [
-        'id1', 'center', 'com_x', 'com_y', 'grid_x', 'grid_y', 'proj_area',
+        'center', 'com_x', 'com_y', 'grid_x', 'grid_y', 'proj_area',
         'lon', 'lat', 'field_max', 'max_height', 'volume',
         'level', 'touch_border', 'semi_major', 'semi_minor', 'orientation',
         'eccentricity', 'mergers', 'parent', 'cells']
@@ -267,7 +283,6 @@ def get_object_prop(
             cache=False)
 
         for obj in np.arange(nobj) + 1:
-            obj_prop['id1'].append(obj)
             obj_prop['mergers'].append(current_objects['mergers'][obj-1])
             obj_prop['parent'].append(current_objects['parents'][obj-1])
             obj_prop['level'].append(i)
@@ -301,7 +316,8 @@ def get_object_prop(
             obj_prop['com_x'].append(np.round(g_x, 1))
             obj_prop['com_y'].append(np.round(g_y, 1))
 
-            ellipse = get_ellipse(data_dic, grid1, record, obj, i)
+            ellipse = get_ellipse(
+                data_dic, grid1, record, obj, i, u_shift, v_shift)
             props = [
                 'grid_x', 'grid_y', 'semi_major', 'semi_minor',
                 'eccentricity', 'orientation']
