@@ -484,4 +484,4 @@ def angle_correlation(csv_path, save_path, fig=None, ax=None):
     save_dir = '/home/student.unimelb.edu.au/shorte1/Documents/'
     save_dir += 'TINT_figures/correlation.png'
 
-    plt.savefig(save_path, dpi=200)
+    plt.savefig(save_path, dpi=200, facecolor='w')
