@@ -95,6 +95,16 @@ class Tracks(object):
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
 
+    def save_netcdf(self, filename):
+        # Convert to xarray
+        ds = self.tracks.reset_index(level=['scan'], drop=True).to_xarray()
+        # Bools must be converted to ints
+        # Multidimensional attributes not allowed
+        # Cannot have arrays as elements of dataframe,
+        # e.g. mergers, parents not allowed
+        import pdb; pdb.set_trace()
+        # Append metadata
+
     def get_next_grid(self, grid_obj2, grids, data_dic):
         """Find the next nonempty grid."""
         data = extract_grid_data(

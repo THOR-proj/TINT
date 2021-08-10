@@ -422,6 +422,11 @@ def smooth(group_df, r=3, n=2):
     return np.round(group_df_smoothed, r)
 
 
+def add_metadata(tracks_obj):
+
+    return
+
+
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
     print('Calculating additional tracks properties.')

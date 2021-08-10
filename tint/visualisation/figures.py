@@ -153,7 +153,16 @@ def horizontal_cross_section(
     if params['crosshair']:
         add_crosshair(
             tracks, grid, date_time, params, ax, display, box[0], box[1])
-    lgd_han = hh.add_tracked_objects(tracks, grid, date_time, params, ax, alt)
+    if date_time in tracks.tracks.index.get_level_values('time'):
+        lgd_han = hh.add_tracked_objects(
+            tracks, grid, date_time, params, ax, alt)
+    else:
+        lgd_han = []
+
+    if params['winds']:
+        lgd_winds = hh.add_winds(ax, tracks, grid, date_time, alt, params)
+        if lgd_winds is not None:
+            lgd_han.append(lgd_winds)
 
     if params['uid_ind'] is not None:
         ax.set_xlim(box[2][0], box[2][1])
@@ -454,7 +463,60 @@ def concat_angles(base_dir, save_path, max_uid):
     return data
 
 
-def angle_correlation(csv_path, save_path, fig=None, ax=None):
+def get_angle_props(angles, tracks_obj):
+    angle_diff = np.abs(
+        angles['streamline_angle'] - angles['stratiform_offset_angle'])
+    w_max = angles['w_max'].values
+    max_count = angles['max_count'].values
+    n_angles = angles['n_angles'].values
+    n_obs = angles['n_obs'].values
+    ratio_angles = n_angles / n_obs
+    ratio_bin = max_count / n_angles
+
+    eccentricity = []
+    bor_conv = []
+    bor_strat = []
+    area_conv = []
+    area_strat = []
+    u_shift = []
+    v_shift = []
+
+    for i in range(len(angles)):
+        date_time = angles['time'].iloc[i]
+        uid = angles['uid'].iloc[i]
+        tmp_tracks_low = tracks_obj.tracks.xs(
+            (date_time, str(int(uid)), 0), level=('time', 'uid', 'level'))
+        tmp_tracks_high = tracks_obj.tracks.xs(
+            (date_time, str(int(uid)), 2), level=('time', 'uid', 'level'))
+        eccentricity.append(tmp_tracks_low['eccentricity'].iloc[0])
+        u_shift.append(tmp_tracks_low['u_shift'].iloc[0])
+        v_shift.append(tmp_tracks_low['v_shift'].iloc[0])
+        bor_conv.append(tmp_tracks_low['touch_border'].iloc[0])
+        bor_strat.append(tmp_tracks_high['touch_border'].iloc[0])
+        area_conv.append(tmp_tracks_low['proj_area'].iloc[0])
+        area_strat.append(tmp_tracks_high['proj_area'].iloc[0])
+    [u_shift, v_shift] = [np.array(u_shift), np.array(v_shift)]
+    eccentricity = np.array(eccentricity)
+    [bor_conv, bor_strat] = [np.array(bor_conv), np.array(bor_strat)]
+    [area_conv, area_strat] = [np.array(area_conv), np.array(area_strat)]
+    speed = np.sqrt(u_shift ** 2 + v_shift ** 2)
+    ratio_border_conv = bor_conv * 6.25 / area_conv
+    ratio_border_strat = bor_strat * 6.25 / area_strat
+
+    X = np.transpose(np.array([
+        w_max, ratio_angles, ratio_bin, ratio_border_conv,
+        ratio_border_strat, area_conv, area_strat, eccentricity,
+        speed]))
+    names = [
+        'w_max', 'ratio_angles', 'ratio_bin', 'ratio_border_conv',
+        'ratio_border_strat', 'area_conv', 'area_strat',
+        'eccentricity', 'speed']
+
+    return angle_diff, X, names
+
+
+def angle_correlation(
+        sl_angles, so_angles, cond, save_path, fig=None, ax=None):
 
     if fig is None:
         init_fonts()
@@ -462,13 +524,10 @@ def angle_correlation(csv_path, save_path, fig=None, ax=None):
     if ax is None:
         ax = fig.add_subplot(1, 1, 1)
 
-    data = pd.read_csv(csv_path)
-    sl_angles = data['streamline_angle'].values
-    so_angles = data['stratiform_offset_angle'].values
-
     ax.plot([90, 90], [0, 180], '--', color='gray')
     ax.plot([0, 180], [90, 90], '--', color='gray')
-    ax.scatter(sl_angles, so_angles, marker='.')
+    ax.scatter(sl_angles[~cond], so_angles[~cond], marker='x', color='gray')
+    ax.scatter(sl_angles[cond], so_angles[cond], marker='.', color='r')
 
     ax.set_xlim(0, 180)
     ax.set_xticks(np.arange(0, 200, 20))

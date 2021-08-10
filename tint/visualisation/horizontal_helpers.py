@@ -52,18 +52,14 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         lgd_so = add_stratiform_offset(ax, tracks, grid, uid, date_time)
 
         lgd_ellipse = add_ellipses(ax, tracks, grid, uid, date_time, alt)
-        lgd_cell = add_cells(ax, tracks, grid, uid, date_time, alt)
+        # lgd_cell = add_cells(ax, tracks, grid, uid, date_time, alt)
 
         if tracks.params['RAIN']:
             add_rain()
 
-    if params['winds']:
-        lgd_winds = add_winds(ax, tracks, uid, date_time, alt, params)
-        lgd_han.append(lgd_winds)
-
     lgd_han.append(lgd_so)
     [lgd_han.append(h) for h in lgd_vel]
-    lgd_han.append(lgd_cell)
+    # lgd_han.append(lgd_cell)
     lgd_han.append(lgd_ellipse)
 
     return lgd_han
@@ -234,10 +230,10 @@ def add_velocities(
         u = tmp_tracks['u_' + var_list[i]].iloc[0]
         v = tmp_tracks['v_' + var_list[i]].iloc[0]
         [new_lon, new_lat] = cartesian_to_geographic(
-            x + 4 * u * dt, y + 4 * v * dt, projparams)
+            x + 2 * u * dt, y + 2 * v * dt, projparams)
         ax.arrow(
             lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=4,
-            head_width=0.024, head_length=0.040, path_effects=[
+            head_width=0.016, head_length=0.024, path_effects=[
                 pe.Stroke(linewidth=6, foreground=c_list[i]), pe.Normal()])
     lgd_han = []
     for i in range(len(c_list)):
@@ -259,7 +255,7 @@ def format_data(
 
 def add_winds(
         ax, tracks, grid, date_time, alt, params,
-        horizontal=True, vertical=True):
+        horizontal=True, vertical=False):
     # Load WRF winds corresponding to this grid
     winds = xr.open_dataset(params['winds_fn'])
     winds = format_data(grid, winds)
@@ -267,9 +263,12 @@ def add_winds(
     winds = winds.squeeze()
 
     if horizontal:
+        dt = tracks.record.interval.total_seconds()
+        scale = 108000 / (2 * dt)
         q_hdl = ax.quiver(
-            winds.longitude[::4, ::4], winds.latitude[::4, ::4],
-            winds.U.values[::4, ::4], winds.V.values[::4, ::4])
+            winds.longitude[4::8, 4::8], winds.latitude[4::8, 4::8],
+            winds.U.values[4::8, 4::8], winds.V.values[4::8, 4::8],
+            scale_units='x', scale=scale)
         ax.quiverkey(
             q_hdl, .9, 1.025, 10, '10 m/s', labelpos='E', coordinates='axes')
         lgd_winds = None
