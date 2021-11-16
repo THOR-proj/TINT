@@ -6,7 +6,7 @@ import xarray as xr
 from pyart.core.transforms import cartesian_to_geographic
 import cartopy.crs as ccrs
 
-from ..grid_utils import get_grid_size, get_grid_alt
+from tint.grid_utils import get_grid_size, get_grid_alt
 
 
 def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
@@ -27,12 +27,12 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         label = ", ".join(mergers)
 
         ax.text(
-            lon-.05, lat+0.05, uid, transform=projection, fontsize=16,
+            lon-.1, lat+0.1, uid, transform=projection, fontsize=16,
             zorder=5, fontweight='bold', color='w',
             path_effects=[
                 pe.Stroke(linewidth=3, foreground='k'), pe.Normal()])
         ax.text(
-            lon+.05, lat-0.05, label, transform=projection, fontsize=12,
+            lon+.1, lat-0.1, label, transform=projection, fontsize=12,
             zorder=5, fontweight='bold', color='w',
             path_effects=[
                 pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
@@ -41,12 +41,15 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
             parent = list(
                 tmp_tracks_uid.xs(0, level='level')['parent'].iloc[0])
             label = ", ".join(parent)
-            ax.text(lon+.05, lat+0.1, label, transform=projection, fontsize=9)
+            ax.text(
+                lon+.1, lat+0.15, label, transform=projection, fontsize=12,
+                zorder=5, fontweight='bold', color='w',
+                path_effects=[
+                    pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
 
         # Plot velocities
         lgd_vel = add_velocities(
-            ax, tracks, grid, uid, date_time, var_list=['shift'], c_list=['m'],
-            labels=['System Velocity'])
+            ax, tracks, grid, uid, date_time)
 
         # Plot stratiform offset
         lgd_so = add_stratiform_offset(ax, tracks, grid, uid, date_time)
@@ -72,7 +75,9 @@ def reduce_tracks(tracks, uid, date_time, alt):
     level = np.argwhere(tests)[0, 0]
     tmp_tracks = tracks.tracks.xs(
         (date_time, uid, level), level=('time', 'uid', 'level'))
-    return tmp_tracks
+    tmp_sys_tracks = tracks.tracks.xs(
+        (date_time, uid), level=('time', 'uid'))
+    return tmp_tracks, tmp_sys_tracks
 
 
 def add_rain(ax, tracks, grid, uid, date_time):
@@ -80,7 +85,7 @@ def add_rain(ax, tracks, grid, uid, date_time):
     projparams = grid.get_projparams()
     projection = ccrs.PlateCarree()
     alt = tracks.params['LEVELS'][0, 0]
-    tmp_tracks = reduce_tracks(tracks, uid, date_time, alt=alt)
+    tmp_tracks = reduce_tracks(tracks, uid, date_time, alt=alt)[0]
 
     rain_ind = tmp_tracks['tot_rain_loc'].iloc[0]
     rain_amount = tmp_tracks['tot_rain'].iloc[0]
@@ -108,10 +113,29 @@ def add_rain(ax, tracks, grid, uid, date_time):
         transform=projection, fontsize=9)
 
 
+def add_classification(ax, tracks, grid, uid, date_time, alt):
+    projparams = grid.get_projparams()
+    tmp_tracks, tmp_sys_tracks = reduce_tracks(tracks, uid, date_time, alt)
+    projection = ccrs.PlateCarree()
+    centroid = np.squeeze(tmp_tracks[['grid_x', 'grid_y']].values)
+    orientation = tmp_tracks['orientation_alt'].values[0]
+    tilt_dir = tmp_tracks['sys_rel_tilt_dir'].values[0]
+
+    lon, lat = cartesian_to_geographic(centroid[0], centroid[1], projparams)
+
+    label = 'hi'
+
+    ax.text(
+        lon+.1, lat-0.1, label, transform=projection, fontsize=12,
+        zorder=5, fontweight='bold', color='w',
+        path_effects=[
+            pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
+
+
 def add_ellipses(ax, tracks, grid, uid, date_time, alt):
 
     projparams = grid.get_projparams()
-    tmp_tracks = reduce_tracks(tracks, uid, date_time, alt)
+    tmp_tracks = reduce_tracks(tracks, uid, date_time, alt)[0]
 
     centroid = np.squeeze(tmp_tracks[['grid_x', 'grid_y']].values)
     orientation = tmp_tracks[['orientation']].values[0]
@@ -141,7 +165,7 @@ def add_ellipses(ax, tracks, grid, uid, date_time, alt):
 
 def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
     projparams = grid.get_projparams()
-    tmp_tracks = reduce_tracks(tracks, uid, date_time, alt)
+    tmp_tracks = reduce_tracks(tracks, uid, date_time, alt)[0]
     alt_ind = get_grid_alt(get_grid_size(grid), alt)
     colors = ['k']
     if cell_ind is None:
@@ -204,17 +228,20 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time):
 
 
 def add_velocities(
-        ax, tracks, grid, uid, date_time, var_list=None, c_list=None,
-        labels=None):
+        ax, tracks, grid, uid, date_time,
+        var_list=['shift', 'ambient'],
+        # var_list = ['shift', 'ambient', 'relative', 'shear_5000'],
+        c_list=None, labels=None):
 
     if var_list is None:
-        var_list = ['shift', 'prop', 'shear', 'cl']
+        var_list = ['shift', 'ambient', 'relative', 'shear_5000']
     if c_list is None:
-        c_list = ['m', 'green', 'red', 'orange']
+        c_list = ['m', 'red', 'darkgreen', 'darkblue']
     if labels is None:
         labels = [
-            'System Velocity', 'Propagation', '0-3 km Shear',
-            'Mean Cloud-Layer Winds']
+            'System Velocity',
+            '{} m Altitude Winds'.format(tracks.params['LEVELS'][0, 0]),
+            'Relative System Velocity', 'Shear']
 
     dt = tracks.record.interval.total_seconds()
     projparams = grid.get_projparams()
@@ -230,18 +257,27 @@ def add_velocities(
         u = tmp_tracks['u_' + var_list[i]].iloc[0]
         v = tmp_tracks['v_' + var_list[i]].iloc[0]
         [new_lon, new_lat] = cartesian_to_geographic(
-            x + 2 * u * dt, y + 2 * v * dt, projparams)
-        ax.arrow(
+            x + 4 * u * dt, y + 4 * v * dt, projparams)
+        q_hdl = ax.arrow(
             lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=4,
-            head_width=0.016, head_length=0.024, path_effects=[
+            head_width=0.016, head_length=0.024, length_includes_head=True,
+            path_effects=[
                 pe.Stroke(linewidth=6, foreground=c_list[i]), pe.Normal()])
     lgd_han = []
-    for i in range(len(c_list)):
+    for i in range(len(var_list)):
         lgd_line = mlines.Line2D(
             [], [], color='w', linestyle='-', label=labels[i], linewidth=2,
             path_effects=[
                 pe.Stroke(linewidth=6, foreground=c_list[i]), pe.Normal()])
         lgd_han.append(lgd_line)
+
+    dt = tracks.record.interval.total_seconds()
+    # Extra factor of 2 - see definition of quiver scale
+    scale = 95000 / (4 * dt)
+    q_hdl = ax.quiver(
+        lon, lat, 0, 0, scale_units='x', scale=scale, zorder=0, linewidth=1)
+    ax.quiverkey(
+        q_hdl, .9, 1.025, 10, '10 m/s', labelpos='E', coordinates='axes')
 
     return lgd_han
 
@@ -264,7 +300,7 @@ def add_winds(
 
     if horizontal:
         dt = tracks.record.interval.total_seconds()
-        scale = 108000 / (2 * dt)
+        scale = 95000 / (4 * dt)
         q_hdl = ax.quiver(
             winds.longitude[4::8, 4::8], winds.latitude[4::8, 4::8],
             winds.U.values[4::8, 4::8], winds.V.values[4::8, 4::8],

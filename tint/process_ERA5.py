@@ -3,7 +3,7 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 import calendar
-import datetime
+from tint.grid_utils import parse_grid_datetime
 
 
 def get_datetime_components(date_time):
@@ -67,15 +67,6 @@ def flexible_round(x, prec=2, base=.05, method=round):
     return round(base * method(float(x) / base), prec)
 
 
-def parse_grid_datetime(grid_obj):
-    """ Obtains datetime object from pyart grid_object. """
-    dt_string = grid_obj.time['units'].split(' ')[-1]
-    date = dt_string[:10]
-    time = dt_string[11:19]
-    dt = datetime.datetime.strptime(date + ' ' + time, '%Y-%m-%d %H:%M:%S')
-    return dt
-
-
 def interp_ERA_ds(ds_all, grid, timedelta=np.timedelta64(10, 'm')):
     lon, lat = cartesian_to_geographic(
         grid.x['data'].data, grid.y['data'].data, grid.get_projparams())
@@ -103,3 +94,34 @@ def interp_ERA_ds(ds_all, grid, timedelta=np.timedelta64(10, 'm')):
     times = np.arange(start_time, end_time, timedelta)
     ds = ds.interp(longitude=lon, latitude=lat, altitude=alt, time=times)
     return ds
+
+
+def init_ERA5(grid, params):
+    grid_datetime = parse_grid_datetime(grid)
+    grid_datetime = np.datetime64(grid_datetime.replace(second=0))
+    print('Getting ERA5 metadata.')
+    ERA5_all = get_ERA5_ds(
+        grid_datetime, grid_datetime,
+        base_dir=params['AMBIENT_BASE_DIR'])
+    print('Getting Intepolated ERA5 for next hour.')
+    ERA5_interp = interp_ERA_ds(
+        ERA5_all, grid, timedelta=np.timedelta64(10, 'm'))
+    ERA5_interp.load()
+    return ERA5_all, ERA5_interp
+
+
+def update_ERA5(grid, params, ERA5_all, ERA5_interp):
+    grid_datetime = parse_grid_datetime(grid)
+    grid_datetime = np.datetime64(grid_datetime.replace(second=0))
+    t_min = ERA5_all.time.values.min()
+    t_max = ERA5_all.time.values.max()
+    if not (grid_datetime >= t_min and grid_datetime <= t_max):
+        print('Getting ERA5 metadata.')
+        ERA5_all = get_ERA5_ds(
+            grid_datetime, grid_datetime, base_dir=params['AMBIENT_BASE_DIR'])
+    if grid_datetime not in ERA5_interp.time.values:
+        print('Getting Intepolated ERA5 for the next hour.')
+        ERA5_interp = interp_ERA_ds(
+            ERA5_all, grid, timedelta=np.timedelta64(10, 'm'))
+        ERA5_interp.load()
+    return ERA5_all, ERA5_interp

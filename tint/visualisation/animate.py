@@ -1,5 +1,4 @@
 import os
-import shutil
 import numpy as np
 import copy
 
@@ -20,16 +19,25 @@ def get_times(params, tracks, start_datetime, end_datetime):
                 date_times = np.arange(
                     start_datetime, end_datetime, np.timedelta64(10, 'm'))
     else:
+        if start_datetime is None or end_datetime is None:
+            date_times = tracks.tracks.index.droplevel(
+                ['scan', 'uid', 'level']).values
+            start_datetime = np.min(date_times)
+            end_datetime = np.max(date_times)
+
         date_times = np.arange(
-            start_datetime, end_datetime, np.timedelta64(10, 'm'))
+            start_datetime, end_datetime+np.timedelta64(10, 'm'),
+            np.timedelta64(10, 'm'))
+
     return date_times
 
 
 def check_times(grids, date_times, params):
     grid = next(grids)
     grid_time = np.datetime64(parse_grid_datetime(grid))
+    grid_time = grid_time.astype('datetime64[m]')
     if grid_time > date_times[0]:
-        ind = np.argwhere(date_times == grid_time)
+        ind = np.argwhere(date_times == grid_time)[0, 0]
         if not ind:
             print('Object occurs before grids provided. Aborting')
         print('Grids start after object initialises.')
@@ -39,13 +47,14 @@ def check_times(grids, date_times, params):
         while grid_time < date_times[0]:
             grid = next(grids)
             grid_time = np.datetime64(parse_grid_datetime(grid))
+            grid_time = grid_time.astype('datetime64[m]')
             counter += 1
         params['winds_fn'] = params['winds_fn'][counter:]
     return grid, grid_time, date_times, params
 
 
 def animate(
-        tracks, grids, params, type='vertical_cross_section', fps=2,
+        tracks, grids, params, fig_type='vertical_cross_section', fps=2,
         start_datetime=None, end_datetime=None, keep_frames=False):
     """Creates gif animation of tracked objects. """
 
@@ -53,14 +62,15 @@ def animate(
     styles = {
         'vertical_cross_section': fig.vertical_cross_section,
         'horizontal_cross_section': fig.horizontal_cross_section,
+        'two_level': fig.two_level,
         'object': fig.object}
-    anim_func = styles[type]
+    anim_func = styles[fig_type]
 
     date_times = get_times(params, tracks, start_datetime, end_datetime)
 
     grid, grid_time, date_times, params = check_times(
         grids, date_times, params)
-    fn = type
+    fn = fig_type
     if params['uid_ind'] is not None:
         fn += '_{}'.format(params['uid_ind'])
 
@@ -69,6 +79,10 @@ def animate(
     os.makedirs(tmp_params['save_dir'], exist_ok=True)
 
     for i in range(len(date_times)):
+        grid_time = np.datetime64(parse_grid_datetime(grid)).astype('<M8[m]')
+        if date_times[i] < grid_time:
+            print('No grid at {}. Skipping.format(date_times[i]))')
+            continue
         print('Generating frame {}'.format(date_times[i]))
         if params['winds']:
             tmp_params['winds_fn'] = params['winds_fn'][i]

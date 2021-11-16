@@ -6,13 +6,16 @@ import pandas as pd
 import pickle
 import warnings
 
-from .grid_utils import get_grid_size, get_radar_info, extract_grid_data
-from .tracks_helpers import Record, Counter
-from .phase_correlation import get_global_shift
-from .matching import get_pairs
-from .objects import init_current_objects, update_current_objects
-from .objects import get_object_prop, write_tracks
-from .objects import post_tracks, get_system_tracks
+from tint.grid_utils import get_grid_size, get_radar_info, extract_grid_data
+from tint.grid_utils import parse_grid_datetime
+from tint.tracks_helpers import Record, Counter
+from tint.phase_correlation import get_global_shift
+from tint.matching import get_pairs
+from tint.objects import init_current_objects, update_current_objects
+from tint.objects import get_object_prop, write_tracks
+from tint.objects import post_tracks, get_system_tracks
+import tint.process_ERA5 as ERA5
+import tint.process_WRF as WRF
 
 
 class Tracks(object):
@@ -38,9 +41,9 @@ class Tracks(object):
             'GS_ALT': 1500,  # m
             # Layers to identify objects within.
             'LEVELS': np.array(
-                [[3000, 3500], [3500, 7500], [7500, 10000]]),  # m
+                [[500, 3500], [3500, 7500], [7500, 10000]]),  # m
             # Minimum size of objects in each layer.
-            'MIN_SIZE': [40, 400, 800],  # square km
+            'MIN_SIZE': [80, 400, 800],  # square km
             # Thresholds for object identification.
             'FIELD_THRESH': ['convective', 20, 15],  # DbZ or 'convective'.
             # Threshold to define a cell as isolated.
@@ -54,7 +57,11 @@ class Tracks(object):
             # Whether to collect object based rainfall totals
             'RAIN': False,  # bool
             # Whether to save the grids associated with the accumulated totals
-            'SAVE_RAIN': False}  # bool
+            'SAVE_RAIN': False,  # bool
+            # Whether to include ERA5 derived fields
+            'AMBIENT': None,  # None, 'WRF' or 'ERA5'
+            # ERA5 base directory
+            'AMBIENT_BASE_DIR': None}  # str or None
 
         # Load user specified parameters.
         for p in params:
@@ -102,8 +109,8 @@ class Tracks(object):
         # Multidimensional attributes not allowed
         # Cannot have arrays as elements of dataframe,
         # e.g. mergers, parents not allowed
-        import pdb; pdb.set_trace()
         # Append metadata
+        return ds
 
     def get_next_grid(self, grid_obj2, grids, data_dic):
         """Find the next nonempty grid."""
@@ -176,6 +183,15 @@ class Tracks(object):
         # For first grid, initialise the "current" frame to the "new" frame
         data_dic['frame'] = copy.deepcopy(data_dic['frame_new'])
 
+        # Get ERA5
+        if self.params['AMBIENT'] == 'ERA5':
+            ambient_all, ambient_interp = ERA5.init_ERA5(
+                grid_obj2, self.params)
+            data_dic['ambient_interp'] = ambient_interp
+        elif self.params['AMBIENT'] == 'WRF':
+            ambient_all, ambient_interp = WRF.init_WRF(grid_obj2, self.params)
+            data_dic['ambient_interp'] = ambient_interp
+
         while grid_obj2 is not None:
             # Set current grid equal to new grid from last iteration.
             grid_obj1 = grid_obj2
@@ -227,6 +243,16 @@ class Tracks(object):
                 self.current_objects = None
                 continue
 
+            # Update ERA5
+            if self.params['AMBIENT'] == 'ERA5':
+                ambient_all, ambient_interp = ERA5.update_ERA5(
+                    grid_obj1, self.params, ambient_all, ambient_interp)
+                data_dic['ambient_interp'] = ambient_interp
+            elif self.params['AMBIENT'] == 'WRF':
+                ambient_all, ambient_interp = WRF.update_WRF(
+                    grid_obj1, self.params, ambient_all, ambient_interp)
+                data_dic['ambient_interp'] = ambient_interp
+
             global_shift = get_global_shift(
                 data_dic['refl'], data_dic['refl_new'], self.params)
             pairs, obj_merge_new, u_shift, v_shift = get_pairs(
@@ -245,6 +271,9 @@ class Tracks(object):
                     obj_merge, self.record.interval.total_seconds(),
                     self.params, grid_obj1)
             obj_merge = obj_merge_new
+
+            # Do some ERA5 stuff
+
             obj_props = get_object_prop(
                 data_dic, grid_obj1, u_shift, v_shift,
                 self.field, self.record, self.params, self.current_objects)

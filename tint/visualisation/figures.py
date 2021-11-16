@@ -8,18 +8,19 @@ import warnings
 from matplotlib import rcParams
 import xarray as xr
 import pandas as pd
+import copy
 
 from tint.grid_utils import get_grid_alt, parse_grid_datetime
 import tint.visualisation.horizontal_helpers as hh
 import tint.visualisation.vertical_helpers as vh
 
 
-def init_fonts():
+def init_fonts(user_params):
     # Initialise fonts
     rcParams.update({'font.family': 'serif'})
     rcParams.update({'font.serif': 'Liberation Serif'})
     rcParams.update({'mathtext.fontset': 'dejavuserif'})
-    rcParams.update({'font.size': 12})
+    rcParams.update({'font.size': user_params['fontsize']})
 
 
 def check_params(user_params):
@@ -31,7 +32,8 @@ def check_params(user_params):
         'colorbar_flag': True, 'direction': None, 'line_average': False,
         'crosshair': True, 'streamplot': True, 'dpi': 200, 'save_dir': None,
         'relative_winds': False, 'data_fn': None,
-        'load_line_coords_winds': None, 'save_ds': False}
+        'load_line_coords_winds': None, 'save_ds': False, 'alt': 3000,
+        'fontsize': 20, 'leg_loc': 2}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
@@ -117,7 +119,7 @@ def init_cross_section(
 
     # Initialise fig and ax if not passed as arguments
     if fig is None:
-        init_fonts()
+        init_fonts(params)
         fig = plt.figure(figsize=figsize)
     if ax is None:
         ax = fig.add_subplot(1, 1, 1, projection=projection)
@@ -153,7 +155,9 @@ def horizontal_cross_section(
     if params['crosshair']:
         add_crosshair(
             tracks, grid, date_time, params, ax, display, box[0], box[1])
-    if date_time in tracks.tracks.index.get_level_values('time'):
+
+    tracks_times = tracks.tracks.index.get_level_values('time')
+    if date_time in tracks_times:
         lgd_han = hh.add_tracked_objects(
             tracks, grid, date_time, params, ax, alt)
     else:
@@ -168,8 +172,8 @@ def horizontal_cross_section(
         ax.set_xlim(box[2][0], box[2][1])
         ax.set_ylim(box[3][0], box[3][1])
 
-    if params['legend']:
-        legend = plt.legend(handles=lgd_han, loc=2)
+    if params['legend'] and date_time in tracks_times:
+        legend = plt.legend(handles=lgd_han, loc=params['leg_loc'])
         legend.get_frame().set_alpha(None)
         legend.get_frame().set_facecolor((1, 1, 1, 1))
 
@@ -179,6 +183,7 @@ def horizontal_cross_section(
             '{}/{}m_cross_{}.png'.format(
                 params['save_dir'], params['alt'], date_time),
             bbox_inches='tight', dpi=params['dpi'], facecolor='w')
+        plt.close(fig)
 
     return True
 
@@ -356,7 +361,7 @@ def two_level(tracks, grid, params, date_time=None, alt=None):
     if date_time is None:
         date_time = grid_time
 
-    init_fonts()
+    init_fonts(params)
     projection = ccrs.PlateCarree()
 
     print('Generating figure for {}.'.format(str(date_time)))
@@ -368,22 +373,28 @@ def two_level(tracks, grid, params, date_time=None, alt=None):
     # Initialise figure
     fig = plt.figure(figsize=(22, 8))
     suptitle = 'Convective and Stratiform Cloud at ' + str(grid_time)
-    fig.suptitle(suptitle, fontsize=16)
+    fig.suptitle(suptitle)
 
+    tmp_params = copy.deepcopy(params)
+    tmp_params['colorbar_flag'] = False
     # Plot frame
     ax = fig.add_subplot(1, 2, 1, projection=projection)
     horizontal_cross_section(
-        tracks, grid, params, alt, fig, ax, date_time)
+        tracks, grid, params=tmp_params, alt=alt, fig=fig, ax=ax,
+        date_time=date_time)
 
+    tmp_params['colorbar_flag'] = True
     ax = fig.add_subplot(1, 2, 2, projection=projection)
     horizontal_cross_section(
-        tracks, grid, params, 9000, fig, ax, date_time)
+        tracks, grid, params=tmp_params, alt=9000, fig=fig, ax=ax,
+        date_time=date_time)
 
     # Save frame and cleanup
     if params['save_dir'] is not None:
         plt.savefig(
             '{}/frame_{}.png'.format(params['save_dir'], date_time),
-            bbox_inches='tight', dpi=params['dpi'], facecolor='w')
+            bbox_inches='tight', dpi=params['dpi'], facecolor='w',
+            pad_inches=0)
         plt.close()
     gc.collect()
 

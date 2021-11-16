@@ -26,7 +26,7 @@ def add_stratiform_offset(ax, tracks, grid, date_time, params):
 
     if params['line_coords']:
         A = get_rotation(
-            tmp_tracks.xs(0, level='level')['orientation'].iloc[0])
+            tmp_tracks.xs(0, level='level')['orientation_alt'].iloc[0])
         [x_low, y_low] = np.transpose(A).dot(np.array([x_low, y_low]))
         [x_high, y_high] = np.transpose(A).dot(np.array([x_high, y_high]))
 
@@ -56,7 +56,7 @@ def add_cell(ax, tracks, grid, date_time, params):
 
     if params['line_coords']:
         cell_coords = np.array([x, y])
-        A = get_rotation(tmp_tracks['orientation'].iloc[0])
+        A = get_rotation(tmp_tracks['orientation_alt'].iloc[0])
         cell_coords = np.array([
             np.transpose(A).dot(cell_coords[:, i])
             for i in range(cell_coords.shape[1])])
@@ -177,7 +177,7 @@ def get_center_coords(tracks, grid, params, date_time):
             x = tmp_tracks['grid_x'].iloc[0]
             y = tmp_tracks['grid_y'].iloc[0]
         if params['line_coords']:
-            A = get_rotation(tmp_tracks['orientation'].iloc[0])
+            A = get_rotation(tmp_tracks['orientation_alt'].iloc[0])
             [x, y] = np.transpose(A).dot(np.array([x, y]))
     else:
         lon = tracks.radar_info['radar_lon']
@@ -206,9 +206,9 @@ def add_streamplot(ds, ax, params):
     else:
         [x, U] = [ds.y, ds.V.values]
     if params['line_average']:
-        density = 5
+        density = 4
     else:
-        density = 1.5
+        density = 2.5
     ax.streamplot(
         x[::2] / 1000, ds.z[::2] / 1000, U[::2, ::2],
         ds.W.values[::2, ::2], zorder=2, color='k', density=density,

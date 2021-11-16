@@ -17,10 +17,11 @@ from scipy.ndimage import center_of_mass
 from skimage.morphology.convex_hull import convex_hull_image
 import cv2 as cv
 
-from .grid_utils import get_filtered_frame, get_level_indices
-from .rain import update_rain_totals, init_rain_totals, get_object_rain_props
-from .rain import update_sys_tracks_rain
-from .cells import identify_cells
+from tint.grid_utils import get_filtered_frame, get_level_indices
+from tint.rain import update_rain_totals, init_rain_totals
+from tint.rain import get_object_rain_props
+from tint.rain import update_sys_tracks_rain
+from tint.cells import identify_cells
 
 
 def get_object_center(obj_id, labeled_image):
@@ -207,11 +208,11 @@ def get_ellipse(data_dic, grid1, record, obj, level_ind, u_shift, v_shift):
     unit_dim = record.grid_size
     hull = convex_hull_image(data_dic['frames'][level_ind] == obj)
     contours = cv.findContours(
-        hull.astype(np.uint8), cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[0]
+        hull.astype(np.uint8), cv.RETR_TREE, cv.CHAIN_APPROX_NONE)[0]
 
-    try:
+    if len(contours[0]) > 6:
         [(x_c, y_c), (a, b), phi] = cv.fitEllipseDirect(contours[0])
-    except cv.error:
+    else:
         print('Could not fit ellipse. Retrying with padded contour.')
         new_contour = []
         for r in contours[0]:
@@ -251,7 +252,9 @@ def get_object_prop(
         'center', 'com_x', 'com_y', 'grid_x', 'grid_y', 'proj_area',
         'lon', 'lat', 'field_max', 'max_height', 'volume',
         'level', 'touch_border', 'semi_major', 'semi_minor', 'orientation',
-        'eccentricity', 'mergers', 'parent', 'cells']
+        'eccentricity', 'mergers', 'parent', 'cells', 'u_ambient', 'v_ambient',
+        'u_shift', 'v_shift', 'u_shear_2500', 'v_shear_2500', 'u_shear_5000',
+        'v_shear_5000']
     obj_prop = {p: [] for p in properties}
 
     nobj = np.max(data_dic['frames'])
@@ -279,8 +282,7 @@ def get_object_prop(
         [z_min, z_max] = get_level_indices(
             grid1, record.grid_size, params['LEVELS'][i, :])
         ski_props = regionprops(
-            data_dic['frames'][i], raw3D[z_min].astype(float),
-            cache=False)
+            data_dic['frames'][i], raw3D[z_min].astype(float), cache=False)
 
         for obj in np.arange(nobj) + 1:
             obj_prop['mergers'].append(current_objects['mergers'][obj-1])
@@ -330,6 +332,45 @@ def get_object_prop(
             obj_prop['lon'].append(np.round(lon[0], 5))
             obj_prop['lat'].append(np.round(lat[0], 5))
 
+            u_shift_obj = np.round(u_shift[obj-1], 5)
+            v_shift_obj = np.round(v_shift[obj-1], 5)
+            obj_prop['u_shift'].append(u_shift_obj)
+            obj_prop['v_shift'].append(v_shift_obj)
+
+            if params['AMBIENT'] is not None:
+                grid_time = np.datetime64(record.time).astype('<M8[m]')
+                ambient_interp = data_dic['ambient_interp'].sel(
+                    longitude=lon[0], latitude=lat[0], time=grid_time,
+                    altitude=params['LEVELS'][i, 0], method='nearest')
+                u_ambient = np.round(float(ambient_interp.u.values), 5)
+                v_ambient = np.round(float(ambient_interp.v.values), 5)
+                obj_prop['u_ambient'].append(u_ambient)
+                obj_prop['v_ambient'].append(v_ambient)
+                ambient_interp = data_dic['ambient_interp'].sel(
+                    longitude=lon[0], latitude=lat[0], time=grid_time,
+                    altitude=[500, 2500, 5000], method='nearest')
+
+                [u_500, u_2500, u_5000] = ambient_interp.u.values
+                [v_500, v_2500, v_5000] = ambient_interp.v.values
+
+                u_shear_2500 = np.round(u_2500 - u_500, 5)
+                v_shear_2500 = np.round(v_2500 - v_500, 5)
+                u_shear_5000 = np.round(u_5000 - u_500, 5)
+                v_shear_5000 = np.round(v_5000 - v_500, 5)
+
+                obj_prop['u_shear_2500'].append(u_shear_2500)
+                obj_prop['v_shear_2500'].append(v_shear_2500)
+                obj_prop['u_shear_5000'].append(u_shear_5000)
+                obj_prop['v_shear_5000'].append(v_shear_5000)
+
+            else:
+                obj_prop['u_ambient'].append(np.nan)
+                obj_prop['v_ambient'].append(np.nan)
+                obj_prop['u_shear_2500'].append(np.nan)
+                obj_prop['v_shear_2500'].append(np.nan)
+                obj_prop['u_shear_5000'].append(np.nan)
+                obj_prop['v_shear_5000'].append(np.nan)
+
             # Calculate raw3D slices
             raw3D_i = raw3D[z_min:z_max, :, :]
             obj_slices = [raw3D_i[:, ind[0], ind[1]] for ind in obj_index]
@@ -377,11 +418,7 @@ def get_object_prop(
             'tot_rain': rain_props[0], 'max_rr': rain_props[1],
             'tot_rain_loc': rain_props[2], 'max_rr_loc': rain_props[3]})
 
-    obj_prop.update({
-        'u_shift': u_shift * levels, 'v_shift': v_shift * levels,
-        # 'orientation': np.round(
-        #     np.rad2deg(np.array(obj_prop['orientation'])), 3)})
-        'orientation': np.round(obj_prop['orientation'], 3)})
+    obj_prop.update({'orientation': np.round(obj_prop['orientation'], 3)})
     return obj_prop
 
 
@@ -393,7 +430,9 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
     nlvl = max(obj_props['level'])+1
     scan_num = [record.scan] * nobj * nlvl
     uid = current_objects['uid'].tolist() * nlvl
-    da_dic = {'scan': scan_num, 'uid': uid, 'time': record.time}
+    da_dic = {
+        'scan': scan_num, 'uid': uid,
+        'time': np.datetime64(record.time).astype('<M8[m]')}
     da_dic.update(obj_props)
     new_tracks = pd.DataFrame(da_dic)
     new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
@@ -476,6 +515,28 @@ def post_tracks(tracks_obj):
         tmp_tracks, left_index=True, right_index=True)
     tracks_obj.tracks = tracks_obj.tracks.sort_index()
 
+    # Get relative winds
+    u_ambient = tracks_obj.tracks['u_ambient']
+    v_ambient = tracks_obj.tracks['v_ambient']
+    u_shift = tracks_obj.tracks['u_shift']
+    v_shift = tracks_obj.tracks['v_shift']
+    tracks_obj.tracks['u_relative'] = np.round(u_shift - u_ambient, 5)
+    tracks_obj.tracks['v_relative'] = np.round(v_shift - v_ambient, 5)
+
+    normal_dir = np.deg2rad(tracks_obj.tracks['orientation'] + 90)
+    normal = np.array([np.cos(normal_dir), np.sin(normal_dir)])
+    relative_velocity = np.array([
+        tracks_obj.tracks['u_relative'],
+        tracks_obj.tracks['v_relative']])
+    cond = (
+        normal[0, :] * relative_velocity[0, :]
+        + normal[1, :] * relative_velocity[1, :])
+    cond = cond < 0
+    phi = tracks_obj.tracks['orientation'] + cond * 180
+    # Orientation alt puts the positive y direction in the same half plane
+    # as the relative velocity vector
+    tracks_obj.tracks['orientation_alt'] = phi
+
     return tracks_obj
 
 
@@ -496,8 +557,8 @@ def get_system_tracks(tracks_obj):
             'semi_major', 'semi_minor', 'eccentricity',
             'orientation', 'cells']:
         prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
-        system_tracks = system_tracks.merge(prop_lvl_0, left_index=True,
-                                            right_index=True)
+        system_tracks = system_tracks.merge(
+            prop_lvl_0, left_index=True, right_index=True)
 
     if tracks_obj.params['RAIN']:
         system_tracks = update_sys_tracks_rain(tracks_obj, system_tracks)
@@ -562,7 +623,7 @@ def get_system_tracks(tracks_obj):
     tilt_dir = np.rad2deg(tilt_dir)
     tilt_dir = np.round(tilt_dir, 3)
 
-    sys_rel_tilt_dir = np.mod(tilt_dir - vel_dir + 180, 360)-180
+    sys_rel_tilt_dir = np.mod(tilt_dir - vel_dir + 180, 360) - 180
     sys_rel_tilt_dir = sys_rel_tilt_dir.rename('sys_rel_tilt_dir')
     sys_rel_tilt_dir = np.round(sys_rel_tilt_dir, 3)
 
