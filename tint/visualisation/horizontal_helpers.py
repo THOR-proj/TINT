@@ -5,6 +5,7 @@ import matplotlib.patheffects as pe
 import xarray as xr
 from pyart.core.transforms import cartesian_to_geographic
 import cartopy.crs as ccrs
+import copy
 
 from tint.grid_utils import get_grid_size, get_grid_alt
 
@@ -23,19 +24,21 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
 
         lon = tmp_tracks_uid.xs(0, level='level')['lon'].iloc[0]
         lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
-        mergers = list(tmp_tracks_uid.xs(0, level='level')['mergers'].iloc[0])
-        label = ", ".join(mergers)
 
         ax.text(
             lon-.1, lat+0.1, uid, transform=projection, fontsize=16,
             zorder=5, fontweight='bold', color='w',
             path_effects=[
                 pe.Stroke(linewidth=3, foreground='k'), pe.Normal()])
-        ax.text(
-            lon+.1, lat-0.1, label, transform=projection, fontsize=12,
-            zorder=5, fontweight='bold', color='w',
-            path_effects=[
-                pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
+        if params['label_mergers']:
+            mergers = list(
+                tmp_tracks_uid.xs(0, level='level')['mergers'].iloc[0])
+            label = ", ".join(mergers)
+            ax.text(
+                lon+.1, lat-0.1, label, transform=projection, fontsize=12,
+                zorder=5, fontweight='bold', color='w',
+                path_effects=[
+                    pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
 
         if params['label_splits']:
             parent = list(
@@ -49,7 +52,7 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
 
         # Plot velocities
         lgd_vel = add_velocities(
-            ax, tracks, grid, uid, date_time)
+            ax, tracks, grid, uid, date_time, alt, params['system_winds'])
 
         # Plot stratiform offset
         lgd_so = add_stratiform_offset(ax, tracks, grid, uid, date_time)
@@ -228,50 +231,66 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time):
 
 
 def add_velocities(
-        ax, tracks, grid, uid, date_time,
-        var_list=['shift', 'ambient'],
-        # var_list = ['shift', 'ambient', 'relative', 'shear_5000'],
-        c_list=None, labels=None):
+        ax, tracks, grid, uid, date_time, alt, system_winds):
 
-    if var_list is None:
-        var_list = ['shift', 'ambient', 'relative', 'shear_5000']
-    if c_list is None:
-        c_list = ['m', 'red', 'darkgreen', 'darkblue']
-    if labels is None:
-        labels = [
-            'System Velocity',
-            '{} m Altitude Winds'.format(tracks.params['LEVELS'][0, 0]),
-            'Relative System Velocity', 'Shear']
+    level_test = [
+        alt >= lvl[0] and alt < lvl[1] for lvl in tracks.params['LEVELS']]
+    level_ind = np.where(level_test)[0][0]
+    level = tracks.params['LEVELS'][level_ind]
+    interval = np.arange(
+        level[0], level[1], tracks.record.grid_size[0])
+    mid_i = len(interval) // 2
+    ambient_mid_alt = int(interval[mid_i])
+    ambient_bottom_alt = int(interval[0])
+    ambient_top_alt = int(interval[-1])
 
-    dt = tracks.record.interval.total_seconds()
+    colour_dic = {
+        'shift': 'm', 'ambient_bottom': 'red', 'ambient_mid': 'red',
+        'ambient_top': 'red', 'ambient_mean': 'red', 'relative': 'darkgreen',
+        'shear': 'darkblue'}
+    label_dic = {
+        'shift': 'System Velocity',
+        'ambient_bottom': '{} m Winds'.format(ambient_bottom_alt),
+        'ambient_mid': '{} m Winds'.format(ambient_mid_alt),
+        'ambient_top': '{} m Winds'.format(ambient_top_alt),
+        'ambient_mean': '{}-{} m Mean Winds'.format(
+            ambient_bottom_alt, ambient_top_alt),
+        'relative': 'Relative System Velocity',
+        'shear': '{}-{} m Shear'.format(
+            ambient_bottom_alt, ambient_top_alt)}
+
     projparams = grid.get_projparams()
     tmp_tracks = tracks.tracks.xs(
+        (date_time, uid, level_ind), level=('time', 'uid', 'level'))
+    tmp_tracks_conv = tracks.tracks.xs(
         (date_time, uid, 0), level=('time', 'uid', 'level'))
 
-    lon = tmp_tracks['lon'].iloc[0]
-    lat = tmp_tracks['lat'].iloc[0]
-    x = tmp_tracks['grid_x'].iloc[0]
-    y = tmp_tracks['grid_y'].iloc[0]
+    lon = tmp_tracks_conv['lon'].iloc[0]
+    lat = tmp_tracks_conv['lat'].iloc[0]
+    x = tmp_tracks_conv['grid_x'].iloc[0]
+    y = tmp_tracks_conv['grid_y'].iloc[0]
 
-    for i in range(len(var_list)):
-        u = tmp_tracks['u_' + var_list[i]].iloc[0]
-        v = tmp_tracks['v_' + var_list[i]].iloc[0]
+    dt = tracks.record.interval.total_seconds()
+
+    lgd_han = []
+    for wind in system_winds:
+        u = tmp_tracks['u_' + wind].iloc[0]
+        v = tmp_tracks['v_' + wind].iloc[0]
         [new_lon, new_lat] = cartesian_to_geographic(
             x + 4 * u * dt, y + 4 * v * dt, projparams)
         q_hdl = ax.arrow(
             lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=4,
             head_width=0.016, head_length=0.024, length_includes_head=True,
             path_effects=[
-                pe.Stroke(linewidth=6, foreground=c_list[i]), pe.Normal()])
-    lgd_han = []
-    for i in range(len(var_list)):
+                pe.Stroke(linewidth=6, foreground=colour_dic[wind]),
+                pe.Normal()])
         lgd_line = mlines.Line2D(
-            [], [], color='w', linestyle='-', label=labels[i], linewidth=2,
-            path_effects=[
-                pe.Stroke(linewidth=6, foreground=c_list[i]), pe.Normal()])
+            [], [], color='w', linestyle='-', label=label_dic[wind],
+            linewidth=2, path_effects=[
+                pe.Stroke(linewidth=6, foreground=colour_dic[wind]),
+                pe.Normal()])
         lgd_han.append(lgd_line)
 
-    dt = tracks.record.interval.total_seconds()
     # Extra factor of 2 - see definition of quiver scale
     scale = 95000 / (4 * dt)
     q_hdl = ax.quiver(

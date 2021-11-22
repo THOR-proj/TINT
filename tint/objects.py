@@ -252,9 +252,11 @@ def get_object_prop(
         'center', 'com_x', 'com_y', 'grid_x', 'grid_y', 'proj_area',
         'lon', 'lat', 'field_max', 'max_height', 'volume',
         'level', 'touch_border', 'semi_major', 'semi_minor', 'orientation',
-        'eccentricity', 'mergers', 'parent', 'cells', 'u_ambient', 'v_ambient',
-        'u_shift', 'v_shift', 'u_shear_2500', 'v_shear_2500', 'u_shear_5000',
-        'v_shear_5000']
+        'eccentricity', 'mergers', 'parent', 'cells',
+        'u_ambient_bottom', 'v_ambient_bottom',
+        'u_ambient_mid', 'v_ambient_mid',
+        'u_ambient_top', 'v_ambient_top',
+        'u_shift', 'v_shift']
     obj_prop = {p: [] for p in properties}
 
     nobj = np.max(data_dic['frames'])
@@ -339,37 +341,31 @@ def get_object_prop(
 
             if params['AMBIENT'] is not None:
                 grid_time = np.datetime64(record.time).astype('<M8[m]')
-                ambient_interp = data_dic['ambient_interp'].sel(
-                    longitude=lon[0], latitude=lat[0], time=grid_time,
-                    altitude=params['LEVELS'][i, 0], method='nearest')
-                u_ambient = np.round(float(ambient_interp.u.values), 5)
-                v_ambient = np.round(float(ambient_interp.v.values), 5)
-                obj_prop['u_ambient'].append(u_ambient)
-                obj_prop['v_ambient'].append(v_ambient)
-                ambient_interp = data_dic['ambient_interp'].sel(
-                    longitude=lon[0], latitude=lat[0], time=grid_time,
-                    altitude=[500, 2500, 5000], method='nearest')
 
-                [u_500, u_2500, u_5000] = ambient_interp.u.values
-                [v_500, v_2500, v_5000] = ambient_interp.v.values
-
-                u_shear_2500 = np.round(u_2500 - u_500, 5)
-                v_shear_2500 = np.round(v_2500 - v_500, 5)
-                u_shear_5000 = np.round(u_5000 - u_500, 5)
-                v_shear_5000 = np.round(v_5000 - v_500, 5)
-
-                obj_prop['u_shear_2500'].append(u_shear_2500)
-                obj_prop['v_shear_2500'].append(v_shear_2500)
-                obj_prop['u_shear_5000'].append(u_shear_5000)
-                obj_prop['v_shear_5000'].append(v_shear_5000)
-
+                interval = np.arange(
+                    params['LEVELS'][i, 0],
+                    params['LEVELS'][i, 1]+unit_dim[0], unit_dim[0])
+                mid_i = len(interval) // 2
+                altitudes = [
+                    params['LEVELS'][i, 0], interval[mid_i],
+                    params['LEVELS'][i, 1]]
+                ambients = [
+                    data_dic['ambient_interp'].sel(
+                        longitude=lon[0], latitude=lat[0], time=grid_time,
+                        altitude=alt, method='nearest') for alt in altitudes]
+                ambients_u = [np.round(float(a.u.values), 5) for a in ambients]
+                ambients_v = [np.round(float(a.v.values), 5) for a in ambients]
+                suffix = ['bottom', 'mid', 'top']
+                [
+                    obj_prop['u_ambient_'+suffix[j]].append(ambients_u[j])
+                    for j in range(len(ambients_u))]
+                [
+                    obj_prop['v_ambient_'+suffix[j]].append(ambients_v[j])
+                    for j in range(len(ambients_v))]
             else:
-                obj_prop['u_ambient'].append(np.nan)
-                obj_prop['v_ambient'].append(np.nan)
-                obj_prop['u_shear_2500'].append(np.nan)
-                obj_prop['v_shear_2500'].append(np.nan)
-                obj_prop['u_shear_5000'].append(np.nan)
-                obj_prop['v_shear_5000'].append(np.nan)
+                suffix = ['bottom', 'mid', 'top']
+                [obj_prop['u_ambient_'+s].append(np.nan) for s in suffix]
+                [obj_prop['v_ambient_'+s].append(np.nan) for s in suffix]
 
             # Calculate raw3D slices
             raw3D_i = raw3D[z_min:z_max, :, :]
@@ -461,11 +457,6 @@ def smooth(group_df, r=3, n=2):
     return np.round(group_df_smoothed, r)
 
 
-def add_metadata(tracks_obj):
-
-    return
-
-
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
     print('Calculating additional tracks properties.')
@@ -515,14 +506,88 @@ def post_tracks(tracks_obj):
         tmp_tracks, left_index=True, right_index=True)
     tracks_obj.tracks = tracks_obj.tracks.sort_index()
 
-    # Get relative winds
-    u_ambient = tracks_obj.tracks['u_ambient']
-    v_ambient = tracks_obj.tracks['v_ambient']
-    u_shift = tracks_obj.tracks['u_shift']
-    v_shift = tracks_obj.tracks['v_shift']
-    tracks_obj.tracks['u_relative'] = np.round(u_shift - u_ambient, 5)
-    tracks_obj.tracks['v_relative'] = np.round(v_shift - v_ambient, 5)
+    tracks_obj = calc_mean_ambient_winds(tracks_obj)
 
+    tracks_obj.tracks['u_relative'] = np.round(
+        tracks_obj.tracks['u_shift'] - tracks_obj.tracks['u_ambient_mean'], 5)
+    tracks_obj.tracks['v_relative'] = np.round(
+        tracks_obj.tracks['v_shift'] - tracks_obj.tracks['v_ambient_mean'], 5)
+    tracks_obj.tracks['u_shear'] = np.round(
+        tracks_obj.tracks['u_ambient_top']
+        - tracks_obj.tracks['u_ambient_bottom'], 5)
+    tracks_obj.tracks['v_shear'] = np.round(
+        tracks_obj.tracks['v_ambient_top']
+        - tracks_obj.tracks['v_ambient_bottom'], 5)
+
+    tracks_obj = calc_alt_orientation(tracks_obj)
+
+    return tracks_obj
+
+
+def classify_tracks(tracks_obj):
+
+    tracks_class = copy.deepcopy(
+        tracks_obj.tracks[['grid_x', 'grid_y', 'lon', 'lat']])
+    tracks_obj.tracks_class = tracks_class
+    tracks_obj = calc_inflow_type(tracks_obj)
+    tracks_obj = calc_propagation_type(tracks_obj)
+    tracks_obj = calc_tilt_type(tracks_obj)
+    tracks_obj = calc_stratiform_type(tracks_obj)
+
+    return tracks_obj
+
+
+def get_exclusion_categories(tracks_obj):
+
+    class_thresh = tracks_obj.params['CLASS_THRESH']
+    excl_thresh = tracks_obj.params['EXCL_THRESH']
+    n_lvls = len(tracks_obj.params['LEVELS'])
+    grid_size = tracks_obj.record.grid_size
+    cell_area = grid_size[1] / 1000 * grid_size[2] / 1000
+
+    exclusions = copy.deepcopy(
+        tracks_obj.tracks[['grid_x', 'grid_y', 'lon', 'lat']])
+
+    small_area = (
+        tracks_obj.system_tracks['proj_area']
+        < excl_thresh['SMALL_AREA']).values
+    tracks_obj.exclusions['small_area'] = np.repeat(small_area, n_lvls)
+
+    large_area = (
+        tracks_obj.system_tracks['proj_area']
+        > excl_thresh['LARGE_AREA']).values
+    tracks_obj.exclusions['large_area'] = np.repeat(large_area, n_lvls)
+
+    not_border = (
+        tracks_obj.system_tracks['touch_border'] * cell_area
+        / tracks_obj.system_tracks['proj_area']) < excl_thresh['BORD_THRESH']
+    tracks_obj.exclusions['not_border_all'] = np.repeat(not_border, n_lvls)
+
+    not_border_conv = tracks_obj.tracks[['touch_border', 'proj_area']].xs(
+        0, level='level')
+    not_border_conv = (
+        not_border_conv['touch_border'] * cell_area
+        / not_border_conv['proj_area']) < excl_thresh['BORD_THRESH']
+    tracks_obj.exclusions['not_border_all'] = np.repeat(not_border, n_lvls)
+
+    tracks_obj.exclusions = exclusions
+
+
+def calc_mean_ambient_winds(tracks_obj):
+    u_ambient_mean = copy.deepcopy(tracks_obj.tracks['u_ambient_bottom'])
+    u_ambient_mean += tracks_obj.tracks['u_ambient_mid']
+    u_ambient_mean += tracks_obj.tracks['u_ambient_top']
+    u_ambient_mean = u_ambient_mean/3
+    v_ambient_mean = copy.deepcopy(tracks_obj.tracks['v_ambient_bottom'])
+    v_ambient_mean += tracks_obj.tracks['v_ambient_mid']
+    v_ambient_mean += tracks_obj.tracks['v_ambient_top']
+    v_ambient_mean = v_ambient_mean/3
+    tracks_obj.tracks['u_ambient_mean'] = np.round(u_ambient_mean, 5)
+    tracks_obj.tracks['v_ambient_mean'] = np.round(v_ambient_mean, 5)
+    return tracks_obj
+
+
+def calc_alt_orientation(tracks_obj):
     normal_dir = np.deg2rad(tracks_obj.tracks['orientation'] + 90)
     normal = np.array([np.cos(normal_dir), np.sin(normal_dir)])
     relative_velocity = np.array([
@@ -540,6 +605,115 @@ def post_tracks(tracks_obj):
     return tracks_obj
 
 
+def calc_inflow_type(tracks_obj):
+
+    thresholds = tracks_obj.params['CLASS_THRESH']
+    velocity_mag = np.sqrt(
+        tracks_obj.tracks['u_shift'] ** 2 + tracks_obj.tracks['v_shift'] ** 2)
+    rel_velocity_mag = np.sqrt(
+        tracks_obj.tracks['u_relative'] ** 2
+        + tracks_obj.tracks['v_relative'] ** 2)
+    inflow_cond = (
+        tracks_obj.tracks['u_shift'] * tracks_obj.tracks['u_relative']
+        + tracks_obj.tracks['v_shift'] * tracks_obj.tracks['v_relative'])
+    inflow_type = np.array(['Front Fed' for i in range(len(inflow_cond))])
+    inflow_type[inflow_cond < 0] = 'Rear Fed'
+    parallel_inflow = np.abs(
+        inflow_cond / (velocity_mag * rel_velocity_mag)) < 1 / np.sqrt(2)
+    inflow_type[parallel_inflow] = 'Ambiguous (Parallel Inflow)'
+    cond = velocity_mag < thresholds['VEL_MAG']
+    inflow_type[cond] = 'Ambiguous (Low Velocity)'
+    cond = rel_velocity_mag < thresholds['REL_VEL_MAG']
+    inflow_type[cond] = 'Ambiguous (Low Relative Velocity)'
+    tracks_obj.tracks_class['inflow_type'] = inflow_type
+    return tracks_obj
+
+
+def calc_propagation_type(tracks_obj):
+
+    thresholds = tracks_obj.params['CLASS_THRESH']
+    rel_velocity_mag = np.sqrt(
+        tracks_obj.tracks['u_relative'] ** 2
+        + tracks_obj.tracks['v_relative'] ** 2)
+    shear_mag = np.sqrt(
+        tracks_obj.tracks['u_shear'] ** 2
+        + tracks_obj.tracks['v_shear'] ** 2)
+    propagation_cond = (
+        tracks_obj.tracks['u_shear'] * tracks_obj.tracks['u_relative']
+        + tracks_obj.tracks['v_shear'] * tracks_obj.tracks['v_relative'])
+    propagation_type = np.array(
+        ['Down-Shear Propagating' for i in range(len(propagation_cond))])
+    propagation_type[propagation_cond < 0] = 'Up-Shear Propagating'
+    parallel_shear = np.abs(
+        propagation_cond / (shear_mag * rel_velocity_mag)) < 1 / np.sqrt(2)
+    propagation_type[parallel_shear] = 'Ambiguous (Parallel Shear)'
+    cond = shear_mag < thresholds['SHEAR_MAG']
+    propagation_type[cond] = 'Ambiguous (Low Shear)'
+    cond = rel_velocity_mag < thresholds['REL_VEL_MAG']
+    propagation_type[cond] = 'Ambiguous (Low Relative Velocity)'
+    tracks_obj.tracks_class['propagation_type'] = propagation_type
+
+    return tracks_obj
+
+
+def calc_tilt_type(tracks_obj):
+
+    thresholds = tracks_obj.params['CLASS_THRESH']
+
+    # Stratiform offset vector
+    x_offset = tracks_obj.system_tracks['x_vert_disp']
+    y_offset = tracks_obj.system_tracks['y_vert_disp']
+
+    offset_mag = np.sqrt(x_offset ** 2 + y_offset ** 2)
+    n_lvl = len(tracks_obj.params['LEVELS'])
+    offset_mag = np.repeat(offset_mag.values, n_lvl)
+
+    u_shear = tracks_obj.tracks['u_shear']
+    v_shear = tracks_obj.tracks['v_shear']
+
+    shear_mag = np.sqrt(u_shear ** 2 + v_shear ** 2)
+
+    tilt_cond = (x_offset * u_shear + y_offset * v_shear)
+
+    tilt_type = np.array(
+        ['Down-Shear Tilted' for i in range(len(tilt_cond))])
+    tilt_type[tilt_cond < 0] = 'Up-Shear Tilted'
+    parallel_inflow = np.abs(
+        tilt_cond / (offset_mag * shear_mag)) < 1 / np.sqrt(2)
+    msg = 'Ambiguous (Shear Parallel to Stratiform Offset)'
+    tilt_type[parallel_inflow] = msg
+    cond = offset_mag < thresholds['OFFSET_MAG']
+    tilt_type[cond] = 'Ambiguous (Small Stratiform Offset)'
+    cond = shear_mag < thresholds['SHEAR_MAG']
+    tilt_type[cond] = 'Ambiguous (Small Shear)'
+    tracks_obj.tracks_class['tilt_type'] = tilt_type
+
+    return tracks_obj
+
+
+def calc_stratiform_type(tracks_obj):
+
+    # Stratiform offset vector
+    thresholds = tracks_obj.params['CLASS_THRESH']
+    n_lvls = len(tracks_obj.params['LEVELS'])
+    theta_e = thresholds['ANGLE_BUFFER']
+    rel_tilt_dir = tracks_obj.system_tracks['sys_rel_tilt_dir']
+    offset_type = np.array(
+        ['Ambiguous' for i in range(len(rel_tilt_dir))])
+    cond = (-45 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= 45 - theta_e)
+    offset_type[cond] = 'Leading Stratiform'
+    cond = (-135 - theta_e >= rel_tilt_dir) | (rel_tilt_dir >= 135 + theta_e)
+    offset_type[cond] = 'Trailing Stratiform'
+    cond = (45 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= 135 - theta_e)
+    offset_type[cond] = 'Parallel Stratiform (Left)'
+    cond = (-135 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= -45 - theta_e)
+    offset_type[cond] = 'Parallel Stratiform (Right)'
+    tracks_obj.tracks_class['offset_type'] = np.repeat(
+        offset_type, n_lvls)
+
+    return tracks_obj
+
+
 def get_system_tracks(tracks_obj):
     """ Calculate system tracks """
     print('Calculating system tracks.')
@@ -547,7 +721,8 @@ def get_system_tracks(tracks_obj):
     # Get position and velocity at tracking level.
     system_tracks = tracks_obj.tracks[
         ['grid_x', 'grid_y', 'com_x', 'com_y', 'lon', 'lat', 'u', 'v',
-         'mergers', 'parent', 'u_shift', 'v_shift']]
+         'mergers', 'parent', 'u_shift', 'v_shift',
+         'u_relative', 'v_relative']]
     system_tracks = system_tracks.xs(
         tracks_obj.params['TRACK_INTERVAL'], level='level')
 
@@ -566,14 +741,14 @@ def get_system_tracks(tracks_obj):
     # Calculate system maximum
     maximum = tracks_obj.tracks[['field_max']]
     maximum = maximum.groupby(level=['scan', 'time', 'uid']).max()
-    system_tracks = system_tracks.merge(maximum, left_index=True,
-                                        right_index=True)
+    system_tracks = system_tracks.merge(
+        maximum, left_index=True, right_index=True)
 
     # Calculate maximum area
     proj_area = tracks_obj.tracks[['proj_area']]
     proj_area = proj_area.groupby(level=['scan', 'time', 'uid']).max()
-    system_tracks = system_tracks.merge(proj_area, left_index=True,
-                                        right_index=True)
+    system_tracks = system_tracks.merge(
+        proj_area, left_index=True, right_index=True)
 
     # Calculate maximum altitude
     m_alt = tracks_obj.tracks[['max_height']]
@@ -584,8 +759,8 @@ def get_system_tracks(tracks_obj):
     # Get touch_border for system
     t_border = tracks_obj.tracks[['touch_border']]
     t_border = t_border.groupby(level=['scan', 'time', 'uid']).max()
-    system_tracks = system_tracks.merge(t_border, left_index=True,
-                                        right_index=True)
+    system_tracks = system_tracks.merge(
+        t_border, left_index=True, right_index=True)
 
     # Calculate total vertical displacement.
     n_lvl = tracks_obj.params['LEVELS'].shape[0]

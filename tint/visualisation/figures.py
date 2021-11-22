@@ -27,13 +27,14 @@ def check_params(user_params):
 
     params = {
         'uid_ind': None, 'cell_ind': None, 'box_rad': 0.75,
-        'line_coords': False, 'center_cell': False, 'label_splits': True,
+        'line_coords': False, 'center_cell': False, 'label_splits': False,
         'legend': True, 'winds': False, 'winds_fn': None,
         'colorbar_flag': True, 'direction': None, 'line_average': False,
         'crosshair': True, 'streamplot': True, 'dpi': 200, 'save_dir': None,
         'relative_winds': False, 'data_fn': None,
         'load_line_coords_winds': None, 'save_ds': False, 'alt': 3000,
-        'fontsize': 20, 'leg_loc': 2}
+        'fontsize': 20, 'leg_loc': 2, 'system_winds': ['shift'],
+        'label_mergers': False}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
@@ -351,11 +352,13 @@ def save_tilt_data(
     return
 
 
-def two_level(tracks, grid, params, date_time=None, alt=None):
+def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
 
     params = check_params(params)
-    if alt is None:
-        alt = tracks.params['GS_ALT']
+    if alt1 is None:
+        alt1 = tracks.params['GS_ALT']
+    if alt2 is None:
+        alt2 = tracks.params['LEVELS'][-1][0]
     grid_time = np.datetime64(parse_grid_datetime(grid))
     grid_time = grid_time.astype('datetime64[m]')
     if date_time is None:
@@ -380,13 +383,13 @@ def two_level(tracks, grid, params, date_time=None, alt=None):
     # Plot frame
     ax = fig.add_subplot(1, 2, 1, projection=projection)
     horizontal_cross_section(
-        tracks, grid, params=tmp_params, alt=alt, fig=fig, ax=ax,
+        tracks, grid, params=tmp_params, alt=alt1, fig=fig, ax=ax,
         date_time=date_time)
 
     tmp_params['colorbar_flag'] = True
     ax = fig.add_subplot(1, 2, 2, projection=projection)
     horizontal_cross_section(
-        tracks, grid, params=tmp_params, alt=9000, fig=fig, ax=ax,
+        tracks, grid, params=tmp_params, alt=alt2, fig=fig, ax=ax,
         date_time=date_time)
 
     # Save frame and cleanup

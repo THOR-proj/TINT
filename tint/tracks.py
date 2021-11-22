@@ -13,7 +13,7 @@ from tint.phase_correlation import get_global_shift
 from tint.matching import get_pairs
 from tint.objects import init_current_objects, update_current_objects
 from tint.objects import get_object_prop, write_tracks
-from tint.objects import post_tracks, get_system_tracks
+from tint.objects import post_tracks, get_system_tracks, classify_tracks
 import tint.process_ERA5 as ERA5
 import tint.process_WRF as WRF
 
@@ -50,7 +50,7 @@ class Tracks(object):
             'ISO_THRESH': [10, 10, 10],  # DbZ
             # Interval in the above array used for tracking.
             'TRACK_INTERVAL': 0,
-            # Threshold for identifying "cells".
+            # Threshold for identifying convective "cells".
             'CELL_THRESH': 25,  # DbZ
             # Altitude to start tracking updrafts.
             'CELL_START': 3000,  # m
@@ -61,7 +61,22 @@ class Tracks(object):
             # Whether to include ERA5 derived fields
             'AMBIENT': None,  # None, 'WRF' or 'ERA5'
             # ERA5 base directory
-            'AMBIENT_BASE_DIR': None}  # str or None
+            'AMBIENT_BASE_DIR': None,  # str or None
+            # Classification thresholds
+            'CLASS_THRESH': {
+                'OFFSET_MAG': 5000,  # metres
+                'SHEAR_MAG': 1,  # m/s
+                'VEL_MAG': 1,  # m/s
+                'REL_VEL_MAG': 1,  # m/s
+                'ANGLE_BUFFER': np.pi*10/180},  # radians
+            'EXCL_THRESH': {
+                'SMALL_AREA': 4000,  # km^2
+                'LARGE_AREA': 50000,  # km^2
+                'BORD_THRESH': 0.01,  # Ratio border pixels to total pixels
+                'MAJOR_AXIS_LENGTH': 100,  # km
+                'ECCENTRICITY': 0.5
+                }
+            }
 
         # Load user specified parameters.
         for p in params:
@@ -286,6 +301,7 @@ class Tracks(object):
 
         self = post_tracks(self)
         self = get_system_tracks(self)
+        self = classify_tracks(self)
 
         self.__load()
         time_elapsed = datetime.datetime.now() - start_time
