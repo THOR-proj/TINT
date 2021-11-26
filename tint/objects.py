@@ -457,6 +457,12 @@ def smooth(group_df, r=3, n=2):
     return np.round(group_df_smoothed, r)
 
 
+def fill_end(group_df):
+    group_df['u_shift'].iloc[-1] = group_df['u_shift'].iloc[-1]
+    group_df['v_shift'].iloc[-1] = group_df['v_shift'].iloc[-1]
+    return group_df
+
+
 def post_tracks(tracks_obj):
     """ Calculate additional tracks data from final tracks dataframe. """
     print('Calculating additional tracks properties.')
@@ -468,9 +474,15 @@ def post_tracks(tracks_obj):
     tracks_obj.tracks['field_max'] = np.round(
         tracks_obj.tracks['field_max'], 2)
 
+    # Repeat final u_shift values for end of object
+    tmp_tracks = tracks_obj.tracks[['u_shift', 'v_shift']]
+    tmp_tracks = tmp_tracks.groupby(
+        level=['uid', 'level'], as_index=False, group_keys=False)
+    tracks_obj.tracks[['u_shift', 'v_shift']] = tmp_tracks.apply(
+        lambda x: smooth(x))
+
     # Smooth u_shift, v_shift
     tmp_tracks = tracks_obj.tracks[['u_shift', 'v_shift']]
-    # Calculate forward difference for first time step
     tmp_tracks = tmp_tracks.groupby(
         level=['uid', 'level'], as_index=False, group_keys=False)
     tracks_obj.tracks[['u_shift', 'v_shift']] = tmp_tracks.apply(
@@ -547,6 +559,7 @@ def get_exclusion_categories(tracks_obj):
 
     exclusions = copy.deepcopy(
         tracks_obj.tracks[['grid_x', 'grid_y', 'lon', 'lat']])
+    tracks_obj.exclusions = exclusions
 
     small_area = (
         tracks_obj.system_tracks['proj_area']
@@ -558,19 +571,51 @@ def get_exclusion_categories(tracks_obj):
         > excl_thresh['LARGE_AREA']).values
     tracks_obj.exclusions['large_area'] = np.repeat(large_area, n_lvls)
 
-    not_border = (
+    int_border = (
         tracks_obj.system_tracks['touch_border'] * cell_area
-        / tracks_obj.system_tracks['proj_area']) < excl_thresh['BORD_THRESH']
-    tracks_obj.exclusions['not_border_all'] = np.repeat(not_border, n_lvls)
+        / tracks_obj.system_tracks['proj_area']) > excl_thresh['BORD_THRESH']
+    int_border = int_border.values
+    tracks_obj.exclusions['intersect_border'] = np.repeat(int_border, n_lvls)
 
-    not_border_conv = tracks_obj.tracks[['touch_border', 'proj_area']].xs(
+    tmp_tracks = tracks_obj.tracks[['touch_border', 'proj_area']].xs(
         0, level='level')
-    not_border_conv = (
-        not_border_conv['touch_border'] * cell_area
-        / not_border_conv['proj_area']) < excl_thresh['BORD_THRESH']
-    tracks_obj.exclusions['not_border_all'] = np.repeat(not_border, n_lvls)
+    int_border_conv = (
+        tmp_tracks['touch_border'] * cell_area
+        / tmp_tracks['proj_area']) > excl_thresh['BORD_THRESH']
+    int_border_conv = int_border_conv.values
+    tracks_obj.exclusions['intersect_border_convective'] = np.repeat(
+        int_border_conv, n_lvls)
 
-    tracks_obj.exclusions = exclusions
+    velocity_mag = np.sqrt(
+        tracks_obj.tracks['u_shift'] ** 2 + tracks_obj.tracks['v_shift'] ** 2)
+    small_vel = velocity_mag < class_thresh['VEL_MAG']
+    tracks_obj.exclusions['small_velocity'] = small_vel
+    rel_velocity_mag = np.sqrt(
+        tracks_obj.tracks['u_relative'] ** 2
+        + tracks_obj.tracks['v_relative'] ** 2)
+    small_rel_vel = rel_velocity_mag < class_thresh['REL_VEL_MAG']
+    tracks_obj.exclusions['small_rel_velocity'] = small_rel_vel
+    shear_mag = np.sqrt(
+        tracks_obj.tracks['u_relative'] ** 2
+        + tracks_obj.tracks['v_relative'] ** 2)
+    small_shear = shear_mag < class_thresh['SHEAR_MAG']
+    tracks_obj.exclusions['small_shear'] = small_shear
+    offset_mag = np.sqrt(
+        tracks_obj.system_tracks['x_vert_disp'] ** 2
+        + tracks_obj.system_tracks['y_vert_disp'] ** 2)
+    offset_mag = np.repeat(offset_mag.values, n_lvls)
+    small_offset = offset_mag < class_thresh['OFFSET_MAG']
+    tracks_obj.exclusions['small_offset'] = small_offset
+
+    semi_major = tracks_obj.tracks.xs(0, level='level')['semi_major']
+    semi_minor = tracks_obj.tracks.xs(0, level='level')['semi_minor']
+    length_cond = semi_major * grid_size[1] > excl_thresh['MAJOR_AXIS_LENGTH']
+    ratio_cond = semi_major / semi_minor > excl_thresh['AXIS_RATIO']
+    linear_cond = np.logical_and(length_cond, ratio_cond).values
+    linear_cond = np.repeat(linear_cond, n_lvls)
+    tracks_obj.exclusions['linear_cond'] = linear_cond
+
+    return tracks_obj
 
 
 def calc_mean_ambient_winds(tracks_obj):
@@ -616,7 +661,9 @@ def calc_inflow_type(tracks_obj):
     inflow_cond = (
         tracks_obj.tracks['u_shift'] * tracks_obj.tracks['u_relative']
         + tracks_obj.tracks['v_shift'] * tracks_obj.tracks['v_relative'])
-    inflow_type = np.array(['Front Fed' for i in range(len(inflow_cond))])
+    inflow_type = np.array(
+        ['Front Fed' for i in range(len(inflow_cond))],
+        dtype=object)
     inflow_type[inflow_cond < 0] = 'Rear Fed'
     parallel_inflow = np.abs(
         inflow_cond / (velocity_mag * rel_velocity_mag)) < 1 / np.sqrt(2)
@@ -642,7 +689,8 @@ def calc_propagation_type(tracks_obj):
         tracks_obj.tracks['u_shear'] * tracks_obj.tracks['u_relative']
         + tracks_obj.tracks['v_shear'] * tracks_obj.tracks['v_relative'])
     propagation_type = np.array(
-        ['Down-Shear Propagating' for i in range(len(propagation_cond))])
+        ['Down-Shear Propagating' for i in range(len(propagation_cond))],
+        dtype=object)
     propagation_type[propagation_cond < 0] = 'Up-Shear Propagating'
     parallel_shear = np.abs(
         propagation_cond / (shear_mag * rel_velocity_mag)) < 1 / np.sqrt(2)
@@ -676,7 +724,7 @@ def calc_tilt_type(tracks_obj):
     tilt_cond = (x_offset * u_shear + y_offset * v_shear)
 
     tilt_type = np.array(
-        ['Down-Shear Tilted' for i in range(len(tilt_cond))])
+        ['Down-Shear Tilted' for i in range(len(tilt_cond))], dtype=object)
     tilt_type[tilt_cond < 0] = 'Up-Shear Tilted'
     parallel_inflow = np.abs(
         tilt_cond / (offset_mag * shear_mag)) < 1 / np.sqrt(2)
@@ -699,7 +747,7 @@ def calc_stratiform_type(tracks_obj):
     theta_e = thresholds['ANGLE_BUFFER']
     rel_tilt_dir = tracks_obj.system_tracks['sys_rel_tilt_dir']
     offset_type = np.array(
-        ['Ambiguous' for i in range(len(rel_tilt_dir))])
+        ['Ambiguous' for i in range(len(rel_tilt_dir))], dtype=object)
     cond = (-45 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= 45 - theta_e)
     offset_type[cond] = 'Leading Stratiform'
     cond = (-135 - theta_e >= rel_tilt_dir) | (rel_tilt_dir >= 135 + theta_e)

@@ -1,15 +1,8 @@
-TINT
+MTRACK
 ====
-TINT (TINT is not TITAN) is an easy-to-use storm cell tracking package based
-on the TITAN methodology by Dixon and Wiener. This code is in early alpha
-stage, so documentation and testing are still being built. If you have any
-suggestions or wish to contribute, please open an issue. Feel free to email
-me at mhpicel@gmail.com if you need assistance.
-
-`Check out this demonstration <https://github.com/openradar/TINT/blob/master/examples/tint_demo.ipynb/>`_
-
-The development is currently led by the Data Informatics and Geophysical Retrievals (DIGR) group in the Environmental
-Sciences Group at Argonne National Laboratory. 
+This is a fork of the base TINT repository, intended to be used for tracking
+and analysing large mesoscale objects in radar reflectivity. Modifications have
+been made by Ewan Short while undertaking a PhD at the University of Melbourne.
 
 Dependencies
 ------------
@@ -57,4 +50,3 @@ Technol., 10, 785–797, doi: 10.1175/1520-0426(1993)010<0785:TTITAA>2.0.CO;2.
 
 Leese, J.A., C.S. Novak, and B.B. Clark, 1971: An Automated Technique for Obtaining Cloud Motion from Geosynchronous
 Satellite Data Using Cross Correlation. J. Appl. Meteor., 10, 118–132, doi: 10.1175/1520-0450(1971)010<0118:AATFOC>2.0.CO;2.
-

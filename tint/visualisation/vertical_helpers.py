@@ -315,11 +315,12 @@ def setup_line_coords(ds, tracks, params, date_time, variables):
     return ds, tmp_tracks
 
 
-def setup_perpendicular_coords(ds, x, tmp_tracks, params):
+def setup_perpendicular_coords(ds, x, tmp_tracks, params, dx):
+    # Swap 2500 to general size
     if params['line_average']:
         semi_major = tmp_tracks['semi_major'].iloc[0]
-        cond = ((ds.x <= x + semi_major * 2500 / 2)
-                & (ds.x >= x - semi_major * 2500 / 2))
+        cond = ((ds.x <= x + semi_major * dx / 2)
+                & (ds.x >= x - semi_major * dx / 2))
         ds_plot = ds.where(cond).dropna(dim='x', how='all').mean(dim='x')
         t_string = 'Line Perpendicular Mean Cross Section'
     else:

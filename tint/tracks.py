@@ -14,6 +14,7 @@ from tint.matching import get_pairs
 from tint.objects import init_current_objects, update_current_objects
 from tint.objects import get_object_prop, write_tracks
 from tint.objects import post_tracks, get_system_tracks, classify_tracks
+from tint.objects import get_exclusion_categories
 import tint.process_ERA5 as ERA5
 import tint.process_WRF as WRF
 
@@ -74,7 +75,7 @@ class Tracks(object):
                 'LARGE_AREA': 50000,  # km^2
                 'BORD_THRESH': 0.01,  # Ratio border pixels to total pixels
                 'MAJOR_AXIS_LENGTH': 100,  # km
-                'ECCENTRICITY': 0.5
+                'AXIS_RATIO': 3
                 }
             }
 
@@ -299,9 +300,11 @@ class Tracks(object):
 
         del grid_obj1
 
+        import pdb; pdb.set_trace()
         self = post_tracks(self)
         self = get_system_tracks(self)
         self = classify_tracks(self)
+        self = get_exclusion_categories(self)
 
         self.__load()
         time_elapsed = datetime.datetime.now() - start_time

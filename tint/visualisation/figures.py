@@ -34,7 +34,7 @@ def check_params(user_params):
         'relative_winds': False, 'data_fn': None,
         'load_line_coords_winds': None, 'save_ds': False, 'alt': 3000,
         'fontsize': 20, 'leg_loc': 2, 'system_winds': ['shift'],
-        'label_mergers': False}
+        'label_mergers': False, 'screen': True, 'label_type': True}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
@@ -174,7 +174,9 @@ def horizontal_cross_section(
         ax.set_ylim(box[3][0], box[3][1])
 
     if params['legend'] and date_time in tracks_times:
-        legend = plt.legend(handles=lgd_han, loc=params['leg_loc'])
+        legend = plt.legend(
+            handles=lgd_han, loc='lower center', bbox_to_anchor=(0.5, -0.35),
+            ncol=2, fancybox=True, shadow=True)
         legend.get_frame().set_alpha(None)
         legend.get_frame().set_facecolor((1, 1, 1, 1))
 
@@ -201,6 +203,7 @@ def vertical_cross_section(
     x_lim = (x + np.array([-60000, 60000])) / 1000
     y_lim = (y + np.array([-60000, 60000])) / 1000
     lgd_han = []
+    [dz, dy, dx] = tracks.record.grid_size
 
     ds = vh.format_pyart(grid)
     variables = ['reflectivity']
@@ -248,7 +251,7 @@ def vertical_cross_section(
 
     elif params['direction'] == 'perpendicular':
         ds_plot, t_string = vh.setup_perpendicular_coords(
-            ds, x, tmp_tracks, params)
+            ds, x, tmp_tracks, params, dx)
         extent = [
             ds_plot.y[0] / 1000, ds_plot.y[-1] / 1000,
             ds_plot.z[0] / 1000, ds_plot.z[-1] / 1000]

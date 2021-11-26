@@ -10,10 +10,21 @@ import copy
 from tint.grid_utils import get_grid_size, get_grid_alt
 
 
+def gen_embossed_text(
+        x, y, ax, label, projection, fontsize, linewidth, zorder):
+    ax.text(
+        x, y, label, transform=projection, fontsize=fontsize,
+        zorder=zorder, fontweight='bold', color='w',
+        path_effects=[
+            pe.Stroke(linewidth=linewidth, foreground='k'), pe.Normal()])
+
+
 def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
 
     projection = ccrs.PlateCarree()
     tmp_tracks = tracks.tracks.xs(date_time, level='time')
+    tmp_class = tracks.tracks_class.xs(date_time, level='time')
+    tmp_excl = tracks.exclusions.xs(date_time, level='time')
     if params['uid_ind'] is None:
         uids = np.unique(tmp_tracks.index.get_level_values('uid').values)
     else:
@@ -21,9 +32,13 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
     lgd_han = []
     for uid in uids:
         tmp_tracks_uid = tmp_tracks.xs(uid, level='uid')
+        tmp_class_uid = tmp_class.xs(uid, level='uid')
+        tmp_excl = tmp_excl.xs(uid, level='uid')
 
         lon = tmp_tracks_uid.xs(0, level='level')['lon'].iloc[0]
         lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
+
+        gen_embossed_text
 
         ax.text(
             lon-.1, lat+0.1, uid, transform=projection, fontsize=16,
@@ -36,6 +51,21 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
             label = ", ".join(mergers)
             ax.text(
                 lon+.1, lat-0.1, label, transform=projection, fontsize=12,
+                zorder=5, fontweight='bold', color='w',
+                path_effects=[
+                    pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
+        if params['label_type']:
+            label_1 = tmp_class_uid.xs(
+                0, level='level')['offset_type'].values[0]
+            label_2 = tmp_class_uid.xs(
+                0, level='level')['inflow_type'].values[0]
+            ax.text(
+                lon+.1, lat-0.1, label_1, transform=projection, fontsize=14,
+                zorder=5, fontweight='bold', color='w',
+                path_effects=[
+                    pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
+            ax.text(
+                lon+.1, lat+0.1, label_2, transform=projection, fontsize=14,
                 zorder=5, fontweight='bold', color='w',
                 path_effects=[
                     pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
