@@ -65,13 +65,13 @@ class Tracks(object):
             'AMBIENT_BASE_DIR': None,  # str or None
             # Classification thresholds
             'CLASS_THRESH': {
-                'OFFSET_MAG': 5000,  # metres
+                'OFFSET_MAG': 10000,  # metres
                 'SHEAR_MAG': 1,  # m/s
                 'VEL_MAG': 1,  # m/s
                 'REL_VEL_MAG': 1,  # m/s
                 'ANGLE_BUFFER': np.pi*10/180},  # radians
             'EXCL_THRESH': {
-                'SMALL_AREA': 4000,  # km^2
+                'SMALL_AREA': 500,  # km^2
                 'LARGE_AREA': 50000,  # km^2
                 'BORD_THRESH': 0.01,  # Ratio border pixels to total pixels
                 'MAJOR_AXIS_LENGTH': 100,  # km
@@ -300,7 +300,6 @@ class Tracks(object):
 
         del grid_obj1
 
-        import pdb; pdb.set_trace()
         self = post_tracks(self)
         self = get_system_tracks(self)
         self = classify_tracks(self)

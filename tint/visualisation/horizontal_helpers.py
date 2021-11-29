@@ -5,15 +5,14 @@ import matplotlib.patheffects as pe
 import xarray as xr
 from pyart.core.transforms import cartesian_to_geographic
 import cartopy.crs as ccrs
-import copy
 
 from tint.grid_utils import get_grid_size, get_grid_alt
 
 
 def gen_embossed_text(
-        x, y, ax, label, projection, fontsize, linewidth, zorder):
+        x, y, ax, label, transform, fontsize, linewidth, zorder):
     ax.text(
-        x, y, label, transform=projection, fontsize=fontsize,
+        x, y, label, transform=transform, fontsize=fontsize,
         zorder=zorder, fontweight='bold', color='w',
         path_effects=[
             pe.Stroke(linewidth=linewidth, foreground='k'), pe.Normal()])
@@ -33,62 +32,72 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
     for uid in uids:
         tmp_tracks_uid = tmp_tracks.xs(uid, level='uid')
         tmp_class_uid = tmp_class.xs(uid, level='uid')
-        tmp_excl = tmp_excl.xs(uid, level='uid')
+        tmp_excl_uid = tmp_excl.xs(uid, level='uid')
 
-        lon = tmp_tracks_uid.xs(0, level='level')['lon'].iloc[0]
-        lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
+        excluded = tmp_excl_uid[params['exclusions']]
+        excluded = excluded.xs(0, level='level').iloc[0]
+        excluded = np.any(excluded)
 
-        gen_embossed_text
+        if not excluded:
+            lon = tmp_tracks_uid.xs(0, level='level')['lon'].iloc[0]
+            lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
 
-        ax.text(
-            lon-.1, lat+0.1, uid, transform=projection, fontsize=16,
-            zorder=5, fontweight='bold', color='w',
-            path_effects=[
-                pe.Stroke(linewidth=3, foreground='k'), pe.Normal()])
-        if params['label_mergers']:
-            mergers = list(
-                tmp_tracks_uid.xs(0, level='level')['mergers'].iloc[0])
-            label = ", ".join(mergers)
-            ax.text(
-                lon+.1, lat-0.1, label, transform=projection, fontsize=12,
-                zorder=5, fontweight='bold', color='w',
-                path_effects=[
-                    pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
-        if params['label_type']:
-            label_1 = tmp_class_uid.xs(
-                0, level='level')['offset_type'].values[0]
-            label_2 = tmp_class_uid.xs(
-                0, level='level')['inflow_type'].values[0]
-            ax.text(
-                lon+.1, lat-0.1, label_1, transform=projection, fontsize=14,
-                zorder=5, fontweight='bold', color='w',
-                path_effects=[
-                    pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
-            ax.text(
-                lon+.1, lat+0.1, label_2, transform=projection, fontsize=14,
-                zorder=5, fontweight='bold', color='w',
-                path_effects=[
-                    pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
+            gen_embossed_text(
+                lon-.1, lat+0.1, ax, uid, transform=projection, fontsize=16,
+                linewidth=3, zorder=5)
 
-        if params['label_splits']:
-            parent = list(
-                tmp_tracks_uid.xs(0, level='level')['parent'].iloc[0])
-            label = ", ".join(parent)
-            ax.text(
-                lon+.1, lat+0.15, label, transform=projection, fontsize=12,
-                zorder=5, fontweight='bold', color='w',
-                path_effects=[
-                    pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
+            if params['label_mergers']:
+                mergers = list(
+                    tmp_tracks_uid.xs(0, level='level')['mergers'].iloc[0])
+                label = ", ".join(mergers)
+                gen_embossed_text(
+                    lon+.1, lat-0.1, ax, label, transform=projection,
+                    fontsize=16, linewidth=2, zorder=5)
+
+            if params['label_type']:
+                label_1 = tmp_class_uid.xs(
+                    0, level='level')['offset_type'].values[0]
+                label_2 = tmp_class_uid.xs(
+                    0, level='level')['inflow_type'].values[0]
+                gen_embossed_text(
+                    lon+.2, lat-0.1, ax, label_1, transform=projection,
+                    fontsize=14, linewidth=2, zorder=5)
+                gen_embossed_text(
+                    lon+.2, lat, ax, label_2, transform=projection,
+                    fontsize=14, linewidth=2, zorder=5)
+                # import pdb; pdb.set_trace()
+                linear = tmp_excl_uid.xs(0, level='level')['linear_cond']
+                if linear.values[0]:
+                    label = 'Linear'
+                else:
+                    label = 'Non-Linear'
+                gen_embossed_text(
+                    lon+.2, lat+0.1, ax, label, transform=projection,
+                    fontsize=14, linewidth=2, zorder=5)
+
+            if params['label_splits']:
+                parent = list(
+                    tmp_tracks_uid.xs(0, level='level')['parent'].iloc[0])
+                label = ", ".join(parent)
+                gen_embossed_text(
+                    lon+.1, lat+0.15, ax, label, transform=projection,
+                    fontsize=12, linewidth=2, zorder=5)
 
         # Plot velocities
         lgd_vel = add_velocities(
-            ax, tracks, grid, uid, date_time, alt, params['system_winds'])
+            ax, tracks, grid, uid, date_time, alt, params['system_winds'],
+            excluded)
 
         # Plot stratiform offset
-        lgd_so = add_stratiform_offset(ax, tracks, grid, uid, date_time)
+        lgd_so = add_stratiform_offset(
+            ax, tracks, grid, uid, date_time, excluded)
 
-        lgd_ellipse = add_ellipses(ax, tracks, grid, uid, date_time, alt)
+        lgd_ellipse = add_ellipses(
+            ax, tracks, grid, uid, date_time, alt, excluded)
         # lgd_cell = add_cells(ax, tracks, grid, uid, date_time, alt)
+
+        if params['boundary']:
+            add_boundary(ax, tracks, grid)
 
         if tracks.params['RAIN']:
             add_rain()
@@ -146,26 +155,7 @@ def add_rain(ax, tracks, grid, uid, date_time):
         transform=projection, fontsize=9)
 
 
-def add_classification(ax, tracks, grid, uid, date_time, alt):
-    projparams = grid.get_projparams()
-    tmp_tracks, tmp_sys_tracks = reduce_tracks(tracks, uid, date_time, alt)
-    projection = ccrs.PlateCarree()
-    centroid = np.squeeze(tmp_tracks[['grid_x', 'grid_y']].values)
-    orientation = tmp_tracks['orientation_alt'].values[0]
-    tilt_dir = tmp_tracks['sys_rel_tilt_dir'].values[0]
-
-    lon, lat = cartesian_to_geographic(centroid[0], centroid[1], projparams)
-
-    label = 'hi'
-
-    ax.text(
-        lon+.1, lat-0.1, label, transform=projection, fontsize=12,
-        zorder=5, fontweight='bold', color='w',
-        path_effects=[
-            pe.Stroke(linewidth=2, foreground='k'), pe.Normal()])
-
-
-def add_ellipses(ax, tracks, grid, uid, date_time, alt):
+def add_ellipses(ax, tracks, grid, uid, date_time, alt, excluded=False):
 
     projparams = grid.get_projparams()
     tmp_tracks = reduce_tracks(tracks, uid, date_time, alt)[0]
@@ -192,7 +182,8 @@ def add_ellipses(ax, tracks, grid, uid, date_time, alt):
 
     ell.set_clip_box(ax.bbox)
     # ell.set_alpha(0.4)
-    ax.add_artist(ell)
+    if not excluded:
+        ax.add_artist(ell)
     return lgd_ellipse
 
 
@@ -230,29 +221,34 @@ def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
     return lgd_cell
 
 
-def add_boundary(ax, tracks, grid, projparams):
+def add_boundary(ax, tracks, grid):
+    projparams = grid.get_projparams()
     b_list = list(tracks.params['BOUNDARY_GRID_CELLS'])
     boundary = np.zeros((117, 117)) * np.nan
     for i in range(len(b_list)):
-        boundary[b_list[i][0], b_list[i][1]] = 1
+        boundary[b_list[i][0], b_list[i][1]] = .75
     x_bounds = grid.x['data'][[0, -1]]
     y_bounds = grid.y['data'][[0, -1]]
     lon_b, lat_b = cartesian_to_geographic(x_bounds, y_bounds, projparams)
-    ax.imshow(boundary, extent=(lon_b[0], lon_b[1], lat_b[0], lat_b[1]))
+    ax.imshow(
+        boundary, extent=(lon_b[0], lon_b[1], lat_b[0], lat_b[1]), cmap='gray',
+        vmin=0, vmax=1)
 
     return ax
 
 
-def add_stratiform_offset(ax, tracks, grid, uid, date_time):
+def add_stratiform_offset(ax, tracks, grid, uid, date_time, excluded):
     tmp_tracks = tracks.tracks.xs((date_time, uid), level=('time', 'uid'))
     lon_low = tmp_tracks.xs(0, level='level')['lon'].iloc[0]
     lat_low = tmp_tracks.xs(0, level='level')['lat'].iloc[0]
     num_levels = len(tracks.params['LEVELS'])
     lon_high = tmp_tracks.xs(num_levels-1, level='level')['lon'].iloc[0]
     lat_high = tmp_tracks.xs(num_levels-1, level='level')['lat'].iloc[0]
-    ax.plot(
-        [lon_low, lon_high], [lat_low, lat_high], '-w', linewidth=2, zorder=4,
-        path_effects=[pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
+    if not excluded:
+        ax.plot(
+            [lon_low, lon_high], [lat_low, lat_high], '-w', linewidth=2,
+            zorder=4, path_effects=[
+                pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
     lgd_so = mlines.Line2D(
         [], [], color='w', linestyle='-', linewidth=2,
         label='Stratiform Offset',
@@ -261,7 +257,7 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time):
 
 
 def add_velocities(
-        ax, tracks, grid, uid, date_time, alt, system_winds):
+        ax, tracks, grid, uid, date_time, alt, system_winds, excluded):
 
     level_test = [
         alt >= lvl[0] and alt < lvl[1] for lvl in tracks.params['LEVELS']]
@@ -308,12 +304,13 @@ def add_velocities(
         v = tmp_tracks['v_' + wind].iloc[0]
         [new_lon, new_lat] = cartesian_to_geographic(
             x + 4 * u * dt, y + 4 * v * dt, projparams)
-        q_hdl = ax.arrow(
-            lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=4,
-            head_width=0.016, head_length=0.024, length_includes_head=True,
-            path_effects=[
-                pe.Stroke(linewidth=6, foreground=colour_dic[wind]),
-                pe.Normal()])
+        if not excluded:
+            q_hdl = ax.arrow(
+                lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=4,
+                head_width=0.016, head_length=0.024, length_includes_head=True,
+                path_effects=[
+                    pe.Stroke(linewidth=6, foreground=colour_dic[wind]),
+                    pe.Normal()])
         lgd_line = mlines.Line2D(
             [], [], color='w', linestyle='-', label=label_dic[wind],
             linewidth=2, path_effects=[

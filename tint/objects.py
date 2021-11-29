@@ -458,8 +458,9 @@ def smooth(group_df, r=3, n=2):
 
 
 def fill_end(group_df):
-    group_df['u_shift'].iloc[-1] = group_df['u_shift'].iloc[-1]
-    group_df['v_shift'].iloc[-1] = group_df['v_shift'].iloc[-1]
+    if len(group_df['u_shift']) > 1:
+        group_df['u_shift'].iloc[-1] = group_df['u_shift'].iloc[-2]
+        group_df['v_shift'].iloc[-1] = group_df['v_shift'].iloc[-2]
     return group_df
 
 
@@ -479,7 +480,7 @@ def post_tracks(tracks_obj):
     tmp_tracks = tmp_tracks.groupby(
         level=['uid', 'level'], as_index=False, group_keys=False)
     tracks_obj.tracks[['u_shift', 'v_shift']] = tmp_tracks.apply(
-        lambda x: smooth(x))
+        lambda x: fill_end(x))
 
     # Smooth u_shift, v_shift
     tmp_tracks = tracks_obj.tracks[['u_shift', 'v_shift']]
@@ -570,6 +571,8 @@ def get_exclusion_categories(tracks_obj):
         tracks_obj.system_tracks['proj_area']
         > excl_thresh['LARGE_AREA']).values
     tracks_obj.exclusions['large_area'] = np.repeat(large_area, n_lvls)
+
+    import pdb; pdb.set_trace()
 
     int_border = (
         tracks_obj.system_tracks['touch_border'] * cell_area

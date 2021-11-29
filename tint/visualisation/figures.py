@@ -25,6 +25,10 @@ def init_fonts(user_params):
 
 def check_params(user_params):
 
+    exclusions = [
+        'small_area', 'large_area', 'intersect_border',
+        'intersect_border_convective', 'small_velocity',
+        'small_rel_velocity', 'small_offset']
     params = {
         'uid_ind': None, 'cell_ind': None, 'box_rad': 0.75,
         'line_coords': False, 'center_cell': False, 'label_splits': False,
@@ -34,7 +38,8 @@ def check_params(user_params):
         'relative_winds': False, 'data_fn': None,
         'load_line_coords_winds': None, 'save_ds': False, 'alt': 3000,
         'fontsize': 20, 'leg_loc': 2, 'system_winds': ['shift'],
-        'label_mergers': False, 'screen': True, 'label_type': True}
+        'label_mergers': False, 'screen': True, 'label_type': True,
+        'exclusions': exclusions, 'boundary': True}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
