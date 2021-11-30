@@ -65,7 +65,7 @@ class Tracks(object):
             'AMBIENT_BASE_DIR': None,  # str or None
             # Classification thresholds
             'CLASS_THRESH': {
-                'OFFSET_MAG': 10000,  # metres
+                'OFFSET_MAG': 5000,  # metres
                 'SHEAR_MAG': 1,  # m/s
                 'VEL_MAG': 1,  # m/s
                 'REL_VEL_MAG': 1,  # m/s

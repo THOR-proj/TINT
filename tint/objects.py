@@ -431,7 +431,7 @@ def write_tracks(old_tracks, record, current_objects, obj_props):
         'time': np.datetime64(record.time).astype('<M8[m]')}
     da_dic.update(obj_props)
     new_tracks = pd.DataFrame(da_dic)
-    new_tracks.set_index(['scan', 'time', 'level', 'uid'], inplace=True)
+    new_tracks.set_index(['scan', 'time', 'uid', 'level'], inplace=True)
     new_tracks.sort_index(inplace=True)
     tracks = old_tracks.append(new_tracks)
     return tracks
@@ -552,6 +552,10 @@ def classify_tracks(tracks_obj):
 
 def get_exclusion_categories(tracks_obj):
 
+    #  Ensure multiindex ordered correctly
+    tracks_obj.tracks.reset_index(inplace=True)
+    tracks_obj.tracks.set_index(['scan', 'time', 'uid', 'level'], inplace=True)
+
     class_thresh = tracks_obj.params['CLASS_THRESH']
     excl_thresh = tracks_obj.params['EXCL_THRESH']
     n_lvls = len(tracks_obj.params['LEVELS'])
@@ -571,8 +575,6 @@ def get_exclusion_categories(tracks_obj):
         tracks_obj.system_tracks['proj_area']
         > excl_thresh['LARGE_AREA']).values
     tracks_obj.exclusions['large_area'] = np.repeat(large_area, n_lvls)
-
-    import pdb; pdb.set_trace()
 
     int_border = (
         tracks_obj.system_tracks['touch_border'] * cell_area
@@ -661,16 +663,32 @@ def calc_inflow_type(tracks_obj):
     rel_velocity_mag = np.sqrt(
         tracks_obj.tracks['u_relative'] ** 2
         + tracks_obj.tracks['v_relative'] ** 2)
-    inflow_cond = (
-        tracks_obj.tracks['u_shift'] * tracks_obj.tracks['u_relative']
-        + tracks_obj.tracks['v_shift'] * tracks_obj.tracks['v_relative'])
+
+    # Calculate vertical displacement direction.
+    vel_dir = np.arctan2(
+        tracks_obj.tracks['v_shift'], tracks_obj.tracks['u_shift'])
+    vel_dir = np.rad2deg(vel_dir)
+    vel_dir = vel_dir.rename('vel_dir')
+
+    rel_vel_dir = np.arctan2(
+        tracks_obj.tracks['v_relative'], tracks_obj.tracks['u_relative'])
+    rel_vel_dir = rel_vel_dir.rename('rel_vel_dir')
+    rel_vel_dir = np.rad2deg(rel_vel_dir)
+
+    inflow_dir = np.mod(vel_dir - rel_vel_dir + 180, 360) - 180
+    inflow_dir = inflow_dir.rename('inflow_dir')
+
+    # import pdb; pdb.set_trace()
+
     inflow_type = np.array(
-        ['Front Fed' for i in range(len(inflow_cond))],
+        ['Front Fed' for i in range(len(inflow_dir))],
         dtype=object)
-    inflow_type[inflow_cond < 0] = 'Rear Fed'
-    parallel_inflow = np.abs(
-        inflow_cond / (velocity_mag * rel_velocity_mag)) < 1 / np.sqrt(2)
-    inflow_type[parallel_inflow] = 'Ambiguous (Parallel Inflow)'
+    inflow_type[np.logical_or(
+        inflow_dir > 135, inflow_dir < -135)] = 'Rear Fed'
+    inflow_type[np.logical_and(
+        inflow_dir > 45, inflow_dir < 135)] = 'Parallel Fed (Right)'
+    inflow_type[np.logical_and(
+        inflow_dir < -45, inflow_dir > -135)] = 'Parallel Fed (Left)'
     cond = velocity_mag < thresholds['VEL_MAG']
     inflow_type[cond] = 'Ambiguous (Low Velocity)'
     cond = rel_velocity_mag < thresholds['REL_VEL_MAG']
@@ -745,12 +763,27 @@ def calc_tilt_type(tracks_obj):
 def calc_stratiform_type(tracks_obj):
 
     # Stratiform offset vector
+    x_offset = tracks_obj.system_tracks['x_vert_disp']
+    y_offset = tracks_obj.system_tracks['y_vert_disp']
+
+    offset_mag = np.sqrt(x_offset ** 2 + y_offset ** 2)
+    n_lvl = len(tracks_obj.params['LEVELS'])
+    offset_mag = np.repeat(offset_mag.values, n_lvl)
+
+    u_shift = tracks_obj.tracks['u_shift']
+    v_shift = tracks_obj.tracks['v_shift']
+
+    vel_mag = np.sqrt(u_shift ** 2 + v_shift ** 2)
+
+    # Stratiform offset vector
     thresholds = tracks_obj.params['CLASS_THRESH']
     n_lvls = len(tracks_obj.params['LEVELS'])
     theta_e = thresholds['ANGLE_BUFFER']
     rel_tilt_dir = tracks_obj.system_tracks['sys_rel_tilt_dir']
-    offset_type = np.array(
-        ['Ambiguous' for i in range(len(rel_tilt_dir))], dtype=object)
+    rel_tilt_dir = np.repeat(rel_tilt_dir, n_lvls)
+    offset_type = np.array([
+        'Ambiguous (On Quadrant Boundary)'
+        for i in range(len(rel_tilt_dir))], dtype=object)
     cond = (-45 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= 45 - theta_e)
     offset_type[cond] = 'Leading Stratiform'
     cond = (-135 - theta_e >= rel_tilt_dir) | (rel_tilt_dir >= 135 + theta_e)
@@ -759,8 +792,12 @@ def calc_stratiform_type(tracks_obj):
     offset_type[cond] = 'Parallel Stratiform (Left)'
     cond = (-135 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= -45 - theta_e)
     offset_type[cond] = 'Parallel Stratiform (Right)'
-    tracks_obj.tracks_class['offset_type'] = np.repeat(
-        offset_type, n_lvls)
+    cond = offset_mag < tracks_obj.params['CLASS_THRESH']['OFFSET_MAG']
+    offset_type[cond] = 'Ambiguous (Small Stratiform Offset)'
+    cond = vel_mag < tracks_obj.params['CLASS_THRESH']['VEL_MAG']
+    offset_type[cond] = 'Ambiguous (Small Velocity)'
+
+    tracks_obj.tracks_class['offset_type'] = offset_type
 
     return tracks_obj
 

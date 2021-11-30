@@ -29,6 +29,26 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
     else:
         uids = [params['uid_ind']]
     lgd_han = []
+
+    label_dic = {
+        'Front Fed': 'FF', 'Rear Fed': 'RF', 'Parallel Fed (Right)': 'RiF',
+        'Parallel Fed (Left)': 'LeF',
+        'Ambiguous (Low Velocity)': 'A(LV)',
+        'Ambiguous (Low Relative Velocity)': 'A(LRV)',
+        'Down-Shear Propagating': 'DSP',
+        'Up-Shear Propagating': 'USP',
+        'Ambiguous (Low Shear)': 'A(LS)',
+        'Ambiguous (Low Relative Velocity)': 'A(LRV)',
+        'Down-Shear Tilted': 'DST', 'Up-Shear Tilted': 'UST',
+        'Ambiguous (Shear Parallel to Stratiform Offset)': 'A(SP)',
+        'Ambiguous (Small Stratiform Offset)': 'A(SO)',
+        'Ambiguous (Small Shear)': 'A(SS)',
+        'Leading Stratiform': 'LS', 'Trailing Stratiform': 'TS',
+        'Parallel Stratiform (Left)': 'LeS',
+        'Parallel Stratiform (Right)': 'RiS',
+        'Ambiguous (Small Stratiform Offset)': 'A(SO)',
+        'Ambiguous (Small Velocity)': 'A(SV)'}
+
     for uid in uids:
         tmp_tracks_uid = tmp_tracks.xs(uid, level='uid')
         tmp_class_uid = tmp_class.xs(uid, level='uid')
@@ -55,24 +75,23 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     fontsize=16, linewidth=2, zorder=5)
 
             if params['label_type']:
-                label_1 = tmp_class_uid.xs(
-                    0, level='level')['offset_type'].values[0]
-                label_2 = tmp_class_uid.xs(
-                    0, level='level')['inflow_type'].values[0]
+                label_1 = label_dic[tmp_class_uid.xs(
+                    0, level='level')['offset_type'].values[0]]
+                label_2 = label_dic[tmp_class_uid.xs(
+                    0, level='level')['inflow_type'].values[0]]
                 gen_embossed_text(
-                    lon+.2, lat-0.1, ax, label_1, transform=projection,
+                    lon+.1, lat-0.1, ax, label_1, transform=projection,
                     fontsize=14, linewidth=2, zorder=5)
                 gen_embossed_text(
-                    lon+.2, lat, ax, label_2, transform=projection,
+                    lon+.1, lat, ax, label_2, transform=projection,
                     fontsize=14, linewidth=2, zorder=5)
-                # import pdb; pdb.set_trace()
                 linear = tmp_excl_uid.xs(0, level='level')['linear_cond']
                 if linear.values[0]:
-                    label = 'Linear'
+                    label = 'L'
                 else:
-                    label = 'Non-Linear'
+                    label = 'NL'
                 gen_embossed_text(
-                    lon+.2, lat+0.1, ax, label, transform=projection,
+                    lon+.1, lat+0.1, ax, label, transform=projection,
                     fontsize=14, linewidth=2, zorder=5)
 
             if params['label_splits']:
