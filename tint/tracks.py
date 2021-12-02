@@ -63,20 +63,22 @@ class Tracks(object):
             'AMBIENT': None,  # None, 'WRF' or 'ERA5'
             # ERA5 base directory
             'AMBIENT_BASE_DIR': None,  # str or None
+            # Time interval between radar scans
+            'DT': 10,  # minutes
             # Classification thresholds
             'CLASS_THRESH': {
-                'OFFSET_MAG': 5000,  # metres
-                'SHEAR_MAG': 1,  # m/s
-                'VEL_MAG': 1,  # m/s
-                'REL_VEL_MAG': 1,  # m/s
-                'ANGLE_BUFFER': np.pi*10/180},  # radians
+                'OFFSET_MAG': 10000,  # metres
+                'SHEAR_MAG': 2,  # m/s
+                'VEL_MAG': 2,  # m/s
+                'REL_VEL_MAG': 2,  # m/s
+                'ANGLE_BUFFER': 10},  # radians
             'EXCL_THRESH': {
                 'SMALL_AREA': 500,  # km^2
                 'LARGE_AREA': 50000,  # km^2
-                'BORD_THRESH': 0.01,  # Ratio border pixels to total pixels
+                'BORD_THRESH': 0.005,  # Ratio border pixels to total pixels
                 'MAJOR_AXIS_LENGTH': 100,  # km
-                'AXIS_RATIO': 3
-                }
+                'AXIS_RATIO': 3,
+                'DURATION': 30}  # minutes
             }
 
         # Load user specified parameters.

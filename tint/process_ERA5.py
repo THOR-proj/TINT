@@ -101,7 +101,7 @@ def init_ERA5(grid, params):
     grid_datetime = np.datetime64(grid_datetime.replace(second=0))
     print('Getting ERA5 metadata.')
     ERA5_all = get_ERA5_ds(
-        grid_datetime, grid_datetime,
+        grid_datetime, grid_datetime+np.timedelta64(1, 'h'),
         base_dir=params['AMBIENT_BASE_DIR'])
     print('Getting Intepolated ERA5 for next hour.')
     ERA5_interp = interp_ERA_ds(
@@ -118,7 +118,8 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp):
     if not (grid_datetime >= t_min and grid_datetime <= t_max):
         print('Getting ERA5 metadata.')
         ERA5_all = get_ERA5_ds(
-            grid_datetime, grid_datetime, base_dir=params['AMBIENT_BASE_DIR'])
+            grid_datetime, grid_datetime+np.timedelta64(1, 'h'),
+            base_dir=params['AMBIENT_BASE_DIR'])
     if grid_datetime not in ERA5_interp.time.values:
         print('Getting Intepolated ERA5 for the next hour.')
         ERA5_interp = interp_ERA_ds(

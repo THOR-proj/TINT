@@ -550,6 +550,60 @@ def classify_tracks(tracks_obj):
     return tracks_obj
 
 
+def count_consecutive(integers):
+    counts = []
+    count = 0
+    for i in range(len(integers) - 1):
+        # Check if the next number is consecutive
+        if integers[i] + 1 == integers[i+1]:
+            count += 1
+        else:
+            # If it is not append the count and restart counting
+            counts.append(count)
+            count = 1
+    # Since we stopped the loop one early append the last count
+    counts.append(count)
+    return max(counts)
+
+
+def temporal_continuity_check(
+        group_df, length=np.timedelta64(30, 'm'),
+        dt=np.timedelta64(10, 'm')):
+    scans = group_df.index.get_level_values(0).values
+    cts_scans = count_consecutive(scans)
+    return cts_scans * dt < length
+
+
+def get_duration_cond(tracks_obj):
+    exclusions = [
+        'small_area', 'large_area', 'intersect_border',
+        'intersect_border_convective']
+
+    excluded = tracks_obj.exclusions[exclusions]
+    excluded = excluded.xs(0, level='level')
+    excluded = np.any(excluded, 1)
+
+    included = np.logical_not(excluded)
+    included = included.where(included == True).dropna()
+
+    duration = np.timedelta64(tracks_obj.params['EXCL_THRESH']['DURATION'])
+    dt = np.timedelta64(tracks_obj.params['DT'])
+
+    duration_checks = included.groupby(level='uid').apply(
+        lambda g: temporal_continuity_check(g, length=duration, dt=dt))
+    uids = duration_checks.reset_index()['uid'].values
+
+    tracks_obj.exclusions['short_system'] = [
+        True for i in range(len(tracks_obj.exclusions))]
+
+    for uid in uids:
+        tracks_obj.exclusions.loc[
+            (slice(None), slice(None), uid, slice(None)),
+            'duration_cond'] = duration_checks.loc[uid]
+
+    return tracks_obj
+
+
 def get_exclusion_categories(tracks_obj):
 
     #  Ensure multiindex ordered correctly
@@ -614,11 +668,14 @@ def get_exclusion_categories(tracks_obj):
 
     semi_major = tracks_obj.tracks.xs(0, level='level')['semi_major']
     semi_minor = tracks_obj.tracks.xs(0, level='level')['semi_minor']
-    length_cond = semi_major * grid_size[1] > excl_thresh['MAJOR_AXIS_LENGTH']
+    semi_major_km = semi_major * grid_size[1] / 1000
+    length_cond = semi_major_km > excl_thresh['MAJOR_AXIS_LENGTH']
     ratio_cond = semi_major / semi_minor > excl_thresh['AXIS_RATIO']
     linear_cond = np.logical_and(length_cond, ratio_cond).values
     linear_cond = np.repeat(linear_cond, n_lvls)
     tracks_obj.exclusions['linear_cond'] = linear_cond
+
+    tracks_obj = get_duration_cond(tracks_obj)
 
     return tracks_obj
 

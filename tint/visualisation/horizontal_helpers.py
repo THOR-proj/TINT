@@ -47,7 +47,8 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         'Parallel Stratiform (Left)': 'LeS',
         'Parallel Stratiform (Right)': 'RiS',
         'Ambiguous (Small Stratiform Offset)': 'A(SO)',
-        'Ambiguous (Small Velocity)': 'A(SV)'}
+        'Ambiguous (Small Velocity)': 'A(SV)',
+        'Ambiguous (On Quadrant Boundary)': 'A(QB)'}
 
     for uid in uids:
         tmp_tracks_uid = tmp_tracks.xs(uid, level='uid')
@@ -63,7 +64,7 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
             lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
 
             gen_embossed_text(
-                lon-.1, lat+0.1, ax, uid, transform=projection, fontsize=16,
+                lon-.2, lat+0.1, ax, uid, transform=projection, fontsize=16,
                 linewidth=3, zorder=5)
 
             if params['label_mergers']:
