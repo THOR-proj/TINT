@@ -107,7 +107,7 @@ def add_crosshair(
 
 
 def init_cross_section(
-        tracks, grid, params, alt, fig, ax, date_time, figsize=(16, 16)):
+        tracks, grid, params, alt, fig, ax, date_time, figsize=(12, 12)):
     params = check_params(params)
 
     if alt is None:
@@ -143,7 +143,7 @@ def horizontal_cross_section(
         tracks, grid, params={}, alt=None, fig=None, ax=None, date_time=None):
 
     init_cs = init_cross_section(
-        tracks, grid, params, alt, fig, ax, date_time, figsize=(10, 7))
+        tracks, grid, params, alt, fig, ax, date_time, figsize=(8, 6))
     [
         params, alt, fig, ax, date_time, display, alt_ind, cmap,
         vmin, vmax, projection] = init_cs
@@ -283,7 +283,9 @@ def vertical_cross_section(
         lgd_han.append(lgd_cell)
 
     if params['legend']:
-        legend = plt.legend(handles=lgd_han, loc=2)
+        legend = plt.legend(
+            handles=lgd_han, loc='lower center', bbox_to_anchor=(0.5, -0.5),
+            ncol=2, fancybox=True, shadow=True)
         legend.get_frame().set_alpha(None)
         legend.get_frame().set_facecolor((1, 1, 1, 1))
 
@@ -298,7 +300,7 @@ def vertical_cross_section(
     ax.set_yticklabels(
         np.round((np.arange(0, 24, 4))))
     ax.set_ylabel('Distance Above Origin [km]')
-    ax.set_title(t_string)
+    # ax.set_title(t_string)
     ax.set_aspect(2)
 
     # Save frame and cleanup
@@ -419,7 +421,7 @@ def object(tracks, grid, params, date_time=None, alt=None):
     if date_time is None:
         date_time = grid_time
 
-    init_fonts()
+    init_fonts(params)
     projection = ccrs.PlateCarree()
 
     print('Generating figure for {}.'.format(str(date_time)))
@@ -539,16 +541,17 @@ def get_angle_props(angles, tracks_obj):
 def angle_correlation(
         sl_angles, so_angles, cond, save_path, fig=None, ax=None):
 
+    params = {'fontsize': 12}
     if fig is None:
-        init_fonts()
-        fig = plt.figure(figsize=(6, 6))
+        init_fonts(params)
+        fig = plt.figure(figsize=(5, 5))
     if ax is None:
         ax = fig.add_subplot(1, 1, 1)
 
     ax.plot([90, 90], [0, 180], '--', color='gray')
     ax.plot([0, 180], [90, 90], '--', color='gray')
     ax.scatter(sl_angles[~cond], so_angles[~cond], marker='x', color='gray')
-    ax.scatter(sl_angles[cond], so_angles[cond], marker='.', color='r')
+    ax.scatter(sl_angles[cond], so_angles[cond], marker='o', color='r')
 
     ax.set_xlim(0, 180)
     ax.set_xticks(np.arange(0, 200, 20))
@@ -558,7 +561,7 @@ def angle_correlation(
     ax.set_yticks(np.arange(0, 200, 20))
     ax.set_yticklabels(np.arange(0, 200, 20).astype(int))
     ax.set_ylabel('Stratiform Offset Angle [Degrees]')
-    ax.set_title('Correlation between Stratiform Offset and Streamlines')
+    # ax.set_title('Correlation between Stratiform Offset and Streamlines')
     ax.set_aspect(1)
 
     save_dir = '/home/student.unimelb.edu.au/shorte1/Documents/'

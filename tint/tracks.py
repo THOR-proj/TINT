@@ -39,7 +39,7 @@ class Tracks(object):
             # Gaussian smoothing parameter used in peak detection.
             'ISO_SMOOTH': 3,  # pixels
             # Altitude in m for calculating global shift.
-            'GS_ALT': 1500,  # m
+            'GS_ALT': 2000,  # m
             # Layers to identify objects within.
             'LEVELS': np.array(
                 [[500, 3500], [3500, 7500], [7500, 10000]]),  # m

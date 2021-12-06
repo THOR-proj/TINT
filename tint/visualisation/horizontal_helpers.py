@@ -73,19 +73,20 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                 label = ", ".join(mergers)
                 gen_embossed_text(
                     lon+.1, lat-0.1, ax, label, transform=projection,
-                    fontsize=16, linewidth=2, zorder=5)
+                    fontsize=18, linewidth=2, zorder=5)
 
             if params['label_type']:
                 label_1 = label_dic[tmp_class_uid.xs(
                     0, level='level')['offset_type'].values[0]]
                 label_2 = label_dic[tmp_class_uid.xs(
                     0, level='level')['inflow_type'].values[0]]
+                type_fontsize = 16
                 gen_embossed_text(
                     lon+.1, lat-0.1, ax, label_1, transform=projection,
-                    fontsize=14, linewidth=2, zorder=5)
+                    fontsize=type_fontsize, linewidth=2, zorder=5)
                 gen_embossed_text(
                     lon+.1, lat, ax, label_2, transform=projection,
-                    fontsize=14, linewidth=2, zorder=5)
+                    fontsize=type_fontsize, linewidth=2, zorder=5)
                 linear = tmp_excl_uid.xs(0, level='level')['linear_cond']
                 if linear.values[0]:
                     label = 'L'
@@ -93,7 +94,7 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     label = 'NL'
                 gen_embossed_text(
                     lon+.1, lat+0.1, ax, label, transform=projection,
-                    fontsize=14, linewidth=2, zorder=5)
+                    fontsize=type_fontsize, linewidth=2, zorder=5)
 
             if params['label_splits']:
                 parent = list(

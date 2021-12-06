@@ -207,6 +207,7 @@ def locate_all_objects(
 
     for obj_id1 in np.arange(nobj1) + 1:
         obj1_extent = get_obj_extent(data_dic['frame'], obj_id1)
+
         shift = get_ambient_flow(
             obj1_extent, data_dic['refl'], data_dic['refl_new'], params,
             record.grid_size)
