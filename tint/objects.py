@@ -577,7 +577,7 @@ def temporal_continuity_check(
 def get_duration_cond(tracks_obj):
     exclusions = [
         'small_area', 'large_area', 'intersect_border',
-        'intersect_border_convective']
+        'intersect_border_convective', 'small_velocity', 'small_offset']
 
     excluded = tracks_obj.exclusions[exclusions]
     excluded = excluded.xs(0, level='level')
@@ -593,7 +593,7 @@ def get_duration_cond(tracks_obj):
         lambda g: temporal_continuity_check(g, length=duration, dt=dt))
     uids = duration_checks.reset_index()['uid'].values
 
-    tracks_obj.exclusions['short_system'] = [
+    tracks_obj.exclusions['duration_cond'] = [
         True for i in range(len(tracks_obj.exclusions))]
 
     for uid in uids:

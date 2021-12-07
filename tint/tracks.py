@@ -71,7 +71,7 @@ class Tracks(object):
                 'SHEAR_MAG': 2,  # m/s
                 'VEL_MAG': 2,  # m/s
                 'REL_VEL_MAG': 2,  # m/s
-                'ANGLE_BUFFER': 10},  # radians
+                'ANGLE_BUFFER': 10},  # degrees
             'EXCL_THRESH': {
                 'SMALL_AREA': 500,  # km^2
                 'LARGE_AREA': 50000,  # km^2
