@@ -36,6 +36,8 @@ class Tracks(object):
             'MAX_DISPARITY': 999,  # float
             # Maximum magnitude of shift difference.
             'MAX_SHIFT_DISP': 60,  # metres per second.
+            # Maximum magnitude of shift difference.
+            'MAX_SHIFT_DISP_ALT': 25,  # metres per second.
             # Gaussian smoothing parameter used in peak detection.
             'ISO_SMOOTH': 3,  # pixels
             # Altitude in m for calculating global shift.

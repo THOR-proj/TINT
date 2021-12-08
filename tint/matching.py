@@ -36,13 +36,13 @@ def find_objects(search_box, image2):
     return obj_found
 
 
-def shifts_disagree(shift1, shift2, record, params):
+def shifts_disagree(shift1, shift2, record, thresh):
     """ Returns True if shift disparity greater than MAX_SHIFT_DISP
     parameter. """
     shift1 = shift1*record.grid_size[1:]
     shift2 = shift2*record.grid_size[1:]
     shift_disparity = euclidean_dist(shift1, shift2)
-    return shift_disparity/record.interval.seconds > params['MAX_SHIFT_DISP']
+    return shift_disparity/record.interval.seconds > thresh
 
 
 def clip_shift(shift, record, params):
@@ -84,15 +84,18 @@ def correct_shift(
             last_heads = None
 
     if last_heads is None:
-        if shifts_disagree(local_shift, global_shift, record, params):
+        if shifts_disagree(
+                local_shift, global_shift, record, params['MAX_SHIFT_DISP']):
             case = 0
             corrected_shift = global_shift
         else:
             case = 1
             corrected_shift = (local_shift + global_shift)/2
 
-    elif shifts_disagree(local_shift, last_heads, record, params):
-        if shifts_disagree(local_shift, global_shift, record, params):
+    elif shifts_disagree(
+            local_shift, last_heads, record, params['MAX_SHIFT_DISP']):
+        if shifts_disagree(
+                local_shift, global_shift, record, params['MAX_SHIFT_DISP']):
             case = 2
             corrected_shift = last_heads
         else:
@@ -102,7 +105,12 @@ def correct_shift(
     else:
         case = 4
         # corrected_shift = (local_shift + last_heads)/2
-        corrected_shift = local_shift
+        if shifts_disagree(
+                local_shift, global_shift,
+                record, params['MAX_SHIFT_DISP_ALT']):
+            corrected_shift = global_shift
+        else:
+            corrected_shift = local_shift
 
     corrected_shift = np.round(corrected_shift, 2)
 
