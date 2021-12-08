@@ -27,7 +27,8 @@ def check_params(user_params):
 
     exclusions = [
         'small_area', 'large_area', 'intersect_border',
-        'intersect_border_convective']
+        'intersect_border_convective', 'duration_cond',
+        'small_velocity', 'small_offset']
     params = {
         'uid_ind': None, 'cell_ind': None, 'box_rad': 0.75,
         'line_coords': False, 'center_cell': False, 'label_splits': False,

@@ -75,7 +75,7 @@ class Tracks(object):
             'EXCL_THRESH': {
                 'SMALL_AREA': 500,  # km^2
                 'LARGE_AREA': 50000,  # km^2
-                'BORD_THRESH': 0.005,  # Ratio border pixels to total pixels
+                'BORD_THRESH': 0.001,  # Ratio border pixels to total pixels
                 'MAJOR_AXIS_LENGTH': 100,  # km
                 'AXIS_RATIO': 3,
                 'DURATION': 30}  # minutes
