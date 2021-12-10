@@ -36,7 +36,7 @@ class Tracks(object):
             'MAX_DISPARITY': 999,  # float
             # Maximum magnitude of shift difference.
             'MAX_SHIFT_DISP': 60,  # metres per second.
-            # Maximum magnitude of shift difference.
+            # Maximum magnitude of shift difference alternative.
             'MAX_SHIFT_DISP_ALT': 25,  # metres per second.
             # Gaussian smoothing parameter used in peak detection.
             'ISO_SMOOTH': 3,  # pixels
@@ -71,7 +71,7 @@ class Tracks(object):
             'CLASS_THRESH': {
                 'OFFSET_MAG': 10000,  # metres
                 'SHEAR_MAG': 2,  # m/s
-                'VEL_MAG': 2,  # m/s
+                'VEL_MAG': 5,  # m/s
                 'REL_VEL_MAG': 2,  # m/s
                 'ANGLE_BUFFER': 10},  # degrees
             'EXCL_THRESH': {
