@@ -115,7 +115,9 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp):
     grid_datetime = np.datetime64(grid_datetime.replace(second=0))
     t_min = ERA5_all.time.values.min()
     t_max = ERA5_all.time.values.max()
-    if not (grid_datetime >= t_min and grid_datetime <= t_max):
+    if not (
+            grid_datetime >= t_min
+            and grid_datetime + np.timedelta64(1, 'h') <= t_max):
         print('Getting ERA5 metadata.')
         ERA5_all = get_ERA5_ds(
             grid_datetime, grid_datetime+np.timedelta64(1, 'h'),
