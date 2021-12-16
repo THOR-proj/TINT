@@ -813,7 +813,7 @@ def calc_tilt_type(tracks_obj):
     cond = shear_mag < thresholds['SHEAR_MAG']
     tilt_type[cond] = 'Ambiguous (Small Shear)'
     tracks_obj.tracks_class['tilt_type'] = tilt_type
-
+    # Confirm
     return tracks_obj
 
 
