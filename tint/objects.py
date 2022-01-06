@@ -546,6 +546,7 @@ def classify_tracks(tracks_obj):
     tracks_obj = calc_propagation_type(tracks_obj)
     tracks_obj = calc_tilt_type(tracks_obj)
     tracks_obj = calc_stratiform_type(tracks_obj)
+    tracks_obj = calc_relative_stratiform_type(tracks_obj)
 
     return tracks_obj
 
@@ -669,11 +670,11 @@ def get_exclusion_categories(tracks_obj):
     semi_major = tracks_obj.tracks.xs(0, level='level')['semi_major']
     semi_minor = tracks_obj.tracks.xs(0, level='level')['semi_minor']
     semi_major_km = semi_major * grid_size[1] / 1000
-    length_cond = semi_major_km > excl_thresh['MAJOR_AXIS_LENGTH']
-    ratio_cond = semi_major / semi_minor > excl_thresh['AXIS_RATIO']
-    linear_cond = np.logical_and(length_cond, ratio_cond).values
+    length_cond = semi_major_km < excl_thresh['MAJOR_AXIS_LENGTH']
+    ratio_cond = semi_major / semi_minor < excl_thresh['AXIS_RATIO']
+    linear_cond = np.logical_or(length_cond, ratio_cond).values
     linear_cond = np.repeat(linear_cond, n_lvls)
-    tracks_obj.exclusions['linear_cond'] = linear_cond
+    tracks_obj.exclusions['non_linear'] = linear_cond
 
     tracks_obj = get_duration_cond(tracks_obj)
 
@@ -859,6 +860,52 @@ def calc_stratiform_type(tracks_obj):
     return tracks_obj
 
 
+def calc_relative_stratiform_type(tracks_obj):
+    # Stratiform offset vector
+    x_offset = tracks_obj.system_tracks['x_vert_disp']
+    y_offset = tracks_obj.system_tracks['y_vert_disp']
+
+    offset_mag = np.sqrt(x_offset ** 2 + y_offset ** 2)
+    n_lvl = len(tracks_obj.params['LEVELS'])
+    offset_mag = np.repeat(offset_mag.values, n_lvl)
+
+    u_shift = tracks_obj.tracks['u_shift']
+    v_shift = tracks_obj.tracks['v_shift']
+    vel_mag = np.sqrt(u_shift ** 2 + v_shift ** 2)
+
+    u_relative = tracks_obj.tracks['u_relative']
+    v_relative = tracks_obj.tracks['v_relative']
+    rel_vel_mag = np.sqrt(u_relative ** 2 + v_relative ** 2)
+
+    # Stratiform offset vector
+    thresholds = tracks_obj.params['CLASS_THRESH']
+    n_lvls = len(tracks_obj.params['LEVELS'])
+    theta_e = thresholds['ANGLE_BUFFER']
+    rel_tilt_dir = tracks_obj.system_tracks['sys_rel_tilt_dir_alt']
+    rel_tilt_dir = np.repeat(rel_tilt_dir, n_lvls)
+    offset_type = np.array([
+        'Ambiguous (On Quadrant Boundary)'
+        for i in range(len(rel_tilt_dir))], dtype=object)
+    cond = (-45 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= 45 - theta_e)
+    offset_type[cond] = 'Relative Leading Stratiform'
+    cond = (-135 - theta_e >= rel_tilt_dir) | (rel_tilt_dir >= 135 + theta_e)
+    offset_type[cond] = 'Relative Trailing Stratiform'
+    cond = (45 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= 135 - theta_e)
+    offset_type[cond] = 'Relative Parallel Stratiform (Left)'
+    cond = (-135 + theta_e <= rel_tilt_dir) & (rel_tilt_dir <= -45 - theta_e)
+    offset_type[cond] = 'Relative Parallel Stratiform (Right)'
+    cond = offset_mag < tracks_obj.params['CLASS_THRESH']['OFFSET_MAG']
+    offset_type[cond] = 'Ambiguous (Small Stratiform Offset)'
+    cond = vel_mag < tracks_obj.params['CLASS_THRESH']['VEL_MAG']
+    offset_type[cond] = 'Ambiguous (Small Velocity)'
+    cond = rel_vel_mag < tracks_obj.params['CLASS_THRESH']['REL_VEL_MAG']
+    offset_type[cond] = 'Ambiguous (Small Velocity)'
+
+    tracks_obj.tracks_class['rel_offset_type'] = offset_type
+
+    return tracks_obj
+
+
 def get_system_tracks(tracks_obj):
     """ Calculate system tracks """
     print('Calculating system tracks.')
@@ -937,6 +984,12 @@ def get_system_tracks(tracks_obj):
     vel_dir = vel_dir.rename('vel_dir')
     vel_dir = np.round(vel_dir, 3)
 
+    rel_vel_dir = np.arctan2(
+        system_tracks['v_relative'], system_tracks['u_relative'])
+    rel_vel_dir = np.rad2deg(rel_vel_dir)
+    rel_vel_dir = vel_dir.rename('rel_vel_dir')
+    rel_vel_dir = np.round(rel_vel_dir, 3)
+
     tilt_dir = np.arctan2(
         system_tracks['y_vert_disp'], system_tracks['x_vert_disp'])
     tilt_dir = tilt_dir.rename('tilt_dir')
@@ -947,7 +1000,11 @@ def get_system_tracks(tracks_obj):
     sys_rel_tilt_dir = sys_rel_tilt_dir.rename('sys_rel_tilt_dir')
     sys_rel_tilt_dir = np.round(sys_rel_tilt_dir, 3)
 
-    for var in [vel_dir, tilt_dir, sys_rel_tilt_dir]:
+    sys_rel_tilt_dir_alt = np.mod(tilt_dir - rel_vel_dir + 180, 360) - 180
+    sys_rel_tilt_dir_alt = sys_rel_tilt_dir_alt.rename('sys_rel_tilt_dir_alt')
+    sys_rel_tilt_dir_alt = np.round(sys_rel_tilt_dir_alt, 3)
+
+    for var in [vel_dir, tilt_dir, sys_rel_tilt_dir, sys_rel_tilt_dir_alt]:
         system_tracks = system_tracks.merge(
             var, left_index=True, right_index=True)
 

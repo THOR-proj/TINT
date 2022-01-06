@@ -87,11 +87,11 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                 gen_embossed_text(
                     lon+.1, lat, ax, label_2, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
-                linear = tmp_excl_uid.xs(0, level='level')['linear_cond']
-                if linear.values[0]:
-                    label = 'L'
-                else:
+                non_linear = tmp_excl_uid.xs(0, level='level')['non_linear']
+                if non_linear.values[0]:
                     label = 'NL'
+                else:
+                    label = 'L'
                 gen_embossed_text(
                     lon+.1, lat+0.1, ax, label, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
