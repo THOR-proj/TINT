@@ -38,7 +38,7 @@ def check_params(user_params):
         'relative_winds': False, 'data_fn': None,
         'load_line_coords_winds': None, 'save_ds': False, 'alt': 3000,
         'fontsize': 20, 'leg_loc': 2, 'system_winds': ['shift'],
-        'label_mergers': False, 'screen': True, 'label_type': True,
+        'label_mergers': False, 'screen': True, 'label_type': 'velocities',
         'exclusions': exclusions, 'boundary': True}
     for p in user_params:
         if p in params:

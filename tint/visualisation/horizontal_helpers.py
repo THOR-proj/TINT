@@ -33,6 +33,10 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
     label_dic = {
         'Front Fed': 'FF', 'Rear Fed': 'RF', 'Parallel Fed (Right)': 'RiF',
         'Parallel Fed (Left)': 'LeF',
+        'Relative Trailing Stratiform': 'RTS',
+        'Relative Leading Stratiform': 'RLS',
+        'Relative Parallel Stratiform (Left)': 'RLeS',
+        'Relative Parallel Stratiform (Right)': 'RRiS',
         'Ambiguous (Low Velocity)': 'A(LV)',
         'Ambiguous (Low Relative Velocity)': 'A(LRV)',
         'Down-Shear Propagating': 'DSP',
@@ -40,7 +44,7 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         'Ambiguous (Low Shear)': 'A(LS)',
         'Ambiguous (Low Relative Velocity)': 'A(LRV)',
         'Down-Shear Tilted': 'DST', 'Up-Shear Tilted': 'UST',
-        'Ambiguous (Shear Parallel to Stratiform Offset)': 'A(SP)',
+        'Ambiguous (Perpendicular Shear)': 'A(SP)',
         'Ambiguous (Small Stratiform Offset)': 'A(SO)',
         'Ambiguous (Small Shear)': 'A(SS)',
         'Leading Stratiform': 'LS', 'Trailing Stratiform': 'TS',
@@ -75,11 +79,13 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     lon+.1, lat-0.1, ax, label, transform=projection,
                     fontsize=18, linewidth=2, zorder=5)
 
-            if params['label_type']:
+            if params['label_type'] == 'velocities':
                 label_1 = label_dic[tmp_class_uid.xs(
                     0, level='level')['offset_type'].values[0]]
                 label_2 = label_dic[tmp_class_uid.xs(
                     0, level='level')['inflow_type'].values[0]]
+                label_3 = label_dic[tmp_class_uid.xs(
+                    0, level='level')['rel_offset_type'].values[0]]
                 type_fontsize = 16
                 gen_embossed_text(
                     lon+.1, lat-0.1, ax, label_1, transform=projection,
@@ -87,14 +93,29 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                 gen_embossed_text(
                     lon+.1, lat, ax, label_2, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
-                non_linear = tmp_excl_uid.xs(0, level='level')['non_linear']
-                if non_linear.values[0]:
-                    label = 'NL'
-                else:
-                    label = 'L'
                 gen_embossed_text(
-                    lon+.1, lat+0.1, ax, label, transform=projection,
+                    lon+.1, lat-0.2, ax, label_3, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
+            elif params['label_type'] == 'shear':
+                label_1 = label_dic[tmp_class_uid.xs(
+                    0, level='level')['propagation_type'].values[0]]
+                label_2 = label_dic[tmp_class_uid.xs(
+                    0, level='level')['tilt_type'].values[0]]
+                type_fontsize = 16
+                gen_embossed_text(
+                    lon+.1, lat-0.1, ax, label_1, transform=projection,
+                    fontsize=type_fontsize, linewidth=2, zorder=5)
+                gen_embossed_text(
+                    lon+.1, lat, ax, label_2, transform=projection,
+                    fontsize=type_fontsize, linewidth=2, zorder=5)
+            non_linear = tmp_excl_uid.xs(0, level='level')['non_linear']
+            if non_linear.values[0]:
+                label = 'NL'
+            else:
+                label = 'L'
+            gen_embossed_text(
+                lon+.1, lat+0.1, ax, label, transform=projection,
+                fontsize=type_fontsize, linewidth=2, zorder=5)
 
             if params['label_splits']:
                 parent = list(

@@ -773,7 +773,7 @@ def calc_propagation_type(tracks_obj):
     propagation_type[propagation_cond < 0] = 'Up-Shear Propagating'
     parallel_shear = np.abs(
         propagation_cond / (shear_mag * rel_velocity_mag)) < 1 / np.sqrt(2)
-    propagation_type[parallel_shear] = 'Ambiguous (Parallel Shear)'
+    propagation_type[parallel_shear] = 'Ambiguous (Perpendicular Shear)'
     cond = shear_mag < thresholds['SHEAR_MAG']
     propagation_type[cond] = 'Ambiguous (Low Shear)'
     cond = rel_velocity_mag < thresholds['REL_VEL_MAG']
@@ -785,8 +785,6 @@ def calc_propagation_type(tracks_obj):
 
 def calc_tilt_type(tracks_obj):
 
-    thresholds = tracks_obj.params['CLASS_THRESH']
-
     # Stratiform offset vector
     x_offset = tracks_obj.system_tracks['x_vert_disp']
     y_offset = tracks_obj.system_tracks['y_vert_disp']
@@ -797,24 +795,31 @@ def calc_tilt_type(tracks_obj):
 
     u_shear = tracks_obj.tracks['u_shear']
     v_shear = tracks_obj.tracks['v_shear']
-
     shear_mag = np.sqrt(u_shear ** 2 + v_shear ** 2)
 
-    tilt_cond = (x_offset * u_shear + y_offset * v_shear)
+    tilt_dir = tracks_obj.system_tracks['shear_rel_tilt_dir']
+    tilt_dir = np.repeat(tilt_dir.values, n_lvl)
 
-    tilt_type = np.array(
-        ['Down-Shear Tilted' for i in range(len(tilt_cond))], dtype=object)
-    tilt_type[tilt_cond < 0] = 'Up-Shear Tilted'
-    parallel_inflow = np.abs(
-        tilt_cond / (offset_mag * shear_mag)) < 1 / np.sqrt(2)
-    msg = 'Ambiguous (Shear Parallel to Stratiform Offset)'
-    tilt_type[parallel_inflow] = msg
-    cond = offset_mag < thresholds['OFFSET_MAG']
+    theta_e = theta_e = tracks_obj.params['CLASS_THRESH']['ANGLE_BUFFER']
+
+    tilt_type = np.array([
+        'Ambiguous (On Quadrant Boundary)'
+        for i in range(len(tilt_dir))], dtype=object)
+    cond = (-45 + theta_e <= tilt_dir) & (tilt_dir <= 45 - theta_e)
+    tilt_type[cond] = 'Down-Shear Tilted'
+    cond = (-135 - theta_e >= tilt_dir) | (tilt_dir >= 135 + theta_e)
+    tilt_type[cond] = 'Up-Shear Tilted'
+    cond = (45 + theta_e <= tilt_dir) & (tilt_dir <= 135 - theta_e)
+    tilt_type[cond] = 'Ambiguous (Perpendicular Shear)'
+    cond = (-135 + theta_e <= tilt_dir) & (tilt_dir <= -45 - theta_e)
+    tilt_type[cond] = 'Ambiguous (Perpendicular Shear)'
+    cond = offset_mag < tracks_obj.params['CLASS_THRESH']['OFFSET_MAG']
     tilt_type[cond] = 'Ambiguous (Small Stratiform Offset)'
-    cond = shear_mag < thresholds['SHEAR_MAG']
-    tilt_type[cond] = 'Ambiguous (Small Shear)'
+    cond = shear_mag < tracks_obj.params['CLASS_THRESH']['SHEAR_MAG']
+    tilt_type[cond] = 'Ambiguous (Low Shear)'
+
     tracks_obj.tracks_class['tilt_type'] = tilt_type
-    # Confirm
+
     return tracks_obj
 
 
@@ -987,8 +992,16 @@ def get_system_tracks(tracks_obj):
     rel_vel_dir = np.arctan2(
         system_tracks['v_relative'], system_tracks['u_relative'])
     rel_vel_dir = np.rad2deg(rel_vel_dir)
-    rel_vel_dir = vel_dir.rename('rel_vel_dir')
+    rel_vel_dir = rel_vel_dir.rename('rel_vel_dir')
     rel_vel_dir = np.round(rel_vel_dir, 3)
+
+    u_shear = tracks_obj.tracks['u_shear'].xs(0, level='level').values
+    v_shear = tracks_obj.tracks['v_shear'].xs(0, level='level').values
+    shear_dir = np.arctan2(v_shear, u_shear)
+    shear_dir = np.rad2deg(shear_dir)
+    shear_dir = np.round(shear_dir, 3)
+
+    # import pdb; pdb.set_trace()
 
     tilt_dir = np.arctan2(
         system_tracks['y_vert_disp'], system_tracks['x_vert_disp'])
@@ -1004,7 +1017,13 @@ def get_system_tracks(tracks_obj):
     sys_rel_tilt_dir_alt = sys_rel_tilt_dir_alt.rename('sys_rel_tilt_dir_alt')
     sys_rel_tilt_dir_alt = np.round(sys_rel_tilt_dir_alt, 3)
 
-    for var in [vel_dir, tilt_dir, sys_rel_tilt_dir, sys_rel_tilt_dir_alt]:
+    shear_rel_tilt_dir = np.mod(tilt_dir - shear_dir + 180, 360) - 180
+    shear_rel_tilt_dir = shear_rel_tilt_dir.rename('shear_rel_tilt_dir')
+    shear_rel_tilt_dir = np.round(shear_rel_tilt_dir, 3)
+
+    for var in [
+            vel_dir, tilt_dir, sys_rel_tilt_dir, sys_rel_tilt_dir_alt,
+            shear_rel_tilt_dir]:
         system_tracks = system_tracks.merge(
             var, left_index=True, right_index=True)
 
