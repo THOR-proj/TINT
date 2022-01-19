@@ -1,4 +1,4 @@
-MTRACK
+MINT (Mesoscale TINT)
 ====
 This is a fork of the base TINT repository, intended to be used for tracking
 and analysing large mesoscale objects in radar reflectivity images. Modifications made by Ewan Short while undertaking a PhD at the University of Melbourne.

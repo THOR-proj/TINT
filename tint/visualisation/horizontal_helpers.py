@@ -68,7 +68,7 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
             lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
 
             gen_embossed_text(
-                lon-.2, lat+0.1, ax, uid, transform=projection, fontsize=16,
+                lon-.2, lat+0.2, ax, uid, transform=projection, fontsize=16,
                 linewidth=3, zorder=5)
 
             if params['label_mergers']:
@@ -88,13 +88,13 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     0, level='level')['rel_offset_type'].values[0]]
                 type_fontsize = 16
                 gen_embossed_text(
-                    lon+.1, lat-0.1, ax, label_1, transform=projection,
+                    lon-.1, lat-0.3, ax, label_1, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
                 gen_embossed_text(
-                    lon+.1, lat, ax, label_2, transform=projection,
+                    lon-.1, lat-0.2, ax, label_2, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
                 gen_embossed_text(
-                    lon+.1, lat-0.2, ax, label_3, transform=projection,
+                    lon-.1, lat-0.4, ax, label_3, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
             elif params['label_type'] == 'shear':
                 label_1 = label_dic[tmp_class_uid.xs(
@@ -109,13 +109,13 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     lon+.1, lat, ax, label_2, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
             non_linear = tmp_excl_uid.xs(0, level='level')['non_linear']
-            if non_linear.values[0]:
-                label = 'NL'
-            else:
-                label = 'L'
-            gen_embossed_text(
-                lon+.1, lat+0.1, ax, label, transform=projection,
-                fontsize=type_fontsize, linewidth=2, zorder=5)
+            # if non_linear.values[0]:
+            #     label = 'NL'
+            # else:
+            #     label = 'L'
+            # gen_embossed_text(
+            #     lon+.1, lat+0.1, ax, label, transform=projection,
+            #     fontsize=type_fontsize, linewidth=2, zorder=5)
 
             if params['label_splits']:
                 parent = list(
@@ -125,14 +125,14 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     lon+.1, lat+0.15, ax, label, transform=projection,
                     fontsize=12, linewidth=2, zorder=5)
 
+        # Plot stratiform offset
+        lgd_so = add_stratiform_offset(
+            ax, tracks, grid, uid, date_time, excluded)
+
         # Plot velocities
         lgd_vel = add_velocities(
             ax, tracks, grid, uid, date_time, alt, params['system_winds'],
             excluded)
-
-        # Plot stratiform offset
-        lgd_so = add_stratiform_offset(
-            ax, tracks, grid, uid, date_time, excluded)
 
         lgd_ellipse = add_ellipses(
             ax, tracks, grid, uid, date_time, alt, excluded)
@@ -340,6 +340,9 @@ def add_velocities(
 
     dt = tracks.record.interval.total_seconds()
 
+    if level_ind != 0:
+        system_winds = ['shift']
+
     lgd_han = []
     for wind in system_winds:
         u = tmp_tracks['u_' + wind].iloc[0]
@@ -348,7 +351,7 @@ def add_velocities(
             x + 4 * u * dt, y + 4 * v * dt, projparams)
         if not excluded:
             q_hdl = ax.arrow(
-                lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=4,
+                lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=5,
                 head_width=0.016, head_length=0.024, length_includes_head=True,
                 path_effects=[
                     pe.Stroke(linewidth=6, foreground=colour_dic[wind]),

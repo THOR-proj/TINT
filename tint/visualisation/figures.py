@@ -180,8 +180,8 @@ def horizontal_cross_section(
 
     if params['legend'] and date_time in tracks_times:
         legend = plt.legend(
-            handles=lgd_han, loc='lower center', bbox_to_anchor=(0.5, -0.35),
-            ncol=2, fancybox=True, shadow=True)
+            handles=lgd_han, loc='lower center', bbox_to_anchor=(1.0, -0.35),
+            ncol=3, fancybox=True, shadow=True)
         legend.get_frame().set_alpha(None)
         legend.get_frame().set_facecolor((1, 1, 1, 1))
 
@@ -390,12 +390,14 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
 
     tmp_params = copy.deepcopy(params)
     tmp_params['colorbar_flag'] = False
+    tmp_params['legend'] = True
     # Plot frame
     ax = fig.add_subplot(1, 2, 1, projection=projection)
     horizontal_cross_section(
         tracks, grid, params=tmp_params, alt=alt1, fig=fig, ax=ax,
         date_time=date_time)
 
+    tmp_params['legend'] = False
     tmp_params['colorbar_flag'] = True
     ax = fig.add_subplot(1, 2, 2, projection=projection)
     horizontal_cross_section(
