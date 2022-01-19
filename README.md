@@ -3,6 +3,9 @@ MINT (Mesoscale TINT)
 This is a fork of the base TINT repository, intended to be used for tracking
 and analysing large mesoscale objects in radar reflectivity images. Modifications made by Ewan Short while undertaking a PhD at the University of Melbourne.
 
+Below are some animations for example systems identified in the CPOL research radar record.
+Click on an animation to view at native resolution, or right click "save image as" to download.
+
 Example front fed trailing stratiform system.
 ![MINT](FFTS.gif "Demo")
 
