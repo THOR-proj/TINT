@@ -63,13 +63,16 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         excluded = excluded.xs(0, level='level').iloc[0]
         excluded = np.any(excluded)
 
+        if not params['exclude']:
+            excluded = False
+
         if not excluded:
             lon = tmp_tracks_uid.xs(0, level='level')['lon'].iloc[0]
             lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
-
-            gen_embossed_text(
-                lon-.2, lat+0.2, ax, uid, transform=projection, fontsize=16,
-                linewidth=3, zorder=5)
+            #
+            # gen_embossed_text(
+            #     lon-.2, lat+0.2, ax, uid, transform=projection, fontsize=16,
+            #     linewidth=3, zorder=5)
 
             if params['label_mergers']:
                 mergers = list(

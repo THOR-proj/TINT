@@ -39,7 +39,7 @@ def check_params(user_params):
         'load_line_coords_winds': None, 'save_ds': False, 'alt': 3000,
         'fontsize': 20, 'leg_loc': 2, 'system_winds': ['shift'],
         'label_mergers': False, 'screen': True, 'label_type': 'velocities',
-        'exclusions': exclusions, 'boundary': True}
+        'exclusions': exclusions, 'boundary': True, 'exclude': True}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
