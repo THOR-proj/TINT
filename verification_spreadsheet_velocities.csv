@@ -1,0 +1,11 @@
+Scan,Object,Bad Velocity,Bad Stratiform Offset,Inflow Classification Affected?,SO Classification Affected?,Relative SO Classification Affected?,Notes
+10093,927,1,0,1,1,1,Strange change in velocity during final scans of system.
+10093,927,1,0,1,1,1,Strange change in velocity during final scans of system.
+10971,1036,1,0,1,1,1,
+10972,1036,1,0,1,1,1,
+13977,1231,1,0,1,1,1,"Stationary, noisy convective region given a non-zero velocity."
+13978,1231,1,0,1,1,1,"Stationary, noisy convective region given a non-zero velocity."
+13977,1231,1,0,1,1,1,"Stationary, noisy convective region given a non-zero velocity."
+20038,1902,1,0,1,1,1,Velocity direction looks incorrect by approximately 90 degrees.
+20040,1902,1,0,1,1,1,Velocity direction looks incorrect by approximately 90 degrees.
+20041,1902,1,0,1,1,1,Velocity direction looks incorrect by approximately 90 degrees.
