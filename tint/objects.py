@@ -343,12 +343,12 @@ def get_object_prop(
                 grid_time = np.datetime64(record.time).astype('<M8[m]')
 
                 interval = np.arange(
-                    params['LEVELS'][i, 0],
-                    params['LEVELS'][i, 1]+unit_dim[0], unit_dim[0])
+                    params['WIND_LEVELS'][i, 0],
+                    params['WIND_LEVELS'][i, 1]+unit_dim[0], unit_dim[0])
                 mid_i = len(interval) // 2
                 altitudes = [
-                    params['LEVELS'][i, 0], interval[mid_i],
-                    params['LEVELS'][i, 1]]
+                    params['WIND_LEVELS'][i, 0], interval[mid_i],
+                    params['WIND_LEVELS'][i, 1]]
                 ambients = [
                     data_dic['ambient_interp'].sel(
                         longitude=lon[0], latitude=lat[0], time=grid_time,

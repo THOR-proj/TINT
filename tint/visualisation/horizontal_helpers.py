@@ -69,10 +69,10 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         if not excluded:
             lon = tmp_tracks_uid.xs(0, level='level')['lon'].iloc[0]
             lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
-            #
-            # gen_embossed_text(
-            #     lon-.2, lat+0.2, ax, uid, transform=projection, fontsize=16,
-            #     linewidth=3, zorder=5)
+
+            gen_embossed_text(
+                lon-.2, lat+0.2, ax, uid, transform=projection, fontsize=16,
+                linewidth=3, zorder=5)
 
             if params['label_mergers']:
                 mergers = list(
@@ -112,13 +112,13 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     lon+.1, lat, ax, label_2, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
             non_linear = tmp_excl_uid.xs(0, level='level')['non_linear']
-            # if non_linear.values[0]:
-            #     label = 'NL'
-            # else:
-            #     label = 'L'
-            # gen_embossed_text(
-            #     lon+.1, lat+0.1, ax, label, transform=projection,
-            #     fontsize=type_fontsize, linewidth=2, zorder=5)
+            if non_linear.values[0]:
+                label = 'NL'
+            else:
+                label = 'L'
+            gen_embossed_text(
+                lon+.1, lat+0.1, ax, label, transform=projection,
+                fontsize=type_fontsize, linewidth=2, zorder=5)
 
             if params['label_splits']:
                 parent = list(
@@ -305,9 +305,9 @@ def add_velocities(
         ax, tracks, grid, uid, date_time, alt, system_winds, excluded):
 
     level_test = [
-        alt >= lvl[0] and alt < lvl[1] for lvl in tracks.params['LEVELS']]
+        alt >= lvl[0] and alt < lvl[1] for lvl in tracks.params['WIND_LEVELS']]
     level_ind = np.where(level_test)[0][0]
-    level = tracks.params['LEVELS'][level_ind]
+    level = tracks.params['WIND_LEVELS'][level_ind]
     interval = np.arange(
         level[0], level[1], tracks.record.grid_size[0])
     mid_i = len(interval) // 2
@@ -343,8 +343,8 @@ def add_velocities(
 
     dt = tracks.record.interval.total_seconds()
 
-    if level_ind != 0:
-        system_winds = ['shift']
+    # if level_ind != 0:
+    #     system_winds = ['shift']
 
     lgd_han = []
     for wind in system_winds:

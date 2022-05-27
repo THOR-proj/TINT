@@ -45,6 +45,7 @@ class Tracks(object):
             # Layers to identify objects within.
             'LEVELS': np.array(
                 [[500, 3500], [3500, 7500], [7500, 10000]]),  # m
+            'WIND_LEVELS': None,
             # Minimum size of objects in each layer.
             'MIN_SIZE': [80, 400, 800],  # square km
             # Thresholds for object identification.
@@ -92,6 +93,9 @@ class Tracks(object):
                 msg = '{} not a valid parameter. Choices are {}'
                 msg = msg.format(p, keys)
                 warnings.showwarning(msg, RuntimeWarning, 'tracks.py', 143)
+
+        if self.params['WIND_LEVELS'] is None:
+            self.params['WIND_LEVELS'] = self.params['LEVELS']
 
         self.field = field  # Field used for tracking.
         self.grid_size = None
