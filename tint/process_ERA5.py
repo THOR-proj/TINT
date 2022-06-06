@@ -68,6 +68,8 @@ def get_ERA5_ds(
         timestep = np.timedelta64(base_timestep, 'h')
         times = np.arange(start_time, end_time, timestep)
         era5_all = era5_all.sel(time=times)
+        print('Restricting ERA5 data to {} hour timestep'.format(
+            base_timestep))
 
     return era5_all
 
@@ -104,14 +106,24 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
         latitude=slice(max_lat+.25, min_lat-.25),
         longitude=slice(min_lon-.2, max_lon+.2),
         time=slice(start_time, end_time))]
+
     ds['z'] = ds['z'] / 9.80665
+    # Set altitude using mean geopotential height
     altitude = ds['z'].mean(['longitude', 'latitude', 'time'])
     ds = ds.assign_coords({'level': altitude})
-    ds = ds.rename({'level': 'altitude'})
+
     ds = ds.drop_vars('z')
-    ds = ds.loc[dict(altitude=slice(22000, 0))]
+    ds = ds.loc[dict(level=slice(22000, 0))]
     times = np.arange(start_time, end_time, timedelta)
-    ds = ds.interp(longitude=lon, latitude=lat, altitude=alt, time=times)
+    ds = ds.interp(longitude=lon, latitude=lat, level=alt, time=times)
+    import pdb; pdb.set_trace()
+
+    ds = ds.rename({'level': 'altitude'})
+
+    # if params['AMBIENT_TIMESTEP'] != 1:
+    #     start_time = np.datetime64(grid_time.replace(minute=0, second=0))
+    #     end_time = start_time + np.timedelta64(1, 'h')
+    #     ds = ds.loc[dict(time=slice(start_time, end_time))]
 
     return ds
 
@@ -124,7 +136,8 @@ def init_ERA5(grid, params):
         grid_datetime, grid_datetime+np.timedelta64(1, 'h'),
         base_dir=params['AMBIENT_BASE_DIR'],
         base_timestep=params['AMBIENT_TIMESTEP'])
-    print('Getting Intepolated ERA5 for next hour.')
+    print('Getting interpolated ERA5 for next {} hours.'.format(
+            params['AMBIENT_TIMESTEP']))
     ERA5_interp = interp_ERA_ds(
         ERA5_all, grid, params, timedelta=np.timedelta64(10, 'm'))
     ERA5_interp.load()
