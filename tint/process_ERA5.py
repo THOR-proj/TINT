@@ -107,24 +107,19 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
         longitude=slice(min_lon-.2, max_lon+.2),
         time=slice(start_time, end_time))]
 
-    times = np.arange(start_time, end_time, timedelta)
-    ds = ds.interp(longitude=lon, latitude=lat, time=times)
-    ds.load()
-
     ds['z'] = ds['z'] / 9.80665
-    # Set altitude using mean geopotential height
     altitude = ds['z'].mean(['longitude', 'latitude', 'time'])
     ds = ds.assign_coords({'level': altitude})
-
-    ds = ds.drop_vars('z')
-    ds = ds.loc[dict(level=slice(22000, 0))]
-
     ds = ds.rename({'level': 'altitude'})
+    ds = ds.drop_vars('z')
+    ds = ds.loc[dict(altitude=slice(22000, 0))]
+    times = np.arange(start_time, end_time, timedelta)
+    ds = ds.interp(longitude=lon, latitude=lat, altitude=alt, time=times)
 
-    # if params['AMBIENT_TIMESTEP'] != 1:
-    #     start_time = np.datetime64(grid_time.replace(minute=0, second=0))
-    #     end_time = start_time + np.timedelta64(1, 'h')
-    #     ds = ds.loc[dict(time=slice(start_time, end_time))]
+    if params['AMBIENT_TIMESTEP'] != 1:
+        start_time = np.datetime64(grid_time.replace(minute=0, second=0))
+        end_time = start_time + np.timedelta64(1, 'h')
+        ds = ds.loc[dict(time=slice(start_time, end_time))]
 
     return ds
 
