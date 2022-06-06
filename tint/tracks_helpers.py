@@ -134,6 +134,7 @@ class Record(object):
         """ Updates the scan number and associated time. This information is
         used for obtaining object properties as well as for the interval ratio
         correction of last_heads vectors. """
+
         self.scan += 1
         self.time = parse_grid_datetime(grid_obj1)
         if grid_obj2 is None:

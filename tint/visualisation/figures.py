@@ -153,7 +153,13 @@ def horizontal_cross_section(
         transform=projection, ax=ax, colorbar_label='Reflectivity [DbZ]',
         colorbar_flag=params['colorbar_flag'], zorder=1)
 
-    ax.set_title('Altitude {} m'.format(alt))
+    if tracks.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
+        if alt == 0:
+            ax.set_title('Altitude 1000 m')
+        elif alt == 1:
+            ax.set_title('Column Maximum')
+    else:
+        ax.set_title('Altitude {} m'.format(alt))
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
 
@@ -399,6 +405,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
 
     tmp_params['legend'] = False
     tmp_params['colorbar_flag'] = True
+    tmp_params['system_winds'] = ['shift']
     ax = fig.add_subplot(1, 2, 2, projection=projection)
     horizontal_cross_section(
         tracks, grid, params=tmp_params, alt=alt2, fig=fig, ax=ax,

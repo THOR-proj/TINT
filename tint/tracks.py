@@ -17,6 +17,7 @@ from tint.objects import post_tracks, get_system_tracks, classify_tracks
 from tint.objects import get_exclusion_categories
 import tint.process_ERA5 as ERA5
 import tint.process_WRF as WRF
+import tint.process_ACCESS as ACC
 
 
 class Tracks(object):
@@ -81,7 +82,10 @@ class Tracks(object):
                 'BORD_THRESH': 0.001,  # Ratio border pixels to total pixels
                 'MAJOR_AXIS_LENGTH': 100,  # km
                 'AXIS_RATIO': 3,
-                'DURATION': 30}  # minutes
+                'DURATION': 30},  # minutes
+            'INPUT_TYPE': 'GRIDS',
+            'REMOTE': False,
+            'AMBIENT_TIMESTEP': 1, # hours
             }
 
         # Load user specified parameters.
@@ -106,6 +110,16 @@ class Tracks(object):
         self.current_objects = None
         self.tracks = pd.DataFrame()
         self.data_dic = {}
+        self.ACCESS_refl = None
+
+        self.reference_grid = None
+        if self.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
+            if self.params['REMOTE']:
+                path = '/g/data/w40/esh564/reference_grid.h5'
+            else:
+                path = '/home/student.unimelb.edu.au/shorte1/Documents/phd/'
+                path += 'ACCESS_C_analysis/reference_grid.h5'
+            self.reference_grid = ACC.get_reference_grid(path)
 
         self.__saved_record = None
         self.__saved_counter = None
@@ -136,6 +150,16 @@ class Tracks(object):
         # Append metadata
         return ds
 
+    def format_next_grid(self, grids):
+        if self.params['INPUT_TYPE'] == 'GRIDS':
+            new_grid = next(grids)
+        elif self.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
+            new_datetime = next(grids)
+            self.ACCESS_refl, new_grid = ACC.update_ACCESS_C(
+                new_datetime, self.ACCESS_refl, self.reference_grid,
+                self.params['REMOTE'])
+        return new_grid
+
     def get_next_grid(self, grid_obj2, grids, data_dic):
         """Find the next nonempty grid."""
         data = extract_grid_data(
@@ -147,7 +171,7 @@ class Tracks(object):
         while (
                 np.max(data_dic['refl']) > 30
                 and np.max(data_dic['refl_new']) == 0):
-            grid_obj2 = next(grids)
+            grid_obj2 = self.format_next_grid(grids)
             data = extract_grid_data(
                 grid_obj2, self.field, self.grid_size, self.params)
             for i in range(len(data_names)):
@@ -179,7 +203,7 @@ class Tracks(object):
 
         if self.record is None:
             # tracks object being initialized
-            grid_obj2 = next(grids)
+            grid_obj2 = self.format_next_grid(grids)
             self.grid_size = get_grid_size(grid_obj2)
             self.radar_info = get_radar_info(grid_obj2)
             self.counter = Counter()
@@ -197,6 +221,7 @@ class Tracks(object):
         self.get_boundary_inds(grid_obj2, b_path)
 
         data_dic = {}
+
         data = extract_grid_data(
             grid_obj2, self.field, self.grid_size, self.params)
         data_names = ['refl', 'rain', 'frames', 'cells', 'stein_class']
@@ -207,13 +232,19 @@ class Tracks(object):
         # For first grid, initialise the "current" frame to the "new" frame
         data_dic['frame'] = copy.deepcopy(data_dic['frame_new'])
 
-        # Get ERA5
+        # Get Ambient
         if self.params['AMBIENT'] == 'ERA5':
             ambient_all, ambient_interp = ERA5.init_ERA5(
                 grid_obj2, self.params)
             data_dic['ambient_interp'] = ambient_interp
         elif self.params['AMBIENT'] == 'WRF':
             ambient_all, ambient_interp = WRF.init_WRF(grid_obj2, self.params)
+            data_dic['ambient_interp'] = ambient_interp
+        elif self.params['AMBIENT'] == 'ACCESS':
+            current_datetime = parse_grid_datetime(grid_obj2)
+            current_datetime = np.datetime64(current_datetime)
+            ambient_interp = ACC.init_ACCESS_G(
+                current_datetime, self.reference_grid, self.params['REMOTE'])
             data_dic['ambient_interp'] = ambient_interp
 
         while grid_obj2 is not None:
@@ -229,7 +260,7 @@ class Tracks(object):
             for n in data_names + ['frame']:
                 data_dic[n] = data_dic[n + '_new']
             try:
-                grid_obj2 = next(grids)
+                grid_obj2 = self.format_next_grid(grids)
                 grid_obj2, data_dic = self.get_next_grid(
                     grid_obj2, grids, data_dic)
             except StopIteration:
@@ -267,7 +298,7 @@ class Tracks(object):
                 self.current_objects = None
                 continue
 
-            # Update ERA5
+            # Update ambient winds
             if self.params['AMBIENT'] == 'ERA5':
                 ambient_all, ambient_interp = ERA5.update_ERA5(
                     grid_obj1, self.params, ambient_all, ambient_interp)
@@ -275,6 +306,13 @@ class Tracks(object):
             elif self.params['AMBIENT'] == 'WRF':
                 ambient_all, ambient_interp = WRF.update_WRF(
                     grid_obj1, self.params, ambient_all, ambient_interp)
+                data_dic['ambient_interp'] = ambient_interp
+            elif self.params['AMBIENT'] == 'ACCESS':
+                current_datetime = parse_grid_datetime(grid_obj1)
+                current_datetime = np.datetime64(current_datetime)
+                ambient_interp = ACC.update_ACCESS_G(
+                    ambient_interp, self.reference_grid,
+                    current_datetime, self.params['REMOTE'])
                 data_dic['ambient_interp'] = ambient_interp
 
             global_shift = get_global_shift(
@@ -295,8 +333,6 @@ class Tracks(object):
                     obj_merge, self.record.interval.total_seconds(),
                     self.params, grid_obj1)
             obj_merge = obj_merge_new
-
-            # Do some ERA5 stuff
 
             obj_props = get_object_prop(
                 data_dic, grid_obj1, u_shift, v_shift,

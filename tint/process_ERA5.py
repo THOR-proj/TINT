@@ -34,7 +34,8 @@ def collect_ERA5_files(base_dir, year, range_str, files=[]):
 def get_ERA5_ds(
         start_datetime, end_datetime,
         time_delta=np.timedelta64(10, 'm'),
-        base_dir='/g/data/rt52/era5/pressure-levels/reanalysis/'):
+        base_dir='/g/data/rt52/era5/pressure-levels/reanalysis/',
+        base_timestep=1):
     s_comps = get_datetime_components(start_datetime)
     [s_year, s_month, s_day, s_hour, s_minute] = s_comps
     e_comps = get_datetime_components(end_datetime)
@@ -60,14 +61,22 @@ def get_ERA5_ds(
         files = collect_ERA5_files(
             base_dir, year, range_str, files=files)
 
-    return xr.open_mfdataset(files)
+    era5_all = xr.open_mfdataset(files)
+    if base_timestep != 1:
+        start_time = era5_all.time.values[0]
+        end_time = era5_all.time.values[-1]
+        timestep = np.timedelta64(base_timestep, 'h')
+        times = np.arange(start_time, end_time, timestep)
+        era5_all = era5_all.sel(time=times)
+
+    return era5_all
 
 
 def flexible_round(x, prec=2, base=.05, method=round):
     return round(base * method(float(x) / base), prec)
 
 
-def interp_ERA_ds(ds_all, grid, timedelta=np.timedelta64(10, 'm')):
+def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
     lon, lat = cartesian_to_geographic(
         grid.x['data'].data, grid.y['data'].data, grid.get_projparams())
     alt = grid.z['data'].data
@@ -78,8 +87,18 @@ def interp_ERA_ds(ds_all, grid, timedelta=np.timedelta64(10, 'm')):
     max_lat = flexible_round(max(lat), prec=2, base=.25, method=np.ceil)
 
     grid_time = parse_grid_datetime(grid)
-    start_time = np.datetime64(grid_time.replace(minute=0, second=0))
-    end_time = start_time + np.timedelta64(1, 'h')
+
+    if params['AMBIENT_TIMESTEP'] == 1:
+        start_time = np.datetime64(grid_time.replace(minute=0, second=0))
+        end_time = start_time + np.timedelta64(1, 'h')
+    else:
+        components = get_datetime_components(grid_time)
+        new_hour = components[3] // params['AMBIENT_TIMESTEP']
+        new_hour = new_hour * params['AMBIENT_TIMESTEP']
+        dt_string = '{:04d}-{:02d}-{:02d}T{:02d}:00:00'.format(
+            components[0], components[1], components[2], new_hour)
+        start_time = np.datetime64(dt_string)
+        end_time = start_time + np.timedelta64(params['AMBIENT_TIMESTEP'], 'h')
 
     ds = ds_all.loc[dict(
         latitude=slice(max_lat+.25, min_lat-.25),
@@ -103,10 +122,11 @@ def init_ERA5(grid, params):
     print('Getting ERA5 metadata.')
     ERA5_all = get_ERA5_ds(
         grid_datetime, grid_datetime+np.timedelta64(1, 'h'),
-        base_dir=params['AMBIENT_BASE_DIR'])
+        base_dir=params['AMBIENT_BASE_DIR'],
+        base_timestep=params['AMBIENT_TIMESTEP'])
     print('Getting Intepolated ERA5 for next hour.')
     ERA5_interp = interp_ERA_ds(
-        ERA5_all, grid, timedelta=np.timedelta64(10, 'm'))
+        ERA5_all, grid, params, timedelta=np.timedelta64(10, 'm'))
     ERA5_interp.load()
     return ERA5_all, ERA5_interp
 
@@ -125,10 +145,11 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp):
         print('Getting ERA5 metadata.')
         ERA5_all = get_ERA5_ds(
             grid_datetime_hour, grid_datetime_hour+np.timedelta64(1, 'h'),
-            base_dir=params['AMBIENT_BASE_DIR'])
+            base_dir=params['AMBIENT_BASE_DIR'],
+            base_timestep=params['AMBIENT_TIMESTEP'])
     if grid_datetime not in ERA5_interp.time.values:
         print('Getting Intepolated ERA5 for the next hour.')
         ERA5_interp = interp_ERA_ds(
-            ERA5_all, grid, timedelta=np.timedelta64(10, 'm'))
+            ERA5_all, grid, params, timedelta=np.timedelta64(10, 'm'))
         ERA5_interp.load()
     return ERA5_all, ERA5_interp

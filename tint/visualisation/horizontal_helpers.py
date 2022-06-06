@@ -304,16 +304,29 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time, excluded):
 def add_velocities(
         ax, tracks, grid, uid, date_time, alt, system_winds, excluded):
 
-    level_test = [
-        alt >= lvl[0] and alt < lvl[1] for lvl in tracks.params['WIND_LEVELS']]
-    level_ind = np.where(level_test)[0][0]
-    level = tracks.params['WIND_LEVELS'][level_ind]
-    interval = np.arange(
-        level[0], level[1], tracks.record.grid_size[0])
-    mid_i = len(interval) // 2
-    ambient_mid_alt = int(interval[mid_i])
-    ambient_bottom_alt = int(interval[0])
-    ambient_top_alt = int(interval[-1])
+    if tracks.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
+        level_test = [
+            alt >= lvl[0] and alt < lvl[1]
+            for lvl in tracks.params['LEVELS']]
+        level_ind = np.where(level_test)[0][0]
+        level = tracks.params['LEVELS'][level_ind]
+        interval = tracks.params['WIND_LEVELS'][0]
+        ambient_mid_alt = int((interval[0] + interval[1]) // 2)
+        ambient_bottom_alt = int(interval[0])
+        ambient_top_alt = int(interval[-1])
+    else:
+        level_test = [
+            alt >= lvl[0] and alt < lvl[1]
+            for lvl in tracks.params['WIND_LEVELS']]
+        level_ind = np.where(level_test)[0][0]
+        level = tracks.params['WIND_LEVELS'][level_ind]
+        interval = np.arange(
+            level[0], level[1], tracks.record.grid_size[0])
+
+        mid_i = len(interval) // 2
+        ambient_mid_alt = int(interval[mid_i])
+        ambient_bottom_alt = int(interval[0])
+        ambient_top_alt = int(interval[-1])
 
     colour_dic = {
         'shift': 'm', 'ambient_bottom': 'red', 'ambient_mid': 'red',
