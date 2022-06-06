@@ -107,6 +107,10 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
         longitude=slice(min_lon-.2, max_lon+.2),
         time=slice(start_time, end_time))]
 
+    times = np.arange(start_time, end_time, timedelta)
+    ds = ds.interp(longitude=lon, latitude=lat, time=times)
+    ds.load()
+
     ds['z'] = ds['z'] / 9.80665
     # Set altitude using mean geopotential height
     altitude = ds['z'].mean(['longitude', 'latitude', 'time'])
@@ -114,9 +118,6 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
 
     ds = ds.drop_vars('z')
     ds = ds.loc[dict(level=slice(22000, 0))]
-    times = np.arange(start_time, end_time, timedelta)
-    ds = ds.interp(longitude=lon, latitude=lat, level=alt, time=times)
-    import pdb; pdb.set_trace()
 
     ds = ds.rename({'level': 'altitude'})
 
