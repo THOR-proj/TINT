@@ -41,8 +41,6 @@ def get_ERA5_ds(
     e_comps = get_datetime_components(end_datetime)
     [e_year, e_month, e_day, e_hour, e_minute] = e_comps
 
-    import pdb; pdb.set_trace()
-
     if not (e_day == 1 and e_hour == 0 and e_minute == 0):
         end_datetime = end_datetime + time_delta
         e_comps = get_datetime_components(end_datetime)
