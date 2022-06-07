@@ -10,11 +10,11 @@ def flexible_round(x, prec=2, base=.05, method=round):
     return round(base * method(float(x) / base), prec)
 
 
-def get_reference_grid(path, ODIM=False):
+def get_reference_grid(path, format):
 
     print('Creating a reference grid.')
 
-    if ODIM:
+    if format == 'ODIM':
         my_radar = pyart.aux_io.read_odim_h5(
             path, file_field_names=False)
 

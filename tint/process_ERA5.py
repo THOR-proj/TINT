@@ -41,6 +41,8 @@ def get_ERA5_ds(
     e_comps = get_datetime_components(end_datetime)
     [e_year, e_month, e_day, e_hour, e_minute] = e_comps
 
+    import pdb; pdb.set_trace()
+
     if not (e_day == 1 and e_hour == 0 and e_minute == 0):
         end_datetime = end_datetime + time_delta
         e_comps = get_datetime_components(end_datetime)
@@ -135,7 +137,8 @@ def init_ERA5(grid, params):
     grid_datetime = np.datetime64(grid_datetime.replace(second=0))
     print('Getting ERA5 metadata.')
     ERA5_all = get_ERA5_ds(
-        grid_datetime, grid_datetime+np.timedelta64(1, 'h'),
+        grid_datetime,
+        grid_datetime+np.timedelta64(params['AMBIENT_TIMESTEP'], 'h'),
         base_dir=params['AMBIENT_BASE_DIR'],
         base_timestep=params['AMBIENT_TIMESTEP'])
     print('Getting interpolated ERA5 for next {} hours.'.format(
@@ -159,7 +162,8 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp):
             and grid_datetime_hour + np.timedelta64(1, 'h') <= t_max):
         print('Getting ERA5 metadata.')
         ERA5_all = get_ERA5_ds(
-            grid_datetime_hour, grid_datetime_hour+np.timedelta64(1, 'h'),
+            grid_datetime_hour,
+            grid_datetime_hour+np.timedelta64(params['AMBIENT_TIMESTEP'], 'h'),
             base_dir=params['AMBIENT_BASE_DIR'],
             base_timestep=params['AMBIENT_TIMESTEP'])
     if grid_datetime not in ERA5_interp.time.values:
