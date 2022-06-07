@@ -35,6 +35,7 @@ def get_reference_grid(path, ODIM=False):
 
     else:
         grid = pyart.io.read_grid(path, include_fields=['reflectivity'])
+        import pdb; pdb.set_trace()
 
     return grid
 

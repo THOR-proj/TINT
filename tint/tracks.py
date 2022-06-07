@@ -85,8 +85,8 @@ class Tracks(object):
                 'DURATION': 30},  # minutes
             'INPUT_TYPE': 'GRIDS',
             'REMOTE': False,
-            'AMBIENT_TIMESTEP': 1, # hours
-            }
+            'AMBIENT_TIMESTEP': 1,  # hours
+            'SAVE_DIR': '~/Documents'}
 
         # Load user specified parameters.
         for p in params:
