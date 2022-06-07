@@ -108,6 +108,11 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
         longitude=slice(min_lon-.2, max_lon+.2),
         time=slice(start_time, end_time))]
 
+    filename = '/g/data/w40/esh563/tmp_{:04d}{:02d}{:02d}{:02d}.nc'.format(
+        components[0], components[1], components[2], new_hour)
+    ds.to_netcdf(filename)
+    ds = xr.open_dataset(filename)
+
     ds['z'] = ds['z'] / 9.80665
     altitude = ds['z'].mean(['longitude', 'latitude', 'time'])
     ds = ds.assign_coords({'level': altitude})

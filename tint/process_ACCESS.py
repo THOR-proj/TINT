@@ -10,27 +10,31 @@ def flexible_round(x, prec=2, base=.05, method=round):
     return round(base * method(float(x) / base), prec)
 
 
-def get_reference_grid(path):
+def get_reference_grid(path, ODIM=False):
 
     print('Creating a reference grid.')
 
-    my_radar = pyart.aux_io.read_odim_h5(
-        path, file_field_names=False)
+    if ODIM:
+        my_radar = pyart.aux_io.read_odim_h5(
+            path, file_field_names=False)
 
-    grid = pyart.map.grid_from_radars(
-        my_radar, grid_shape=(41, 121, 121),
-        grid_limits=((0., 20000,), (-150000., 150000.), (-150000, 150000.)))
+        grid = pyart.map.grid_from_radars(
+            my_radar, grid_shape=(41, 121, 121),
+            grid_limits=((0., 20000,), (-150000., 150000.), (-150000, 150000.)))
 
-    x = grid.x['data']
-    y = grid.y['data']
-    X, Y = np.meshgrid(x, y)
-    mask_cond = np.sqrt(X**2 + Y**2) > 152500
+        x = grid.x['data']
+        y = grid.y['data']
+        X, Y = np.meshgrid(x, y)
+        mask_cond = np.sqrt(X**2 + Y**2) > 152500
 
-    grid.fields['reflectivity']['data'].data[
-        grid.fields['reflectivity']['data'].data < 0] = np.nan
-    grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
+        grid.fields['reflectivity']['data'].data[
+            grid.fields['reflectivity']['data'].data < 0] = np.nan
+        grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
 
-    grid.fields = {'reflectivity': grid.fields['reflectivity']}
+        grid.fields = {'reflectivity': grid.fields['reflectivity']}
+
+    else:
+        grid = pyart.io.read_grid(path, include_fields=['reflectivity'])
 
     return grid
 

@@ -115,7 +115,7 @@ class Tracks(object):
         self.reference_grid = None
         if self.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
             if self.params['REMOTE']:
-                path = '/g/data/w40/esh564/reference_grid.h5'
+                path = '/g/data/w40/esh563/reference_grid.h5'
             else:
                 path = '/home/student.unimelb.edu.au/shorte1/Documents/phd/'
                 path += 'ACCESS_C_analysis/reference_grid.h5'
