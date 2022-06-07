@@ -61,7 +61,8 @@ def get_ERA5_ds(
         files = collect_ERA5_files(
             base_dir, year, range_str, files=files)
 
-    era5_all = xr.open_mfdataset(files)
+    era5_all = xr.open_mfdataset(
+        files, chunks={'longitude': 180})
     if base_timestep != 1:
         start_time = era5_all.time.values[0]
         end_time = era5_all.time.values[-1]
@@ -116,10 +117,10 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
     times = np.arange(start_time, end_time, timedelta)
     ds = ds.interp(longitude=lon, latitude=lat, altitude=alt, time=times)
 
-    if params['AMBIENT_TIMESTEP'] != 1:
-        start_time = np.datetime64(grid_time.replace(minute=0, second=0))
-        end_time = start_time + np.timedelta64(1, 'h')
-        ds = ds.loc[dict(time=slice(start_time, end_time))]
+    # if params['AMBIENT_TIMESTEP'] != 1:
+    #     start_time = np.datetime64(grid_time.replace(minute=0, second=0))
+    #     end_time = start_time + np.timedelta64(1, 'h')
+    #     ds = ds.loc[dict(time=slice(start_time, end_time))]
 
     return ds
 
@@ -133,7 +134,7 @@ def init_ERA5(grid, params):
         base_dir=params['AMBIENT_BASE_DIR'],
         base_timestep=params['AMBIENT_TIMESTEP'])
     print('Getting interpolated ERA5 for next {} hours.'.format(
-            params['AMBIENT_TIMESTEP']))
+        params['AMBIENT_TIMESTEP']))
     ERA5_interp = interp_ERA_ds(
         ERA5_all, grid, params, timedelta=np.timedelta64(10, 'm'))
     ERA5_interp.load()
@@ -157,7 +158,8 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp):
             base_dir=params['AMBIENT_BASE_DIR'],
             base_timestep=params['AMBIENT_TIMESTEP'])
     if grid_datetime not in ERA5_interp.time.values:
-        print('Getting Intepolated ERA5 for the next hour.')
+        print('Getting interpolated ERA5 for next {} hours.'.format(
+            params['AMBIENT_TIMESTEP']))
         ERA5_interp = interp_ERA_ds(
             ERA5_all, grid, params, timedelta=np.timedelta64(10, 'm'))
         ERA5_interp.load()
