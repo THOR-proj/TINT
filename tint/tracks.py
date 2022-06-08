@@ -119,8 +119,9 @@ class Tracks(object):
                 path = '/g/data/w40/esh563/reference_grid.h5'
             else:
                 path = '/home/student.unimelb.edu.au/shorte1/Documents/phd/'
-                path += 'ACCESS_C_analysis/63_20200101_000033_grid.nc'
-            self.reference_grid = ACC.get_reference_grid(path, params)
+                path += 'ACCESS_C_analysis/reference_grid.h5'
+            self.reference_grid = ACC.get_reference_grid(
+                path, params['REFERENCE_GRID_FORMAT'])
 
         self.__saved_record = None
         self.__saved_counter = None

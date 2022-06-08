@@ -90,12 +90,12 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
     max_lat = flexible_round(max(lat), prec=2, base=.25, method=np.ceil)
 
     grid_time = parse_grid_datetime(grid)
+    components = get_datetime_components(grid_time)
 
     if params['AMBIENT_TIMESTEP'] == 1:
         start_time = np.datetime64(grid_time.replace(minute=0, second=0))
         end_time = start_time + np.timedelta64(1, 'h')
     else:
-        components = get_datetime_components(grid_time)
         new_hour = components[3] // params['AMBIENT_TIMESTEP']
         new_hour = new_hour * params['AMBIENT_TIMESTEP']
         dt_string = '{:04d}-{:02d}-{:02d}T{:02d}:00:00'.format(
@@ -108,10 +108,10 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
         longitude=slice(min_lon-.2, max_lon+.2),
         time=slice(start_time, end_time))]
 
-    filename = params['SAVE_DIR'] + '/tmp_{:04d}{:02d}.nc'.format(
-        components[0], components[1])
-    ds.to_netcdf(filename)
-    ds = xr.open_dataset(filename)
+    # filename = params['SAVE_DIR'] + '/tmp_{:04d}{:02d}.nc'.format(
+    #     components[0], components[1])
+    # ds.to_netcdf(filename)
+    # ds = xr.open_dataset(filename)
 
     ds['z'] = ds['z'] / 9.80665
     altitude = ds['z'].mean(['longitude', 'latitude', 'time'])

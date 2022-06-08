@@ -10,7 +10,7 @@ def flexible_round(x, prec=2, base=.05, method=round):
     return round(base * method(float(x) / base), prec)
 
 
-def get_reference_grid(path, format):
+def get_reference_grid(path, format='ODIM'):
 
     print('Creating a reference grid.')
 
@@ -34,8 +34,8 @@ def get_reference_grid(path, format):
         grid.fields = {'reflectivity': grid.fields['reflectivity']}
 
     else:
-        grid = pyart.io.read_grid(path, include_fields=['reflectivity'])
-        import pdb; pdb.set_trace()
+        grid = pyart.io.read_grid(path)
+        grid.fields = {'reflectivity': grid.fields['corrected_reflectivity']}
 
     return grid
 
@@ -156,7 +156,7 @@ def update_ACCESS_C(datetime, ACCESS_refl, reference_grid, gadi=False):
 
     if (ACCESS_refl is None) or (datetime not in ACCESS_refl.time):
         ACCESS_refl = format_ACCESS_C(datetime, reference_grid, gadi=False)
-        print('Downloading and interpolating ACCESS-C reflectivity.')
+        print('Interpolating ACCESS-C reflectivity at {}.'.format(datetime))
 
     pseudo_grid = ACCESS_to_pyart(ACCESS_refl, datetime, reference_grid)
     print('Updating ACCESS-C pseudo pyart reflectivity grid.')
@@ -275,7 +275,7 @@ def init_ACCESS_G(datetime, reference_grid, gadi=False):
 
     winds = interp_ACCESS_G(datetime, reference_grid, gadi)
 
-    print('Getting ACCESS-G ambient winds.')
+    print('Getting ACCESS-G ambient winds at {}.'.format(datetime))
 
     return winds
 
@@ -283,7 +283,7 @@ def init_ACCESS_G(datetime, reference_grid, gadi=False):
 def update_ACCESS_G(winds, reference_grid, datetime, gadi=False):
 
     if datetime not in winds.time:
-        print('Updating ACCESS-G ambient winds.')
+        print('Updating ACCESS-G ambient winds at {}.'.format(datetime))
         winds = init_ACCESS_G(datetime, reference_grid, gadi)
 
     return winds
