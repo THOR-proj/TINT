@@ -87,7 +87,9 @@ class Tracks(object):
             'REMOTE': False,
             'AMBIENT_TIMESTEP': 1,  # hours
             'SAVE_DIR': '~/Documents',
-            'REFERENCE_GRID_FORMAT': 'ODIM'}
+            'REFERENCE_GRID_FORMAT': 'ODIM',
+            'RESET_NEW_DAY': False,
+            'REFERENCE_RADAR': 63}
 
         # Load user specified parameters.
         for p in params:
@@ -112,14 +114,18 @@ class Tracks(object):
         self.tracks = pd.DataFrame()
         self.data_dic = {}
         self.ACCESS_refl = None
+        self.grid_obj_day = None
 
         self.reference_grid = None
         if self.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
+            radar_num = self.params['REFERENCE_RADAR']
             if self.params['REMOTE']:
-                path = '/g/data/w40/esh563/reference_grid.h5'
+                path = '/g/data/w40/esh563/reference_grid_{}.h5'.format(
+                    radar_num)
             else:
                 path = '/home/student.unimelb.edu.au/shorte1/Documents/phd/'
-                path += 'ACCESS_C_analysis/reference_grid.h5'
+                path += 'ACCESS_C_analysis/reference_grid_{}.h5'.format(
+                    radar_num)
             self.reference_grid = ACC.get_reference_grid(
                 path, params['REFERENCE_GRID_FORMAT'])
 
@@ -195,6 +201,21 @@ class Tracks(object):
             b_ind_set = set(s1+s2+s3+s4)
         self.params['BOUNDARY_GRID_CELLS'] = b_ind_set
 
+    def test_new_day(self, grid_obj1, grid_obj2):
+        grid_day1 = np.datetime64(str(parse_grid_datetime(grid_obj1))[:10])
+        grid_day2 = np.datetime64(str(parse_grid_datetime(grid_obj2))[:10])
+
+        new_day = grid_day1 > self.grid_obj_day
+        next_day_new = grid_day2 > self.grid_obj_day
+
+        if new_day:
+            self.grid_obj_day = grid_day1
+            next_day_new = False
+            print('New day at {}. Resetting objects.'.format(
+                grid_day1))
+
+        return next_day_new
+
     def get_tracks(self, grids, b_path=None):
         """Obtains tracks given a list of pyart grid objects."""
         start_time = datetime.datetime.now()
@@ -210,9 +231,13 @@ class Tracks(object):
             self.radar_info = get_radar_info(grid_obj2)
             self.counter = Counter()
             self.record = Record(grid_obj2)
+            self.grid_obj_day = np.datetime64(
+                str(parse_grid_datetime(grid_obj2))[:10])
         else:
             # tracks object being updated
             grid_obj2 = self.last_grid
+            self.grid_obj_day = np.datetime64(
+                str(parse_grid_datetime(grid_obj2))[:10])
             self.tracks.drop(self.record.scan + 1)  # last scan is overwritten
 
         if self.current_objects is None:
@@ -285,6 +310,17 @@ class Tracks(object):
                     print(message)
                     new_rain = True
                     self.current_objects = None
+                # current_datetime = parse_grid_datetime(grid_obj1)
+
+                if self.params['RESET_NEW_DAY']:
+                    next_day_new = self.test_new_day(grid_obj1, grid_obj2)
+                    if next_day_new:
+                        new_rain = True
+                        print('Scan {} last before new day.'.format(
+                            self.record.scan))
+                        self.current_objects = None
+                        continue
+
             else:
                 # setup to write final scan
                 self.__save()
@@ -310,12 +346,20 @@ class Tracks(object):
                     grid_obj1, self.params, ambient_all, ambient_interp)
                 data_dic['ambient_interp'] = ambient_interp
             elif self.params['AMBIENT'] == 'ACCESS':
-                current_datetime = parse_grid_datetime(grid_obj1)
-                current_datetime = np.datetime64(current_datetime)
-                ambient_interp = ACC.update_ACCESS_G(
-                    ambient_interp, self.reference_grid,
-                    current_datetime, self.params['REMOTE'])
-                data_dic['ambient_interp'] = ambient_interp
+                try:
+                    current_datetime = parse_grid_datetime(grid_obj1)
+                    current_datetime = np.datetime64(current_datetime)
+                    ambient_interp = ACC.update_ACCESS_G(
+                        ambient_interp, self.reference_grid,
+                        current_datetime, self.params['REMOTE'])
+                    data_dic['ambient_interp'] = ambient_interp
+                except OSError:
+                    print('Could not load ambient winds at {}'.format(
+                        current_datetime))
+                    print('Skipping.')
+                    new_rain = True
+                    self.current_objects = None
+                    continue
 
             global_shift = get_global_shift(
                 data_dic['refl'], data_dic['refl_new'], self.params)

@@ -41,6 +41,12 @@ def get_reference_grid(path, format='ODIM'):
     return grid
 
 
+def setup_ODIM_files(params):
+    # Download Data
+    # Format data
+
+
+
 def get_datetime_components(date_time):
     dt_index = pd.DatetimeIndex([date_time])
     components = []

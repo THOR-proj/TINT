@@ -742,14 +742,16 @@ def calc_inflow_type(tracks_obj):
         ['Front Fed' for i in range(len(inflow_dir))],
         dtype=object)
     inflow_type[np.logical_or(
-        inflow_dir > 135, inflow_dir < -135)] = 'Rear Fed'
+        inflow_dir.values > 135, inflow_dir.values < -135)] = 'Rear Fed'
     inflow_type[np.logical_and(
-        inflow_dir > 45, inflow_dir < 135)] = 'Parallel Fed (Right)'
+        inflow_dir.values > 45,
+        inflow_dir.values < 135)] = 'Parallel Fed (Right)'
     inflow_type[np.logical_and(
-        inflow_dir < -45, inflow_dir > -135)] = 'Parallel Fed (Left)'
-    cond = velocity_mag < thresholds['VEL_MAG']
+        inflow_dir.values < -45,
+        inflow_dir.values > -135)] = 'Parallel Fed (Left)'
+    cond = velocity_mag.values < thresholds['VEL_MAG']
     inflow_type[cond] = 'Ambiguous (Low Velocity)'
-    cond = rel_velocity_mag < thresholds['REL_VEL_MAG']
+    cond = rel_velocity_mag.values < thresholds['REL_VEL_MAG']
     inflow_type[cond] = 'Ambiguous (Low Relative Velocity)'
     tracks_obj.tracks_class['inflow_type'] = inflow_type
     return tracks_obj
@@ -760,19 +762,22 @@ def calc_propagation_type(tracks_obj):
     thresholds = tracks_obj.params['CLASS_THRESH']
     rel_velocity_mag = np.sqrt(
         tracks_obj.tracks['u_relative'] ** 2
-        + tracks_obj.tracks['v_relative'] ** 2)
+        + tracks_obj.tracks['v_relative'] ** 2).values
     shear_mag = np.sqrt(
         tracks_obj.tracks['u_shear'] ** 2
-        + tracks_obj.tracks['v_shear'] ** 2)
+        + tracks_obj.tracks['v_shear'] ** 2).values
     propagation_cond = (
-        tracks_obj.tracks['u_shear'] * tracks_obj.tracks['u_relative']
-        + tracks_obj.tracks['v_shear'] * tracks_obj.tracks['v_relative'])
+        tracks_obj.tracks['u_shear']
+        * tracks_obj.tracks['u_relative']
+        + tracks_obj.tracks['v_shear']
+        * tracks_obj.tracks['v_relative']).values
     propagation_type = np.array(
         ['Down-Shear Propagating' for i in range(len(propagation_cond))],
         dtype=object)
     propagation_type[propagation_cond < 0] = 'Up-Shear Propagating'
     parallel_shear = np.abs(
-        propagation_cond / (shear_mag * rel_velocity_mag)) < 1 / np.sqrt(2)
+        propagation_cond / (shear_mag * rel_velocity_mag))
+    parallel_shear = parallel_shear < 1 / np.sqrt(2)
     propagation_type[parallel_shear] = 'Ambiguous (Perpendicular Shear)'
     cond = shear_mag < thresholds['SHEAR_MAG']
     propagation_type[cond] = 'Ambiguous (Low Shear)'
@@ -789,16 +794,16 @@ def calc_tilt_type(tracks_obj):
     x_offset = tracks_obj.system_tracks['x_vert_disp']
     y_offset = tracks_obj.system_tracks['y_vert_disp']
 
-    offset_mag = np.sqrt(x_offset ** 2 + y_offset ** 2)
+    offset_mag = np.sqrt(x_offset ** 2 + y_offset ** 2).values
     n_lvl = len(tracks_obj.params['LEVELS'])
-    offset_mag = np.repeat(offset_mag.values, n_lvl)
+    offset_mag = np.repeat(offset_mag, n_lvl)
 
     u_shear = tracks_obj.tracks['u_shear']
     v_shear = tracks_obj.tracks['v_shear']
-    shear_mag = np.sqrt(u_shear ** 2 + v_shear ** 2)
+    shear_mag = np.sqrt(u_shear ** 2 + v_shear ** 2).values
 
-    tilt_dir = tracks_obj.system_tracks['shear_rel_tilt_dir']
-    tilt_dir = np.repeat(tilt_dir.values, n_lvl)
+    tilt_dir = tracks_obj.system_tracks['shear_rel_tilt_dir'].values
+    tilt_dir = np.repeat(tilt_dir, n_lvl)
 
     theta_e = theta_e = tracks_obj.params['CLASS_THRESH']['ANGLE_BUFFER']
 
@@ -836,13 +841,13 @@ def calc_stratiform_type(tracks_obj):
     u_shift = tracks_obj.tracks['u_shift']
     v_shift = tracks_obj.tracks['v_shift']
 
-    vel_mag = np.sqrt(u_shift ** 2 + v_shift ** 2)
+    vel_mag = np.sqrt(u_shift ** 2 + v_shift ** 2).values
 
     # Stratiform offset vector
     thresholds = tracks_obj.params['CLASS_THRESH']
     n_lvls = len(tracks_obj.params['LEVELS'])
     theta_e = thresholds['ANGLE_BUFFER']
-    rel_tilt_dir = tracks_obj.system_tracks['sys_rel_tilt_dir']
+    rel_tilt_dir = tracks_obj.system_tracks['sys_rel_tilt_dir'].values
     rel_tilt_dir = np.repeat(rel_tilt_dir, n_lvls)
     offset_type = np.array([
         'Ambiguous (On Quadrant Boundary)'
@@ -870,23 +875,23 @@ def calc_relative_stratiform_type(tracks_obj):
     x_offset = tracks_obj.system_tracks['x_vert_disp']
     y_offset = tracks_obj.system_tracks['y_vert_disp']
 
-    offset_mag = np.sqrt(x_offset ** 2 + y_offset ** 2)
+    offset_mag = np.sqrt(x_offset ** 2 + y_offset ** 2).values
     n_lvl = len(tracks_obj.params['LEVELS'])
-    offset_mag = np.repeat(offset_mag.values, n_lvl)
+    offset_mag = np.repeat(offset_mag, n_lvl)
 
     u_shift = tracks_obj.tracks['u_shift']
     v_shift = tracks_obj.tracks['v_shift']
-    vel_mag = np.sqrt(u_shift ** 2 + v_shift ** 2)
+    vel_mag = np.sqrt(u_shift ** 2 + v_shift ** 2).values
 
     u_relative = tracks_obj.tracks['u_relative']
     v_relative = tracks_obj.tracks['v_relative']
-    rel_vel_mag = np.sqrt(u_relative ** 2 + v_relative ** 2)
+    rel_vel_mag = np.sqrt(u_relative ** 2 + v_relative ** 2).values
 
     # Stratiform offset vector
     thresholds = tracks_obj.params['CLASS_THRESH']
     n_lvls = len(tracks_obj.params['LEVELS'])
     theta_e = thresholds['ANGLE_BUFFER']
-    rel_tilt_dir = tracks_obj.system_tracks['sys_rel_tilt_dir_alt']
+    rel_tilt_dir = tracks_obj.system_tracks['sys_rel_tilt_dir_alt'].values
     rel_tilt_dir = np.repeat(rel_tilt_dir, n_lvls)
     offset_type = np.array([
         'Ambiguous (On Quadrant Boundary)'
