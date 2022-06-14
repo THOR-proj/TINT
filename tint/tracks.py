@@ -18,6 +18,7 @@ from tint.objects import get_exclusion_categories
 import tint.process_ERA5 as ERA5
 import tint.process_WRF as WRF
 import tint.process_ACCESS as ACC
+import tint.process_operational_radar as po
 
 
 class Tracks(object):
@@ -115,6 +116,7 @@ class Tracks(object):
         self.data_dic = {}
         self.ACCESS_refl = None
         self.grid_obj_day = None
+        self.file_list = None
 
         self.reference_grid = None
         if self.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
@@ -166,6 +168,10 @@ class Tracks(object):
             self.ACCESS_refl, new_grid = ACC.update_ACCESS_C(
                 new_datetime, self.ACCESS_refl, self.reference_grid,
                 self.params['REMOTE'])
+        elif self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
+            new_datetime = next(grids)
+            new_grid, self.file_list = po.get_grid(
+                new_datetime, self.params, self.file_list)
         return new_grid
 
     def get_next_grid(self, grid_obj2, grids, data_dic):

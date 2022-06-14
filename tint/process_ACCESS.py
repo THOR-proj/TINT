@@ -33,7 +33,6 @@ def get_reference_grid(path, format='ODIM'):
         grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
 
         grid.fields = {'reflectivity': grid.fields['reflectivity']}
-
     else:
         grid = pyart.io.read_grid(path)
         grid.fields = {'reflectivity': grid.fields['corrected_reflectivity']}

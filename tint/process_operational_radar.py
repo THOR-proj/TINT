@@ -2,49 +2,87 @@ from pyart.core.transforms import cartesian_to_geographic
 import xarray as xr
 import numpy as np
 import pandas as pd
-import pyart
 import copy
+import zipfile
+import urllib
+import os
+import glob
+import pyart
 
 
 def flexible_round(x, prec=2, base=.05, method=round):
     return round(base * method(float(x) / base), prec)
 
 
-def get_reference_grid(path, format='ODIM'):
+def setup_ODIM_files(datetime, params):
 
-    print('Creating a reference grid.')
-
-    if format == 'ODIM':
-        my_radar = pyart.aux_io.read_odim_h5(
-            path, file_field_names=False)
-
-        grid = pyart.map.grid_from_radars(
-            my_radar, grid_shape=(41, 121, 121),
-            grid_limits=(
-                (0., 20000,), (-150000., 150000.), (-150000, 150000.)))
-
-        x = grid.x['data']
-        y = grid.y['data']
-        X, Y = np.meshgrid(x, y)
-        mask_cond = np.sqrt(X**2 + Y**2) > 152500
-
-        grid.fields['reflectivity']['data'].data[
-            grid.fields['reflectivity']['data'].data < 0] = np.nan
-        grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
-
-        grid.fields = {'reflectivity': grid.fields['reflectivity']}
-
+    components = get_datetime_components(datetime)
+    date = '{:04d}{:02d}{:02d}'.format(
+        components[0], components[1], components[2])
+    if params['REMOTE']:
+        base_path = '/g/data/rq0/level_1/odim_pvol/'
     else:
-        grid = pyart.io.read_grid(path)
-        grid.fields = {'reflectivity': grid.fields['corrected_reflectivity']}
+        base_path = 'http://dapds00.nci.org.au/thredds/fileServer/rq0/'
+    origin_path = base_path + '{0}/{1}/vol/{0}_{2}.pvol.zip'.format(
+        params['REFERENCE_RADAR'], components[0], date)
+    local_folder = params['SAVE_DIR'] + '/tmp_radar/'
+    local_path = local_folder + origin_path.split('/')[-1]
 
-    return grid
+    old_files = glob.glob(local_folder + '/*')
+    print('Removing old radar files.')
+    for f in old_files:
+        os.remove(f)
+
+    if not params['REMOTE']:
+        urllib.request.urlretrieve(origin_path, local_path)
+
+    print('Extracting radar data for {}.'.format(datetime))
+    if not params['REMOTE']:
+        zip_fh = zipfile.ZipFile(local_path)
+    else:
+        zip_fh = zipfile.ZipFile(origin_path)
+    zip_fh.extractall(path=local_folder)
+    zip_fh.close()
+
+    file_list = sorted(glob.glob(local_folder + '/*.h5'))
+    if not params['REMOTE']:
+        os.remove(local_path)
+
+    return file_list
 
 
-def setup_ODIM_files(params):
-    # Download Data
-    # Format data
+def get_grid(datetime, params, file_list=None):
 
+    # /home/student.unimelb.edu.au/shorte1/Documents/TINT_tracks/tmp_radar/63_20201001_000000.pvol.h5
+    dt_str = datetime.astype(str).replace('-', '').replace('T', '_')
+    dt_str = dt_str.replace(':', '')
+    file_path = '{}/tmp_radar/{}_{}.pvol.h5'.format(
+        params['SAVE_DIR'], params['REFERENCE_RADAR'], dt_str)
+
+    if (file_list is None) or (file_path not in file_list):
+        print('Retrieving files. Please wait.')
+        file_list = setup_ODIM_files(datetime, params)
+
+    my_radar = pyart.aux_io.read_odim_h5(
+        file_path, file_field_names=False)
+
+    grid = pyart.map.grid_from_radars(
+        my_radar, grid_shape=(41, 121, 121),
+        grid_limits=(
+            (0., 20000.), (-150000., 150000.), (-150000, 150000.)))
+
+    x = grid.x['data']
+    y = grid.y['data']
+    X, Y = np.meshgrid(x, y)
+    mask_cond = np.sqrt(X**2 + Y**2) > 152500
+
+    grid.fields['reflectivity']['data'].data[
+        grid.fields['reflectivity']['data'].data < 0] = np.nan
+    grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
+
+    grid.fields = {'reflectivity': grid.fields['reflectivity']}
+
+    return grid, file_list
 
 
 def get_datetime_components(date_time):
