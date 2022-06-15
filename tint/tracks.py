@@ -122,11 +122,11 @@ class Tracks(object):
         if self.params['INPUT_TYPE'] in ['ACCESS_DATETIMES', 'OPER_DATETIMES']:
             radar_num = self.params['REFERENCE_RADAR']
             if self.params['REMOTE']:
-                path = '/g/data/w40/esh563/reference_grid_{}.h5'.format(
-                    radar_num)
+                path = '/g/data/w40/esh563/reference_grids/'
+                path += 'reference_grid_{}.h5'.format(radar_num)
             else:
                 path = '/home/student.unimelb.edu.au/shorte1/Documents/phd/'
-                path += 'ACCESS_C_analysis/reference_grid_{}.h5'.format(
+                path += 'CPOL_analysis/reference_grid_{}.h5'.format(
                     radar_num)
             self.reference_grid = ACC.get_reference_grid(
                 path, params['REFERENCE_GRID_FORMAT'])
