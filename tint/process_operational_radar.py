@@ -25,7 +25,7 @@ def setup_ODIM_files(datetime, params):
         base_path = 'http://dapds00.nci.org.au/thredds/fileServer/rq0/'
     origin_path = base_path + '{0}/{1}/vol/{0}_{2}.pvol.zip'.format(
         params['REFERENCE_RADAR'], components[0], date)
-    local_folder = params['SAVE_DIR'] + '/tmp_radar/'
+    local_folder = params['SAVE_DIR'] + 'tmp_radar/'
     local_path = local_folder + origin_path.split('/')[-1]
 
     old_files = glob.glob(local_folder + '/*')
@@ -51,36 +51,60 @@ def setup_ODIM_files(datetime, params):
     return file_list
 
 
-def get_grid(datetime, params, file_list=None):
+def get_grid(datetime, params, reference_grid, file_list=None):
 
     # /home/student.unimelb.edu.au/shorte1/Documents/TINT_tracks/tmp_radar/63_20201001_000000.pvol.h5
     dt_str = datetime.astype(str).replace('-', '').replace('T', '_')
     dt_str = dt_str.replace(':', '')
-    file_path = '{}/tmp_radar/{}_{}.pvol.h5'.format(
-        params['SAVE_DIR'], params['REFERENCE_RADAR'], dt_str)
 
-    if (file_list is None) or (file_path not in file_list):
+    file_date_path = '{}tmp_radar/{}_{}'.format(
+        params['SAVE_DIR'], params['REFERENCE_RADAR'], dt_str[:-7])
+
+    if file_list is None:
+        match = False
+    else:
+        match = np.any(np.array([(file_date_path in f) for f in file_list]))
+
+    if (file_list is None) or not match:
         print('Retrieving files. Please wait.')
         file_list = setup_ODIM_files(datetime, params)
 
-    my_radar = pyart.aux_io.read_odim_h5(
-        file_path, file_field_names=False)
+    file_time_path = '{}tmp_radar/{}_{}'.format(
+        params['SAVE_DIR'], params['REFERENCE_RADAR'], dt_str[:-2])
 
-    grid = pyart.map.grid_from_radars(
-        my_radar, grid_shape=(41, 121, 121),
-        grid_limits=(
-            (0., 20000.), (-150000., 150000.), (-150000, 150000.)))
+    bool_index = [(file_time_path in f) for f in file_list]
+    if not np.any(bool_index):
+        grid = reference_grid
 
-    x = grid.x['data']
-    y = grid.y['data']
-    X, Y = np.meshgrid(x, y)
-    mask_cond = np.sqrt(X**2 + Y**2) > 152500
+        time = grid.time['units'][:14]
+        time += datetime.astype(str).split('.')[0] + 'Z'
 
-    grid.fields['reflectivity']['data'].data[
-        grid.fields['reflectivity']['data'].data < 0] = np.nan
-    grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
+        grid.time['units'] = time
+        grid.time['data'] = np.array([0.0], dtype=np.float32)
 
-    grid.fields = {'reflectivity': grid.fields['reflectivity']}
+        # import pdb; pdb.set_trace()
+
+    else:
+        new_path = np.array(file_list)[bool_index][0]
+
+        pyart_radar = pyart.aux_io.read_odim_h5(
+            new_path, file_field_names=False)
+
+        grid = pyart.map.grid_from_radars(
+            pyart_radar, grid_shape=(41, 121, 121),
+            grid_limits=(
+                (0., 20000.), (-150000., 150000.), (-150000, 150000.)),
+            weighting_function='Barnes2')
+
+        x = grid.x['data']
+        y = grid.y['data']
+        X, Y = np.meshgrid(x, y)
+        mask_cond = np.sqrt(X**2 + Y**2) > 152500
+
+        grid.fields['reflectivity']['data'].data[
+            grid.fields['reflectivity']['data'].data < 0] = np.nan
+        grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
+        grid.fields = {'reflectivity': grid.fields['reflectivity']}
 
     return grid, file_list
 

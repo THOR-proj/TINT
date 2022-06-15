@@ -119,7 +119,7 @@ class Tracks(object):
         self.file_list = None
 
         self.reference_grid = None
-        if self.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
+        if self.params['INPUT_TYPE'] in ['ACCESS_DATETIMES', 'OPER_DATETIMES']:
             radar_num = self.params['REFERENCE_RADAR']
             if self.params['REMOTE']:
                 path = '/g/data/w40/esh563/reference_grid_{}.h5'.format(
@@ -171,7 +171,8 @@ class Tracks(object):
         elif self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
             new_datetime = next(grids)
             new_grid, self.file_list = po.get_grid(
-                new_datetime, self.params, self.file_list)
+                new_datetime, self.params,
+                self.reference_grid, self.file_list)
         return new_grid
 
     def get_next_grid(self, grid_obj2, grids, data_dic):
@@ -282,7 +283,7 @@ class Tracks(object):
 
         while grid_obj2 is not None:
             # Set current grid equal to new grid from last iteration.
-            grid_obj1 = grid_obj2
+            grid_obj1 = copy.deepcopy(grid_obj2)
             if not new_rain:
                 # Set old old frame equal to current frame from last iteration.
                 data_dic['frame_old'] = copy.deepcopy(data_dic['frame'])
