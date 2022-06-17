@@ -88,7 +88,8 @@ def get_grid(datetime, params, reference_grid, file_list=None):
         new_path = np.array(file_list)[bool_index][0]
 
         pyart_radar = pyart.aux_io.read_odim_h5(
-            new_path, file_field_names=False)
+            new_path, file_field_names=False,
+            include_fields='reflectivity')
 
         grid = pyart.map.grid_from_radars(
             pyart_radar, grid_shape=(41, 121, 121),
