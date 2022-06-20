@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import pickle
 import warnings
+import tempfile
+import shutil
 
 from tint.grid_utils import get_grid_size, get_radar_info, extract_grid_data
 from tint.grid_utils import parse_grid_datetime
@@ -125,11 +127,13 @@ class Tracks(object):
                 path = '/g/data/w40/esh563/reference_grids/'
                 path += 'reference_grid_{}.h5'.format(radar_num)
             else:
-                path = '/home/student.unimelb.edu.au/shorte1/Documents/phd/'
+                path = '/home/student.unimelb.edu.au/shorte1/Documents/'
                 path += 'CPOL_analysis/reference_grid_{}.h5'.format(
                     radar_num)
             self.reference_grid = ACC.get_reference_grid(
                 path, params['REFERENCE_GRID_FORMAT'])
+        if self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
+            self.tmp_dir = tempfile.mkdtemp(dir=self.params['SAVE_DIR'])
 
         self.__saved_record = None
         self.__saved_counter = None
@@ -172,7 +176,7 @@ class Tracks(object):
             new_datetime = next(grids)
             new_grid, self.file_list = po.get_grid(
                 new_datetime, self.params,
-                self.reference_grid, self.file_list)
+                self.reference_grid, self.tmp_dir, self.file_list)
         return new_grid
 
     def get_next_grid(self, grid_obj2, grids, data_dic):
@@ -396,6 +400,9 @@ class Tracks(object):
             del global_shift, pairs, obj_props
 
         del grid_obj1
+
+        if self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
+            shutil.rmtree(self.tmp_dir)
 
         self = post_tracks(self)
         self = get_system_tracks(self)

@@ -8,13 +8,15 @@ import urllib
 import os
 import glob
 import pyart
+import tempfile
+temp_dir = tempfile.mkdtemp()
 
 
 def flexible_round(x, prec=2, base=.05, method=round):
     return round(base * method(float(x) / base), prec)
 
 
-def setup_ODIM_files(datetime, params):
+def setup_ODIM_files(datetime, params, tmp_dir):
 
     components = get_datetime_components(datetime)
     date = '{:04d}{:02d}{:02d}'.format(
@@ -25,10 +27,9 @@ def setup_ODIM_files(datetime, params):
         base_path = 'http://dapds00.nci.org.au/thredds/fileServer/rq0/'
     origin_path = base_path + '{0}/{1}/vol/{0}_{2}.pvol.zip'.format(
         params['REFERENCE_RADAR'], components[0], date)
-    local_folder = params['SAVE_DIR'] + 'tmp_radar/'
-    local_path = local_folder + origin_path.split('/')[-1]
+    local_path = tmp_dir + '/' + origin_path.split('/')[-1]
 
-    old_files = glob.glob(local_folder + '/*')
+    old_files = glob.glob(tmp_dir + '/*')
     print('Removing old radar files.')
     for f in old_files:
         os.remove(f)
@@ -41,24 +42,24 @@ def setup_ODIM_files(datetime, params):
         zip_fh = zipfile.ZipFile(local_path)
     else:
         zip_fh = zipfile.ZipFile(origin_path)
-    zip_fh.extractall(path=local_folder)
+    zip_fh.extractall(path=tmp_dir)
     zip_fh.close()
 
-    file_list = sorted(glob.glob(local_folder + '/*.h5'))
+    file_list = sorted(glob.glob(tmp_dir + '/*.h5'))
     if not params['REMOTE']:
         os.remove(local_path)
 
     return file_list
 
 
-def get_grid(datetime, params, reference_grid, file_list=None):
+def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
 
     # /home/student.unimelb.edu.au/shorte1/Documents/TINT_tracks/tmp_radar/63_20201001_000000.pvol.h5
     dt_str = datetime.astype(str).replace('-', '').replace('T', '_')
     dt_str = dt_str.replace(':', '')
 
-    file_date_path = '{}tmp_radar/{}_{}'.format(
-        params['SAVE_DIR'], params['REFERENCE_RADAR'], dt_str[:-7])
+    file_date_path = '{}/{}_{}'.format(
+        tmp_dir, params['REFERENCE_RADAR'], dt_str[:-7])
 
     if file_list is None:
         match = False
@@ -67,10 +68,10 @@ def get_grid(datetime, params, reference_grid, file_list=None):
 
     if (file_list is None) or not match:
         print('Retrieving files. Please wait.')
-        file_list = setup_ODIM_files(datetime, params)
+        file_list = setup_ODIM_files(datetime, params, tmp_dir)
 
-    file_time_path = '{}tmp_radar/{}_{}'.format(
-        params['SAVE_DIR'], params['REFERENCE_RADAR'], dt_str[:-2])
+    file_time_path = '{}/{}_{}'.format(
+        tmp_dir, params['REFERENCE_RADAR'], dt_str[:-2])
 
     bool_index = [(file_time_path in f) for f in file_list]
     if not np.any(bool_index):
