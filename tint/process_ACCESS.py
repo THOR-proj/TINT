@@ -179,7 +179,7 @@ def ACCESS_to_pyart(ACCESS_refl, datetime, reference_grid):
 
 def init_ACCESS_C(datetime, reference_grid, gadi=False):
 
-    ACCESS_refl = format_ACCESS_C(datetime, reference_grid, gadi=False)
+    ACCESS_refl = format_ACCESS_C(datetime, reference_grid, gadi=gadi)
     pseudo_grid = ACCESS_to_pyart(ACCESS_refl, datetime, reference_grid)
 
     return ACCESS_refl, pseudo_grid
@@ -188,7 +188,7 @@ def init_ACCESS_C(datetime, reference_grid, gadi=False):
 def update_ACCESS_C(datetime, ACCESS_refl, reference_grid, gadi=False):
 
     if (ACCESS_refl is None) or (datetime not in ACCESS_refl.time):
-        ACCESS_refl = format_ACCESS_C(datetime, reference_grid, gadi=False)
+        ACCESS_refl = format_ACCESS_C(datetime, reference_grid, gadi=gadi)
         print('Interpolating ACCESS-C reflectivity at {}.'.format(datetime))
 
     pseudo_grid = ACCESS_to_pyart(ACCESS_refl, datetime, reference_grid)
