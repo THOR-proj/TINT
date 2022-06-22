@@ -75,6 +75,7 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
 
     bool_index = [(file_time_path in f) for f in file_list]
     if not np.any(bool_index):
+        print('Missing file.')
         grid = reference_grid
 
         time = grid.time['units'][:14]
@@ -92,21 +93,31 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
             new_path, file_field_names=False,
             include_fields='reflectivity')
 
-        grid = pyart.map.grid_from_radars(
-            pyart_radar, grid_shape=(41, 121, 121),
-            grid_limits=(
-                (0., 20000.), (-150000., 150000.), (-150000, 150000.)),
-            weighting_function='Barnes2')
+        if pyart_radar.fields == {}:
+            print('Data missing from file.')
+            grid = reference_grid
 
-        x = grid.x['data']
-        y = grid.y['data']
-        X, Y = np.meshgrid(x, y)
-        mask_cond = np.sqrt(X**2 + Y**2) > 152500
+            time = grid.time['units'][:14]
+            time += datetime.astype(str).split('.')[0] + 'Z'
 
-        grid.fields['reflectivity']['data'].data[
-            grid.fields['reflectivity']['data'].data < 0] = np.nan
-        grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
-        grid.fields = {'reflectivity': grid.fields['reflectivity']}
+            grid.time['units'] = time
+            grid.time['data'] = np.array([0.0], dtype=np.float32)
+        else:
+            grid = pyart.map.grid_from_radars(
+                pyart_radar, grid_shape=(41, 121, 121),
+                grid_limits=(
+                    (0., 20000.), (-150000., 150000.), (-150000, 150000.)),
+                weighting_function='Barnes2')
+
+            x = grid.x['data']
+            y = grid.y['data']
+            X, Y = np.meshgrid(x, y)
+            mask_cond = np.sqrt(X**2 + Y**2) > 152500
+
+            grid.fields['reflectivity']['data'].data[
+                grid.fields['reflectivity']['data'].data < 0] = np.nan
+            grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
+            grid.fields = {'reflectivity': grid.fields['reflectivity']}
 
     return grid, file_list
 
