@@ -285,6 +285,8 @@ class Tracks(object):
                 current_datetime, self.reference_grid, self.params['REMOTE'])
             data_dic['ambient_interp'] = ambient_interp
 
+        next_day_new = False
+
         while grid_obj2 is not None:
             # Set current grid equal to new grid from last iteration.
             grid_obj1 = copy.deepcopy(grid_obj2)
@@ -330,6 +332,13 @@ class Tracks(object):
                         print('Scan {} last before new day.'.format(
                             self.record.scan))
                         self.current_objects = None
+                        data_dic['refl_new'] = np.zeros_like(
+                            data_dic['refl'])
+                        data_dic['frame_new'] = np.zeros_like(
+                            data_dic['frame'])
+                        data_dic['frames_new'] = np.zeros_like(
+                            data_dic['frames'])
+
                         continue
 
             else:

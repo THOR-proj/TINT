@@ -180,8 +180,8 @@ def get_disparity_all(obj_found, image2, search_box, obj1_extent):
         disparity = np.array([LARGE_NUM])
     else:
         obj_found = obj_found[obj_found > 0]
-        disparity = get_disparity(obj_found, image2,
-                                  search_box, obj1_extent)
+        disparity = get_disparity(
+            obj_found, image2, search_box, obj1_extent)
     return disparity
 
 

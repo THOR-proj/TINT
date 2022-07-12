@@ -82,6 +82,8 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     lon+.1, lat-0.1, ax, label, transform=projection,
                     fontsize=18, linewidth=2, zorder=5)
 
+            type_fontsize = 16
+
             if params['label_type'] == 'velocities':
                 label_1 = label_dic[tmp_class_uid.xs(
                     0, level='level')['offset_type'].values[0]]
@@ -89,7 +91,6 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     0, level='level')['inflow_type'].values[0]]
                 label_3 = label_dic[tmp_class_uid.xs(
                     0, level='level')['rel_offset_type'].values[0]]
-                type_fontsize = 16
                 gen_embossed_text(
                     lon-.1, lat-0.3, ax, label_1, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)
@@ -104,7 +105,6 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     0, level='level')['propagation_type'].values[0]]
                 label_2 = label_dic[tmp_class_uid.xs(
                     0, level='level')['tilt_type'].values[0]]
-                type_fontsize = 16
                 gen_embossed_text(
                     lon+.1, lat-0.1, ax, label_1, transform=projection,
                     fontsize=type_fontsize, linewidth=2, zorder=5)

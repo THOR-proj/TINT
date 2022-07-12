@@ -206,15 +206,15 @@ def add_streamplot(ds, ax, params):
     else:
         [x, U] = [ds.y, ds.V.values]
     if params['line_average']:
-        density = 4
+        density = 1.5
     else:
         density = 2.5
     ax.streamplot(
-        x[::2] / 1000, ds.z[::2] / 1000, U[::2, ::2],
+        x[::2].values / 1000, ds.z.values[::2] / 1000, U[::2, ::2],
         ds.W.values[::2, ::2], zorder=2, color='k', density=density,
-        linewidth=1.25)
+        linewidth=1)
     lgd_wind = mlines.Line2D(
-        [], [], color='k', linestyle='-', marker='>', linewidth=1.25,
+        [], [], color='k', linestyle='-', marker='>', linewidth=1,
         label='Relative Streamlines')
     return lgd_wind
 
@@ -317,6 +317,7 @@ def setup_line_coords(ds, tracks, params, date_time, variables):
 
 def setup_perpendicular_coords(ds, x, tmp_tracks, params, dx):
     # Swap 2500 to general size
+    # import pdb; pdb.set_trace()
     if params['line_average']:
         semi_major = tmp_tracks['semi_major'].iloc[0]
         cond = ((ds.x <= x + semi_major * dx / 2)

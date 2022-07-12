@@ -128,7 +128,8 @@ def init_cross_section(
         init_fonts(params)
         fig = plt.figure(figsize=figsize)
     if ax is None:
-        ax = fig.add_subplot(1, 1, 1, projection=projection)
+        # ax = fig.add_subplot(1, 1, 1, projection=projection)
+        ax = fig.add_subplot(1, 1, 1)
 
     display = pyart.graph.GridMapDisplay(grid)
     alt_ind = get_grid_alt(tracks.grid_size, alt)
@@ -217,6 +218,7 @@ def vertical_cross_section(
     [dz, dy, dx] = tracks.record.grid_size
 
     ds = vh.format_pyart(grid)
+
     variables = ['reflectivity']
     if params['winds']:
         winds_ds = xr.open_dataset(params['winds_fn'])
@@ -267,8 +269,13 @@ def vertical_cross_section(
             ds_plot.y[0] / 1000, ds_plot.y[-1] / 1000,
             ds_plot.z[0] / 1000, ds_plot.z[-1] / 1000]
         cs = ax.imshow(
-            ds_plot.reflectivity, vmin=vmin, vmax=vmax, cmap=cmap,
+            ds_plot.reflectivity.values, vmin=vmin, vmax=vmax, cmap=cmap,
             interpolation='none', origin='lower', extent=extent, zorder=1)
+        #
+        # cs = ax.pcolormesh(
+        #     ds_plot.y, ds_plot.z, ds_plot.reflectivity.values, shading='flat')
+
+        # import pdb; pdb.set_trace()
         fig.colorbar(cs, ax=ax, label='Reflectivity [DbZ]')
         h_lim = y_lim
         x_label = 'Line Perpendicular Distance From Radar [km]'
@@ -549,7 +556,8 @@ def get_angle_props(angles, tracks_obj):
 
 
 def angle_correlation(
-        sl_angles, so_angles, cond, save_path, fig=None, ax=None):
+        sl_angles, so_angles, cond, save_path,
+        fig=None, ax=None, title='Angle Correlations'):
 
     params = {'fontsize': 12}
     if fig is None:
@@ -560,8 +568,12 @@ def angle_correlation(
 
     ax.plot([90, 90], [0, 180], '--', color='gray')
     ax.plot([0, 180], [90, 90], '--', color='gray')
-    ax.scatter(sl_angles[~cond], so_angles[~cond], marker='x', color='gray')
-    ax.scatter(sl_angles[cond], so_angles[cond], marker='o', color='r')
+    ax.scatter(
+        sl_angles[~cond], so_angles[~cond], marker='x', color='gray',
+        s=40)
+    ax.scatter(
+        sl_angles[cond], so_angles[cond], marker='o', color='r', s=50,
+        edgecolor='k')
 
     ax.set_xlim(0, 180)
     ax.set_xticks(np.arange(0, 200, 20))
@@ -573,6 +585,10 @@ def angle_correlation(
     ax.set_ylabel('Stratiform Offset Angle [Degrees]')
     # ax.set_title('Correlation between Stratiform Offset and Streamlines')
     ax.set_aspect(1)
+
+    ax.text(
+        0.5, 1.02, title, ha='center',
+        transform=ax.transAxes, size=12)
 
     save_dir = '/home/student.unimelb.edu.au/shorte1/Documents/'
     save_dir += 'TINT_figures/correlation.png'

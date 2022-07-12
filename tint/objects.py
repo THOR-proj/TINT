@@ -248,6 +248,7 @@ def get_object_prop(
     """Returns dictionary of object properties for all objects found in
     each level of images, where images are the labelled (filtered)
     frames. """
+    # Note semi_major and semi_minor are actually the major and minor axes
     properties = [
         'center', 'com_x', 'com_y', 'grid_x', 'grid_y', 'proj_area',
         'lon', 'lat', 'field_max', 'max_height', 'volume',
