@@ -144,11 +144,20 @@ def init_cross_section(
 def horizontal_cross_section(
         tracks, grid, params={}, alt=None, fig=None, ax=None, date_time=None):
 
+    if alt == 'col_max':
+        col_max = np.nanmax(
+            grid.fields['reflectivity']['data'].data, axis=0)
+        grid.fields['reflectivity']['data'].data[30, :, :] = col_max
+        grid.fields['reflectivity']['data'].mask[30, :, :] = False
+        grid.fields['reflectivity']['data'].mask[30, np.isnan(col_max)] = True
+        alt = 15000
+
     init_cs = init_cross_section(
         tracks, grid, params, alt, fig, ax, date_time, figsize=(8, 6))
     [
         params, alt, fig, ax, date_time, display, alt_ind, cmap,
         vmin, vmax, projection] = init_cs
+
     display.plot_grid(
         tracks.field, level=alt_ind, vmin=vmin, vmax=vmax, cmap=cmap,
         transform=projection, ax=ax, colorbar_label='Reflectivity [DbZ]',
@@ -159,6 +168,11 @@ def horizontal_cross_section(
             ax.set_title('Altitude 1000 m')
         elif alt == 1:
             ax.set_title('Column Maximum')
+    elif tracks.params['INPUT_TYPE'] == 'OPER_DATETIMES':
+        if alt == 15000:
+            ax.set_title('Column Maximum')
+        else:
+            ax.set_title('Altitude {} m'.format(alt))
     else:
         ax.set_title('Altitude {} m'.format(alt))
     ax.set_xlabel('Longitude')

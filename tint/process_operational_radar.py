@@ -34,6 +34,7 @@ def setup_ODIM_files(datetime, params, tmp_dir):
     for f in old_files:
         os.remove(f)
 
+    print('Downloading/copying and extracting. Please wait.')
     if not params['REMOTE']:
         urllib.request.urlretrieve(origin_path, local_path)
 
@@ -56,7 +57,7 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
 
     # /home/student.unimelb.edu.au/shorte1/Documents/TINT_tracks/tmp_radar/63_20201001_000000.pvol.h5
     dt_str = datetime.astype(str).replace('-', '').replace('T', '_')
-    dt_str = dt_str.replace(':', '')
+    dt_str = dt_str.replace(':', '').split('.')[0]
 
     file_date_path = '{}/{}_{}'.format(
         tmp_dir, params['REFERENCE_RADAR'], dt_str[:-7])
