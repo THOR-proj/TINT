@@ -279,7 +279,8 @@ class Tracks(object):
             ambient_all, ambient_interp = WRF.init_WRF(grid_obj2, self.params)
             data_dic['ambient_interp'] = ambient_interp
         elif self.params['AMBIENT'] == 'ACCESS':
-            current_datetime = parse_grid_datetime(grid_obj2)
+            current_datetime = parse_grid_datetime(grid_obj2).replace(
+                second=0, microsecond=0)
             current_datetime = np.datetime64(current_datetime)
             ambient_interp = ACC.init_ACCESS_G(
                 current_datetime, self.reference_grid, self.params['REMOTE'])
