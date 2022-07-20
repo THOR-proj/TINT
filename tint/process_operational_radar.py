@@ -117,6 +117,7 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
 
             grid.fields['reflectivity']['data'].data[
                 grid.fields['reflectivity']['data'].data < 0] = np.nan
+            grid.fields['reflectivity']['data'].data[:, mask_cond] = np.nan
             grid.fields['reflectivity']['data'].mask[:, mask_cond] = True
             grid.fields = {'reflectivity': grid.fields['reflectivity']}
 
