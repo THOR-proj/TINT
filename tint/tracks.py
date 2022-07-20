@@ -367,7 +367,8 @@ class Tracks(object):
                 data_dic['ambient_interp'] = ambient_interp
             elif self.params['AMBIENT'] == 'ACCESS':
                 try:
-                    current_datetime = parse_grid_datetime(grid_obj1)
+                    current_datetime = parse_grid_datetime(grid_obj1).replace(
+                        second=0, microsecond=0)
                     current_datetime = np.datetime64(current_datetime)
                     ambient_interp = ACC.update_ACCESS_G(
                         ambient_interp, self.reference_grid,
