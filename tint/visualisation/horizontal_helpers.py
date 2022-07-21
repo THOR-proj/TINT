@@ -405,7 +405,6 @@ def add_velocities(
             excl_alt += ['small_velocity', 'small_rel_velocity']
         elif wind == 'shear':
             excl_alt += ['small_shear']
-            import pdb; pdb.set_trace()
 
         int_border = np.any(tmp_excl[excl_alt].values)
 
