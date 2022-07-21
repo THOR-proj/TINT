@@ -46,12 +46,12 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         'Down-Shear Tilted': 'DST', 'Up-Shear Tilted': 'UST',
         'Ambiguous (Perpendicular Shear)': 'A(SP)',
         'Ambiguous (Small Stratiform Offset)': 'A(SO)',
-        'Ambiguous (Small Shear)': 'A(SS)',
+        'Ambiguous (Small Shear)': 'A(LS)',
         'Leading Stratiform': 'LS', 'Trailing Stratiform': 'TS',
         'Parallel Stratiform (Left)': 'LeS',
         'Parallel Stratiform (Right)': 'RiS',
         'Ambiguous (Small Stratiform Offset)': 'A(SO)',
-        'Ambiguous (Small Velocity)': 'A(SV)',
+        'Ambiguous (Small Velocity)': 'A(LV)',
         'Ambiguous (On Quadrant Boundary)': 'A(QB)'}
 
     for uid in uids:
@@ -63,6 +63,11 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
         excluded = excluded.xs(0, level='level').iloc[0]
         excluded = np.any(excluded)
 
+        int_border = np.any(
+            tmp_excl_uid[[
+                'intersect_border', 'intersect_border_convective',
+                'small_area', 'large_area']].values)
+
         if not params['exclude']:
             excluded = False
 
@@ -73,6 +78,8 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
             gen_embossed_text(
                 lon-.2, lat+0.2, ax, uid, transform=projection, fontsize=16,
                 linewidth=3, zorder=5)
+
+        if not excluded and not int_border:
 
             if params['label_mergers']:
                 mergers = list(
@@ -204,6 +211,16 @@ def add_ellipses(ax, tracks, grid, uid, date_time, alt, excluded=False):
 
     projparams = grid.get_projparams()
     tmp_tracks = reduce_tracks(tracks, uid, date_time, alt)[0]
+    tmp_excl = tracks.exclusions.xs(
+        (date_time, uid, 0), level=('time', 'uid', 'level'))
+    int_border = np.any(
+        tmp_excl[[
+            'intersect_border', 'intersect_border_convective',
+            'small_area', 'large_area']].values)
+    if int_border:
+        ell_c = 'grey'
+    else:
+        ell_c = 'black'
 
     centroid = np.squeeze(tmp_tracks[['grid_x', 'grid_y']].values)
     orientation = tmp_tracks[['orientation']].values[0]
@@ -220,9 +237,9 @@ def add_ellipses(ax, tracks, grid, uid, date_time, alt, excluded=False):
 
     ell = Ellipse(
         tuple([lon, lat]), major_axis, minor_axis, orientation,
-        linewidth=1.5, fill=False, zorder=3, color='grey', linestyle='--')
+        linewidth=1.5, fill=False, zorder=3, color=ell_c, linestyle='--')
     lgd_ellipse = mlines.Line2D(
-        [], [], color='grey', linewidth=1.5, label='Best Fit Ellipse',
+        [], [], color='black', linewidth=1.5, label='Best Fit Ellipse',
         linestyle='--')
 
     ell.set_clip_box(ax.bbox)
@@ -289,7 +306,16 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time, excluded):
     num_levels = len(tracks.params['LEVELS'])
     lon_high = tmp_tracks.xs(num_levels-1, level='level')['lon'].iloc[0]
     lat_high = tmp_tracks.xs(num_levels-1, level='level')['lat'].iloc[0]
-    if not excluded:
+
+    # Check if boundary intersection
+    tmp_excl = tracks.exclusions.xs(
+        (date_time, uid, 0), level=('time', 'uid', 'level'))
+    int_border = np.any(
+        tmp_excl[[
+            'intersect_border', 'intersect_border_convective',
+            'small_area', 'large_area', 'small_offset']].values)
+
+    if not excluded and not int_border:
         ax.plot(
             [lon_low, lon_high], [lat_low, lat_high], '-w', linewidth=2,
             zorder=4, path_effects=[
@@ -365,7 +391,25 @@ def add_velocities(
         v = tmp_tracks['v_' + wind].iloc[0]
         [new_lon, new_lat] = cartesian_to_geographic(
             x + 4 * u * dt, y + 4 * v * dt, projparams)
-        if not excluded:
+
+        tmp_excl = tracks.exclusions.xs(
+            (date_time, uid, 0), level=('time', 'uid', 'level'))
+
+        excl_alt = [
+            'intersect_border', 'intersect_border_convective',
+            'small_area', 'large_area']
+
+        if wind == 'shift':
+            excl_alt += ['small_velocity']
+        elif wind == 'relative':
+            excl_alt += ['small_velocity', 'small_rel_velocity']
+        elif wind == 'shear':
+            excl_alt += ['small_shear']
+            import pdb; pdb.set_trace()
+
+        int_border = np.any(tmp_excl[excl_alt].values)
+
+        if not excluded and not int_border:
             q_hdl = ax.arrow(
                 lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=5,
                 head_width=0.016, head_length=0.024, length_includes_head=True,

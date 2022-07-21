@@ -657,8 +657,8 @@ def get_exclusion_categories(tracks_obj):
     small_rel_vel = rel_velocity_mag < class_thresh['REL_VEL_MAG']
     tracks_obj.exclusions['small_rel_velocity'] = small_rel_vel
     shear_mag = np.sqrt(
-        tracks_obj.tracks['u_relative'] ** 2
-        + tracks_obj.tracks['v_relative'] ** 2)
+        tracks_obj.tracks['u_shear'] ** 2
+        + tracks_obj.tracks['v_shear'] ** 2)
     small_shear = shear_mag < class_thresh['SHEAR_MAG']
     tracks_obj.exclusions['small_shear'] = small_shear
     offset_mag = np.sqrt(
@@ -910,7 +910,7 @@ def calc_relative_stratiform_type(tracks_obj):
     cond = vel_mag < tracks_obj.params['CLASS_THRESH']['VEL_MAG']
     offset_type[cond] = 'Ambiguous (Small Velocity)'
     cond = rel_vel_mag < tracks_obj.params['CLASS_THRESH']['REL_VEL_MAG']
-    offset_type[cond] = 'Ambiguous (Small Velocity)'
+    offset_type[cond] = 'Ambiguous (Low Relative Velocity)'
 
     tracks_obj.tracks_class['rel_offset_type'] = offset_type
 
