@@ -606,6 +606,37 @@ def get_duration_cond(tracks_obj):
     return tracks_obj
 
 
+def get_simple_duration_cond(tracks_obj):
+
+    exclusions = []
+
+    excluded = tracks_obj.exclusions[exclusions]
+    excluded = excluded.xs(0, level='level')
+    excluded = np.any(excluded, 1)
+
+    included = np.logical_not(excluded)
+    included = included.where(included == True).dropna()
+
+    duration = np.timedelta64(tracks_obj.params['EXCL_THRESH']['DURATION'])
+    dt = np.timedelta64(tracks_obj.params['DT'])
+
+    duration_checks = included.groupby(level='uid').apply(
+        lambda g: temporal_continuity_check(g, length=duration, dt=dt))
+    uids = duration_checks.reset_index()['uid'].values
+
+    tracks_obj.exclusions['simple_duration_cond'] = [
+        True for i in range(len(tracks_obj.exclusions))]
+
+    # import pdb; pdb.set_trace()
+
+    for uid in uids:
+        tracks_obj.exclusions.loc[
+            (slice(None), slice(None), uid, slice(None)),
+            'simple_duration_cond'] = duration_checks.loc[uid]
+
+    return tracks_obj
+
+
 def get_exclusion_categories(tracks_obj):
 
     #  Ensure multiindex ordered correctly
@@ -678,6 +709,7 @@ def get_exclusion_categories(tracks_obj):
     tracks_obj.exclusions['non_linear'] = linear_cond
 
     tracks_obj = get_duration_cond(tracks_obj)
+    tracks_obj = get_simple_duration_cond(tracks_obj)
 
     return tracks_obj
 
