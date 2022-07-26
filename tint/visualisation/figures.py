@@ -145,8 +145,9 @@ def horizontal_cross_section(
         tracks, grid, params={}, alt=None, fig=None, ax=None, date_time=None):
 
     if alt == 'col_max':
-        col_max = np.nanmax(
-            grid.fields['reflectivity']['data'].data, axis=0)
+        col_max = np.ma.masked_invalid(
+            grid.fields['reflectivity']['data'].data)
+        col_max = col_max.mean(axis=0).filled(np.nan)
         grid.fields['reflectivity']['data'].data[30, :, :] = col_max
         grid.fields['reflectivity']['data'].mask[30, :, :] = False
         grid.fields['reflectivity']['data'].mask[30, np.isnan(col_max)] = True
