@@ -19,7 +19,7 @@ def init_fonts(user_params):
     # Initialise fonts
     rcParams.update({'font.family': 'serif'})
     # rcParams.update({'font.serif': 'Liberation Serif'})
-    rcParams.update({'font.serif': 'dejavuserif'})
+    # rcParams.update({'font.serif': 'dejavuserif'})
     rcParams.update({'mathtext.fontset': 'dejavuserif'})
     rcParams.update({'font.size': user_params['fontsize']})
 
