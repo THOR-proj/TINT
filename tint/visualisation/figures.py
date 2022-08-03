@@ -18,7 +18,8 @@ import tint.visualisation.vertical_helpers as vh
 def init_fonts(user_params):
     # Initialise fonts
     rcParams.update({'font.family': 'serif'})
-    rcParams.update({'font.serif': 'Liberation Serif'})
+    # rcParams.update({'font.serif': 'Liberation Serif'})
+    rcParams.update({'font.serif': 'dejavuserif'})
     rcParams.update({'mathtext.fontset': 'dejavuserif'})
     rcParams.update({'font.size': user_params['fontsize']})
 
@@ -39,7 +40,8 @@ def check_params(user_params):
         'load_line_coords_winds': None, 'save_ds': False, 'alt': 3000,
         'fontsize': 20, 'leg_loc': 2, 'system_winds': ['shift'],
         'label_mergers': False, 'screen': True, 'label_type': 'velocities',
-        'exclusions': exclusions, 'boundary': True, 'exclude': True}
+        'exclusions': exclusions, 'boundary': True, 'exclude': True,
+        'gadi': False}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
@@ -48,6 +50,7 @@ def check_params(user_params):
             msg = '{} not a valid parameter. Choices are {}'
             msg = msg.format(p, keys)
             warnings.showwarning(msg, RuntimeWarning, 'figures.py', 26)
+
 
     return params
 

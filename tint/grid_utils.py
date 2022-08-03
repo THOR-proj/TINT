@@ -210,6 +210,7 @@ def extract_grid_data(grid_obj, field, grid_size, params):
     frames = np.zeros([n_levels, grid_obj.nx, grid_obj.ny], dtype=np.int32)
     sclasses = [None]*n_levels
 
+    # Note the prod produces the "squared" as required... phew
     min_sizes = params['MIN_SIZE'] / np.prod(grid_size[1:]/1000)
 
     # Calculate frames for each layer.
