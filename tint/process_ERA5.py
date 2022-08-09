@@ -82,7 +82,10 @@ def flexible_round(x, prec=2, base=.05, method=round):
 def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
     lon, lat = cartesian_to_geographic(
         grid.x['data'].data, grid.y['data'].data, grid.get_projparams())
-    alt = grid.z['data'].data
+    if params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
+        alt = np.arange(0, 20000+500, 500)
+    else:
+        alt = grid.z['data'].data
 
     min_lon = flexible_round(min(lon), prec=1, base=.2, method=np.floor)
     max_lon = flexible_round(max(lon), prec=1, base=.2, method=np.ceil)
