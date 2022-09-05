@@ -277,7 +277,7 @@ def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
             color = colors[np.mod(j, len(colors))]
             ax.scatter(
                 lon_cell, lat_cell, marker='o', s=16, linewidth=1,
-                markerfacecolor="None", markeredgecolor='k',
+                facecolor="None", edgecolor='k',
                 zorder=2, path_effects=[
                     pe.Stroke(linewidth=5, foreground=color), pe.Normal()])
     lgd_cell = mlines.Line2D(
