@@ -658,6 +658,12 @@ def get_exclusion_categories(tracks_obj):
         < excl_thresh['SMALL_AREA']).values
     tracks_obj.exclusions['small_area'] = np.repeat(small_area, n_lvls)
 
+    small_conv_area = (
+        tracks_obj.tracks['proj_area'].xs(0, level='level')
+        < excl_thresh['SMALL_AREA']).values
+    tracks_obj.exclusions['small_conv_area'] = np.repeat(
+        small_conv_area, n_lvls)
+
     large_area = (
         tracks_obj.system_tracks['proj_area']
         > excl_thresh['LARGE_AREA']).values

@@ -89,6 +89,9 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     lon+.1, lat-0.1, ax, label, transform=projection,
                     fontsize=18, linewidth=2, zorder=5)
 
+            if params['label_cells']:
+                add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None)
+
             type_fontsize = 16
 
             if params['label_type'] == 'velocities':

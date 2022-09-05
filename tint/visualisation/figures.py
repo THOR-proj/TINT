@@ -41,7 +41,7 @@ def check_params(user_params):
         'fontsize': 20, 'leg_loc': 2, 'system_winds': ['shift'],
         'label_mergers': False, 'screen': True, 'label_type': 'velocities',
         'exclusions': exclusions, 'boundary': True, 'exclude': True,
-        'gadi': False}
+        'gadi': False, 'label_cells': False}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
@@ -50,7 +50,6 @@ def check_params(user_params):
             msg = '{} not a valid parameter. Choices are {}'
             msg = msg.format(p, keys)
             warnings.showwarning(msg, RuntimeWarning, 'figures.py', 26)
-
 
     return params
 
