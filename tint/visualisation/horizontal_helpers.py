@@ -277,10 +277,10 @@ def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
                 x_cell, y_cell, projparams)
             color = colors[np.mod(j, len(colors))]
             ax.scatter(
-                lon_cell, lat_cell, marker='o', s=80, linewidth=1,
+                lon_cell, lat_cell, marker='o', s=100, linewidth=1,
                 facecolor="none", edgecolor='k', zorder=2)
     lgd_cell = mlines.Line2D(
-        [], [], color='w', marker='o', markersize=12, linewidth=1,
+        [], [], color='w', marker='o', markersize=10, linewidth=1,
         markeredgecolor='k', linestyle='None', label='Convective Cells')
 
     return lgd_cell
