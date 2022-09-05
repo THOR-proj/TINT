@@ -89,9 +89,6 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     lon+.1, lat-0.1, ax, label, transform=projection,
                     fontsize=18, linewidth=2, zorder=5)
 
-            if params['label_cells']:
-                add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None)
-
             type_fontsize = 16
 
             if params['label_type'] == 'velocities':
@@ -151,6 +148,10 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
             ax, tracks, grid, uid, date_time, alt, excluded)
         # lgd_cell = add_cells(ax, tracks, grid, uid, date_time, alt)
 
+        if params['label_cells']:
+            lgd_cell = add_cells(
+                ax, tracks, grid, uid, date_time, alt, cell_ind=None)
+
         if params['boundary']:
             add_boundary(ax, tracks, grid)
 
@@ -159,7 +160,7 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
 
     lgd_han.append(lgd_so)
     [lgd_han.append(h) for h in lgd_vel]
-    # lgd_han.append(lgd_cell)
+    lgd_han.append(lgd_cell)
     lgd_han.append(lgd_ellipse)
 
     return lgd_han
