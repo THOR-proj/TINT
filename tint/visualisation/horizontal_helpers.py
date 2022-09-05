@@ -279,7 +279,7 @@ def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
                 lon_cell, lat_cell, marker='o', s=64, linewidth=1,
                 facecolor="none", edgecolor='k', zorder=2)
     lgd_cell = mlines.Line2D(
-        [], [], color='w', marker='o', markersize=2, linewidth=1,
+        [], [], color='w', marker='o', markersize=64, linewidth=1,
         markeredgecolor='k', linestyle='None', label='Convective Cells')
 
     return lgd_cell
