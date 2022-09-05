@@ -277,10 +277,10 @@ def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
             color = colors[np.mod(j, len(colors))]
             ax.scatter(
                 lon_cell, lat_cell, marker='o', s=16, linewidth=1,
-                zorder=2, path_effects=[
+                zorder=2, color='none', path_effects=[
                     pe.Stroke(linewidth=5, foreground=color), pe.Normal()])
     lgd_cell = mlines.Line2D(
-        [], [], marker='o', markersize=2, linewidth=1,
+        [], [], color='none', marker='o', markersize=2, linewidth=1,
         linestyle='None', label='Convective Cells', path_effects=[
             pe.Stroke(linewidth=5, foreground='k'), pe.Normal()])
 
