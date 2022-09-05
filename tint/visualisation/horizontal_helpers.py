@@ -281,8 +281,7 @@ def add_cells(ax, tracks, grid, uid, date_time, alt, cell_ind=None):
                 zorder=2, path_effects=[
                     pe.Stroke(linewidth=5, foreground=color), pe.Normal()])
     lgd_cell = mlines.Line2D(
-        [], [], markerfacecolor="None", markeredgecolor='k',
-        marker='o', markersize=2, linewidth=1,
+        [], [], color='w', marker='o', markersize=2, linewidth=1,
         linestyle='None', label='Convective Cells', path_effects=[
             pe.Stroke(linewidth=5, foreground='k'), pe.Normal()])
 
