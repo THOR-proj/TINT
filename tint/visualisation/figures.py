@@ -9,6 +9,7 @@ from matplotlib import rcParams
 import xarray as xr
 import pandas as pd
 import copy
+import matplotlib.ticker as mticker
 
 from tint.grid_utils import get_grid_alt, parse_grid_datetime
 import tint.visualisation.horizontal_helpers as hh
@@ -106,7 +107,9 @@ def add_crosshair(
             [0, 360], [crosshair_lat_0, crosshair_lat_1], '--r', linewidth=2.0,
             zorder=2)
     else:
-        display.plot_crosshairs(lon=crosshair_lon, lat=crosshair_lat)
+        display.plot_crosshairs(
+            lon=crosshair_lon, lat=crosshair_lat,
+            transform=ccrs.PlateCarree())
 
 
 def init_cross_section(
@@ -124,7 +127,6 @@ def init_cross_section(
         date_time = grid_time
 
     projection = ccrs.PlateCarree()
-
     # Initialise fig and ax if not passed as arguments
     if fig is None:
         init_fonts(params)
@@ -161,12 +163,41 @@ def horizontal_cross_section(
         params, alt, fig, ax, date_time, display, alt_ind, cmap,
         vmin, vmax, projection] = init_cs
 
+    projparams = grid.get_projparams()
+    [lon_lines, lat_lines] = cartesian_to_geographic(
+            np.arange(-150e3, 200e3, 75e3),
+            np.arange(-150e3, 200e3, 75e3), projparams)
+
     display.plot_grid(
         tracks.field, level=alt_ind, vmin=vmin, vmax=vmax, cmap=cmap,
         transform=projection, ax=ax, colorbar_label='Reflectivity [DbZ]',
-        colorbar_flag=params['colorbar_flag'], zorder=1)
+        colorbar_flag=params['colorbar_flag'], zorder=1, axislabels_flag=False,
+        lon_lines=[0], lat_lines=[0])
 
-    plt.axis('square')
+#    import pdb; pdb.set_trace()
+
+    gridlines = ax.gridlines(
+        crs=ccrs.PlateCarree(), draw_labels=True, x_inline=False,
+        y_inline=False, linewidth=2, color='gray', alpha=0.4, linestyle='--')
+
+    gridlines.right_labels = False
+    gridlines.top_labels = False
+
+    gridlines.xlabel_style = {
+        'rotation': 0, 'ha': 'center'}
+    gridlines.ylabel_style = {'rotation': 0}
+
+    gridlines.xlocator = mticker.FixedLocator(lon_lines)
+    gridlines.ylocator = mticker.FixedLocator(lat_lines)
+
+    ax.text(
+        -0.2125, 0.55, 'Latitude', va='bottom', ha='center',
+        rotation='vertical', rotation_mode='anchor',
+        transform=ax.transAxes)
+    ax.text(
+        0.5, -0.1, 'Longitude', va='bottom', ha='center',
+        rotation='horizontal', rotation_mode='anchor',
+        transform=ax.transAxes)
 
     if tracks.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
         if alt == 0:
@@ -180,8 +211,6 @@ def horizontal_cross_section(
             ax.set_title('Altitude {} m'.format(alt))
     else:
         ax.set_title('Altitude {} m'.format(alt))
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
 
     box = get_bounding_box(tracks, grid, date_time, params)
     if params['crosshair']:
@@ -206,7 +235,7 @@ def horizontal_cross_section(
 
     if params['legend'] and date_time in tracks_times:
         legend = plt.legend(
-            handles=lgd_han, loc='lower center', bbox_to_anchor=(1.0, -0.35),
+            handles=lgd_han, loc='lower center', bbox_to_anchor=(1.175, -0.3),
             ncol=3, fancybox=True, shadow=True)
         legend.get_frame().set_alpha(None)
         legend.get_frame().set_facecolor((1, 1, 1, 1))
@@ -290,11 +319,7 @@ def vertical_cross_section(
         cs = ax.imshow(
             ds_plot.reflectivity.values, vmin=vmin, vmax=vmax, cmap=cmap,
             interpolation='none', origin='lower', extent=extent, zorder=1)
-        #
-        # cs = ax.pcolormesh(
-        #     ds_plot.y, ds_plot.z, ds_plot.reflectivity.values, shading='flat')
 
-        # import pdb; pdb.set_trace()
         fig.colorbar(cs, ax=ax, label='Reflectivity [DbZ]')
         h_lim = y_lim
         x_label = 'Line Perpendicular Distance From Radar [km]'
@@ -407,7 +432,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
         date_time = grid_time
 
     init_fonts(params)
-    projection = ccrs.PlateCarree()
+    projection = ccrs.AzimuthalEquidistant(144.76, -37.840)
 
     print('Generating figure for {}.'.format(str(date_time)))
     if grid_time != date_time:
@@ -416,7 +441,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
         print(msg)
 
     # Initialise figure
-    fig = plt.figure(figsize=(24, 8))
+    fig = plt.figure(figsize=(22, 8))
     suptitle = 'Convective and Stratiform Cloud at ' + str(grid_time)
     fig.suptitle(suptitle)
 

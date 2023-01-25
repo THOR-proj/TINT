@@ -215,6 +215,7 @@ def add_rain(ax, tracks, grid, uid, date_time):
 def add_ellipses(ax, tracks, grid, uid, date_time, alt, excluded=False):
 
     projparams = grid.get_projparams()
+    projection = ccrs.PlateCarree()
     tmp_tracks = reduce_tracks(tracks, uid, date_time, alt)[0]
     tmp_excl = tracks.exclusions.xs(
         (date_time, uid, 0), level=('time', 'uid', 'level'))
@@ -242,6 +243,7 @@ def add_ellipses(ax, tracks, grid, uid, date_time, alt, excluded=False):
 
     ell = Ellipse(
         tuple([lon, lat]), major_axis, minor_axis, orientation,
+        transform=projection,
         linewidth=1.5, fill=False, zorder=3, color=ell_c, linestyle='--')
     lgd_ellipse = mlines.Line2D(
         [], [], color='black', linewidth=1.5, label='Best Fit Ellipse',
@@ -297,7 +299,7 @@ def add_boundary(ax, tracks, grid):
     lon_b, lat_b = cartesian_to_geographic(x_bounds, y_bounds, projparams)
     ax.imshow(
         boundary, extent=(lon_b[0], lon_b[1], lat_b[0], lat_b[1]), cmap='gray',
-        vmin=0, vmax=1)
+        vmin=0, vmax=1, transform=ccrs.PlateCarree())
 
     return ax
 
@@ -321,7 +323,7 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time, excluded):
     if not excluded and not int_border:
         ax.plot(
             [lon_low, lon_high], [lat_low, lat_high], '-w', linewidth=2,
-            zorder=4, path_effects=[
+            zorder=4, transform=ccrs.PlateCarree(), path_effects=[
                 pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
     lgd_so = mlines.Line2D(
         [], [], color='w', linestyle='-', linewidth=2,
@@ -385,9 +387,6 @@ def add_velocities(
 
     dt = tracks.record.interval.total_seconds()
 
-    # if level_ind != 0:
-    #     system_winds = ['shift']
-
     lgd_han = []
     for wind in system_winds:
         u = tmp_tracks['u_' + wind].iloc[0]
@@ -412,9 +411,10 @@ def add_velocities(
         int_border = np.any(tmp_excl[excl_alt].values)
 
         if not excluded and not int_border:
-            q_hdl = ax.arrow(
+            ax.arrow(
                 lon, lat, new_lon[0]-lon, new_lat[0]-lat, color='w', zorder=5,
                 head_width=0.016, head_length=0.024, length_includes_head=True,
+                transform=ccrs.PlateCarree(),
                 path_effects=[
                     pe.Stroke(linewidth=6, foreground=colour_dic[wind]),
                     pe.Normal()])
@@ -425,12 +425,30 @@ def add_velocities(
                 pe.Normal()])
         lgd_han.append(lgd_line)
 
-    # Extra factor of 2 - see definition of quiver scale
-    scale = 95000 / (4 * dt)
-    q_hdl = ax.quiver(
-        lon, lat, 0, 0, scale_units='x', scale=scale, zorder=0, linewidth=1)
-    ax.quiverkey(
-        q_hdl, .9, 1.025, 10, '10 m/s', labelpos='E', coordinates='axes')
+    arrow_x = 110e3
+    arrow_y = 160e3
+    [lon, lat] = cartesian_to_geographic(arrow_x, arrow_y, projparams)
+
+    [new_lon, new_lat] = cartesian_to_geographic(
+            arrow_x + 4 * 5 * dt, arrow_y, projparams)
+
+    x_lim = ax.get_xlim()
+    y_lim = ax.get_ylim()
+
+    ax.arrow(
+        lon[0], lat[0], new_lon[0]-lon[0], new_lat[0]-lat[0], color='w',
+        zorder=5, head_width=0.016, head_length=0.024,
+        length_includes_head=True,
+        transform=ccrs.PlateCarree(), clip_on=False,
+        path_effects=[
+                    pe.Stroke(linewidth=6, foreground='k'),
+                    pe.Normal()])
+    ax.text(
+        new_lon[0]+.1, new_lat[0]-.025, '5 m/s',
+        transform=ccrs.PlateCarree(), fontsize=18)
+
+    ax.set_xlim(x_lim)
+    ax.set_ylim(y_lim)
 
     return lgd_han
 
@@ -457,7 +475,7 @@ def add_winds(
         q_hdl = ax.quiver(
             winds.longitude[4::8, 4::8], winds.latitude[4::8, 4::8],
             winds.U.values[4::8, 4::8], winds.V.values[4::8, 4::8],
-            scale_units='x', scale=scale)
+            scale_units='x', scale=scale, transform=ccrs.PlateCarree())
         ax.quiverkey(
             q_hdl, .9, 1.025, 10, '10 m/s', labelpos='E', coordinates='axes')
         lgd_winds = None
