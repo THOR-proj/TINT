@@ -166,7 +166,7 @@ def horizontal_cross_section(
         transform=projection, ax=ax, colorbar_label='Reflectivity [DbZ]',
         colorbar_flag=params['colorbar_flag'], zorder=1)
 
-    ax.set_aspect('square')
+    plt.axis('square')
 
     if tracks.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
         if alt == 0:
