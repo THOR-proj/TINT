@@ -156,7 +156,7 @@ def horizontal_cross_section(
         alt = 15000
 
     init_cs = init_cross_section(
-        tracks, grid, params, alt, fig, ax, date_time, figsize=(8, 6))
+        tracks, grid, params, alt, fig, ax, date_time, figsize=(6, 6))
     [
         params, alt, fig, ax, date_time, display, alt_ind, cmap,
         vmin, vmax, projection] = init_cs
@@ -166,7 +166,7 @@ def horizontal_cross_section(
         transform=projection, ax=ax, colorbar_label='Reflectivity [DbZ]',
         colorbar_flag=params['colorbar_flag'], zorder=1)
 
-    ax.set_aspect('equal')
+    ax.set_aspect('square')
 
     if tracks.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
         if alt == 0:
@@ -416,7 +416,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
         print(msg)
 
     # Initialise figure
-    fig = plt.figure(figsize=(22, 8))
+    fig = plt.figure(figsize=(12, 8))
     suptitle = 'Convective and Stratiform Cloud at ' + str(grid_time)
     fig.suptitle(suptitle)
 
@@ -429,7 +429,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
         tracks, grid, params=tmp_params, alt=alt1, fig=fig, ax=ax,
         date_time=date_time)
 
-    ax.set_aspect('equal')
+    plt.axis('square')
 
     tmp_params['legend'] = False
     tmp_params['colorbar_flag'] = True
@@ -439,7 +439,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
         tracks, grid, params=tmp_params, alt=alt2, fig=fig, ax=ax,
         date_time=date_time)
 
-    ax.set_aspect('equal')
+    plt.axis('square')
 
     # Save frame and cleanup
     if params['save_dir'] is not None:
