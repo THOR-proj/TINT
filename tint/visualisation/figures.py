@@ -166,6 +166,8 @@ def horizontal_cross_section(
         transform=projection, ax=ax, colorbar_label='Reflectivity [DbZ]',
         colorbar_flag=params['colorbar_flag'], zorder=1)
 
+    ax.set_aspect('equal')
+
     if tracks.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
         if alt == 0:
             ax.set_title('Altitude 1000 m')
