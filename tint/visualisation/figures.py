@@ -431,7 +431,6 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
 
     ax.set_aspect('equal')
 
-
     tmp_params['legend'] = False
     tmp_params['colorbar_flag'] = True
     tmp_params['system_winds'] = ['shift']
