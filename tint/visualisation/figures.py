@@ -429,6 +429,9 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
         tracks, grid, params=tmp_params, alt=alt1, fig=fig, ax=ax,
         date_time=date_time)
 
+    ax.set_aspect('equal')
+
+
     tmp_params['legend'] = False
     tmp_params['colorbar_flag'] = True
     tmp_params['system_winds'] = ['shift']
@@ -436,6 +439,8 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
     horizontal_cross_section(
         tracks, grid, params=tmp_params, alt=alt2, fig=fig, ax=ax,
         date_time=date_time)
+
+    ax.set_aspect('equal')
 
     # Save frame and cleanup
     if params['save_dir'] is not None:
