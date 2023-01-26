@@ -113,7 +113,7 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
             x = grid.x['data']
             y = grid.y['data']
             X, Y = np.meshgrid(x, y)
-            mask_cond = np.sqrt(X**2 + Y**2) > 152500
+            mask_cond = np.sqrt(X**2 + Y**2) > 151250
 
             grid.fields['reflectivity']['data'].data[
                 grid.fields['reflectivity']['data'].data < 0] = np.nan

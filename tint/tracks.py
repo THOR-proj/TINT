@@ -124,8 +124,12 @@ class Tracks(object):
         if self.params['INPUT_TYPE'] in ['ACCESS_DATETIMES', 'OPER_DATETIMES']:
             radar_num = self.params['REFERENCE_RADAR']
             if self.params['REMOTE']:
+                if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52, 14]:
+                    suffix = 'a'
+                else:
+                    suffix = ''
                 path = '/g/data/w40/esh563/reference_grids/'
-                path += 'reference_grid_{}.h5'.format(radar_num)
+                path += 'reference_grid_{}{}.h5'.format(radar_num, suffix)
             else:
                 path = '/home/student.unimelb.edu.au/shorte1/Documents/'
                 path += 'CPOL_analysis/reference_grid_{}.h5'.format(
@@ -153,6 +157,42 @@ class Tracks(object):
         self.record = self.__saved_record
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
+
+    def update_reference_grid(self, grid, old_suffix='a'):
+        datetime = parse_grid_datetime(grid)
+        if self.params['REFERENCE_RADAR'] == 31:
+            if datetime < np.datetime64('2011-12-01'):
+                suffix = 'a'
+            elif (
+                    datetime >= np.datetime64('2011-12-01')
+                    and datetime < np.datetime64('2019-05-14')):
+                suffix = 'b'
+            else:
+                suffix = 'c'
+        elif self.params['REFERENCE_RADAR'] == 32:
+            if datetime < np.datetime64('2019-12-28'):
+                suffix = 'a'
+            else:
+                suffix = 'b'
+        elif self.params['REFERENCE_RADAR'] == 48:
+            if datetime < np.datetime64('2014-04-23'):
+                suffix = 'a'
+            else:
+                suffix = 'b'
+        elif self.params['REFERENCE_RADAR'] == 52:
+            if datetime < np.datetime64('2016-04-05'):
+                suffix = 'a'
+            else:
+                suffix = 'b'
+        else:
+            suffix = ''
+        if suffix != old_suffix:
+            path = '/g/data/w40/esh563/reference_grids/'
+            path += 'reference_grid_{}{}.h5'.format(
+                self.params['REFERENCE_RADAR'], suffix)
+            self.reference_grid = ACC.get_reference_grid(
+                path, self.params['REFERENCE_GRID_FORMAT'])
+        return suffix
 
     def save_netcdf(self, filename):
         # Convert to xarray
@@ -238,6 +278,8 @@ class Tracks(object):
         if self.record is None:
             # tracks object being initialized
             grid_obj2 = self.format_next_grid(grids)
+            if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
+                old_suffix = self.update_reference_grid(grid_obj2)
             self.grid_size = get_grid_size(grid_obj2)
             self.radar_info = get_radar_info(grid_obj2)
             self.counter = Counter()
@@ -304,6 +346,9 @@ class Tracks(object):
                 grid_obj2 = self.format_next_grid(grids)
                 grid_obj2, data_dic = self.get_next_grid(
                     grid_obj2, grids, data_dic)
+                if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
+                    old_suffix = self.update_reference_grid(
+                        grid_obj2, old_suffix)
             except StopIteration:
                 grid_obj2 = None
 

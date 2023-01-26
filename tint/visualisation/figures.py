@@ -126,14 +126,15 @@ def init_cross_section(
     if date_time is None:
         date_time = grid_time
 
-    projection = ccrs.PlateCarree()
+    central_lon = grid.origin_longitude['data'][0]
+    central_lat = grid.origin_latitude['data'][0]
+    projection = ccrs.AzimuthalEquidistant(central_lon, central_lat)
     # Initialise fig and ax if not passed as arguments
     if fig is None:
         init_fonts(params)
         fig = plt.figure(figsize=figsize)
     if ax is None:
-        # ax = fig.add_subplot(1, 1, 1, projection=projection)
-        ax = fig.add_subplot(1, 1, 1)
+        ax = fig.add_subplot(1, 1, 1, projection=projection)
 
     display = pyart.graph.GridMapDisplay(grid)
     alt_ind = get_grid_alt(tracks.grid_size, alt)
@@ -432,7 +433,9 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
         date_time = grid_time
 
     init_fonts(params)
-    projection = ccrs.AzimuthalEquidistant(144.76, -37.840)
+    central_lon = grid.origin_longitude['data'][0]
+    central_lat = grid.origin_latitude['data'][0]
+    projection = ccrs.AzimuthalEquidistant(central_lon, central_lat)
 
     print('Generating figure for {}.'.format(str(date_time)))
     if grid_time != date_time:
