@@ -326,7 +326,7 @@ class Tracks(object):
             current_datetime = np.datetime64(current_datetime)
             ambient_interp = ACC.init_ACCESS_G(
                 current_datetime, self.reference_grid, self.params['REMOTE'])
-            data_dic['ambient_interp'] = ambient_interp
+            data_dic['ambient_interp'] = ambient_interp 
 
         next_day_new = False
 
