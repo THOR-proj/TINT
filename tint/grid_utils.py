@@ -23,6 +23,7 @@ def extract_datetimes(file_list):
     dt_list = []
     for f in file_list:
         dt = f.split('/')[-1].split('.')[0]
+        import pdb; pdb.set_trace()
         dt = dt.split('_')[1] + dt.split('_')[2][:4]
 #         import pdb; pdb.set_trace()
         dt = '{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}'.format(
