@@ -21,7 +21,7 @@ import tint.process_ERA5 as ERA5
 import tint.process_WRF as WRF
 import tint.process_ACCESS as ACC
 import tint.process_operational_radar as po
-from data_utils import extract_datetimes
+from tint.data_utils import extract_datetimes
 
 
 class Tracks(object):
