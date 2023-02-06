@@ -14,19 +14,6 @@ import numpy as np
 import pyart
 
 
-def extract_datetimes(file_list):
-    dt_list = []
-    for f in file_list:
-        dt = f.split('/')[-1].split('.')[0]
-        dt = dt.split('_')[1] + dt.split('_')[2][:4]
-#         import pdb; pdb.set_trace()
-        dt = '{:04d}-{:02d}-{:02d}T{:02d}:{:02d}'.format(
-            int(dt[:4]), int(dt[4:6]), int(dt[6:8]),
-            int(dt[8:10]), int(dt[10:12]))
-        dt_list.append(np.datetime64(dt))
-    return dt_list
-
-
 def read_nexrad_key(key):
     """
     Returns pyart radar object from nexrad S3 key.
