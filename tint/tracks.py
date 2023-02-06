@@ -21,6 +21,7 @@ import tint.process_ERA5 as ERA5
 import tint.process_WRF as WRF
 import tint.process_ACCESS as ACC
 import tint.process_operational_radar as po
+from data_utils import extract_datetimes
 
 
 class Tracks(object):
@@ -92,7 +93,8 @@ class Tracks(object):
             'SAVE_DIR': '~/Documents',
             'REFERENCE_GRID_FORMAT': 'ODIM',
             'RESET_NEW_DAY': False,
-            'REFERENCE_RADAR': 63}
+            'REFERENCE_RADAR': 63,
+            'USE_DAY_GRIDS': False}
 
         # Load user specified parameters.
         for p in params:
@@ -158,8 +160,7 @@ class Tracks(object):
         self.counter = self.__saved_counter
         self.current_objects = self.__saved_objects
 
-    def update_reference_grid(self, grid, old_suffix='a'):
-        datetime = parse_grid_datetime(grid)
+    def get_suffix(self, datetime):
         if self.params['REFERENCE_RADAR'] == 31:
             if datetime < np.datetime64('2011-12-01'):
                 suffix = 'a'
@@ -186,12 +187,18 @@ class Tracks(object):
                 suffix = 'b'
         else:
             suffix = ''
-        if suffix != old_suffix:
+        return suffix
+
+    def update_reference_grid(self, grid):
+        datetime = parse_grid_datetime(grid)
+        suffix = self.get_suffix(self, datetime)
+        if suffix != self.old_suffix:
             path = '/g/data/w40/esh563/reference_grids/'
             path += 'reference_grid_{}{}.h5'.format(
                 self.params['REFERENCE_RADAR'], suffix)
             self.reference_grid = ACC.get_reference_grid(
                 path, self.params['REFERENCE_GRID_FORMAT'])
+            self.old_suffix = suffix
         return suffix
 
     def save_netcdf(self, filename):
@@ -204,7 +211,7 @@ class Tracks(object):
         # Append metadata
         return ds
 
-    def format_next_grid(self, grids):
+    def format_next_grid(self, grids, day_grids=None):
         if self.params['INPUT_TYPE'] == 'GRIDS':
             new_grid = next(grids)
         elif self.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
@@ -214,9 +221,37 @@ class Tracks(object):
                 self.params['REMOTE'])
         elif self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
             new_datetime = next(grids)
-            new_grid, self.file_list = po.get_grid(
-                new_datetime, self.params,
-                self.reference_grid, self.tmp_dir, self.file_list)
+            if self.params['USE_DAY_GRIDS'] and new_datetime is None:
+                new_day = next(day_grids)
+                if new_day is not None:
+                    suffix = self.get_suffix(
+                        self, new_day)
+                    if suffix != self.old_suffix:
+                        path = '/g/data/w40/esh563/reference_grids/'
+                        path += 'reference_grid_{}{}.h5'.format(
+                            self.params['REFERENCE_RADAR'], suffix)
+                        self.reference_grid = ACC.get_reference_grid(
+                            path, self.params['REFERENCE_GRID_FORMAT'])
+                        self.old_suffix = suffix
+                        import pdb; pdb.set_trace()
+                        new_grid, self.file_list = po.get_grid(
+                            new_day, self.params,
+                            self.reference_grid, self.tmp_dir, self.file_list)
+                        dt_list = extract_datetimes(self.file_list)
+                        grids = (day for day in dt_list)
+                        new_datetime = next(grids)
+
+                        new_grid, self.file_list = po.get_grid(
+                            new_datetime, self.params,
+                            self.reference_grid, self.tmp_dir, self.file_list)
+                        self.params['DT'] = np.argmax(
+                            np.bincount(
+                                (np.diff(np.array(dt_list))).astype(int)))
+
+            else:
+                new_grid, self.file_list = po.get_grid(
+                    new_datetime, self.params,
+                    self.reference_grid, self.tmp_dir, self.file_list)
         return new_grid
 
     def get_next_grid(self, grid_obj2, grids, data_dic):
@@ -267,7 +302,7 @@ class Tracks(object):
 
         return next_day_new
 
-    def get_tracks(self, grids, b_path=None):
+    def get_tracks(self, grids, day_grids=None, b_path=None):
         """Obtains tracks given a list of pyart grid objects."""
         start_time = datetime.datetime.now()
 
@@ -326,7 +361,7 @@ class Tracks(object):
             current_datetime = np.datetime64(current_datetime)
             ambient_interp = ACC.init_ACCESS_G(
                 current_datetime, self.reference_grid, self.params['REMOTE'])
-            data_dic['ambient_interp'] = ambient_interp 
+            data_dic['ambient_interp'] = ambient_interp
 
         next_day_new = False
 

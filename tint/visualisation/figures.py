@@ -128,7 +128,8 @@ def init_cross_section(
 
     central_lon = grid.origin_longitude['data'][0]
     central_lat = grid.origin_latitude['data'][0]
-    projection = ccrs.AzimuthalEquidistant(central_lon, central_lat)
+    projection = ccrs.AzimuthalEquidistant(
+        central_longitude=central_lon, central_latitude=central_lat)
     # Initialise fig and ax if not passed as arguments
     if fig is None:
         init_fonts(params)

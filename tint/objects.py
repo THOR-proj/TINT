@@ -573,6 +573,7 @@ def temporal_continuity_check(
         dt=np.timedelta64(10, 'm')):
     scans = group_df.index.get_level_values(0).values
     cts_scans = count_consecutive(scans)
+    import pdb; pdb.set_trace()
     return cts_scans * dt < length
 
 
