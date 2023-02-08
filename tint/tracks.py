@@ -312,7 +312,7 @@ class Tracks(object):
 
         if self.record is None:
             # tracks object being initialized
-            grid_obj2 = self.format_next_grid(grids)
+            grid_obj2, day = self.format_next_grid(grids, day_grids=day_grids)
             if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
                 old_suffix = self.update_reference_grid(grid_obj2)
             self.grid_size = get_grid_size(grid_obj2)
@@ -378,7 +378,7 @@ class Tracks(object):
             for n in data_names + ['frame']:
                 data_dic[n] = data_dic[n + '_new']
             try:
-                grid_obj2 = self.format_next_grid(grids)
+                grid_obj2, day = self.format_next_grid(grids, day_grids)
                 grid_obj2, data_dic = self.get_next_grid(
                     grid_obj2, grids, data_dic)
                 if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
