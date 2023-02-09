@@ -126,12 +126,34 @@ class Tracks(object):
         if self.params['INPUT_TYPE'] in ['ACCESS_DATETIMES', 'OPER_DATETIMES']:
             radar_num = self.params['REFERENCE_RADAR']
             if self.params['REMOTE']:
-                if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52, 14]:
-                    suffix = 'a'
+                if self.params['REFERENCE_RADAR'] == 31:
+                    if datetime < np.datetime64('2011-12-01'):
+                        self.old_suffix = 'a'
+                    elif (
+                            datetime >= np.datetime64('2011-12-01')
+                            and datetime < np.datetime64('2019-05-14')):
+                        self.old_suffix = 'b'
+                    else:
+                        self.old_suffix = 'c'
+                elif self.params['REFERENCE_RADAR'] == 32:
+                    if datetime < np.datetime64('2019-12-28'):
+                        self.old_suffix = 'a'
+                    else:
+                        self.old_suffix = 'b'
+                elif self.params['REFERENCE_RADAR'] == 48:
+                    if datetime < np.datetime64('2014-04-23'):
+                        self.old_suffix = 'a'
+                    else:
+                        self.old_suffix = 'b'
+                elif self.params['REFERENCE_RADAR'] == 52:
+                    if datetime < np.datetime64('2016-04-05'):
+                        self.old_suffix = 'a'
+                    else:
+                        self.old_suffix = 'b'
                 else:
-                    suffix = ''
+                    self.old_suffix = ''
                 path = '/g/data/w40/esh563/reference_grids/'
-                path += 'reference_grid_{}{}.h5'.format(radar_num, suffix)
+                path += 'reference_grid_{}{}.h5'.format(radar_num, self.old_suffix)
             else:
                 path = '/home/student.unimelb.edu.au/shorte1/Documents/'
                 path += 'CPOL_analysis/reference_grid_{}.h5'.format(
@@ -191,7 +213,7 @@ class Tracks(object):
 
     def update_reference_grid(self, grid):
         datetime = parse_grid_datetime(grid)
-        suffix = self.get_suffix(self, datetime)
+        suffix = self.get_suffix(datetime)
         if suffix != self.old_suffix:
             path = '/g/data/w40/esh563/reference_grids/'
             path += 'reference_grid_{}{}.h5'.format(
@@ -220,12 +242,15 @@ class Tracks(object):
                 new_datetime, self.ACCESS_refl, self.reference_grid,
                 self.params['REMOTE'])
         elif self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
-            new_datetime = next(grids)
-            if self.params['USE_DAY_GRIDS'] and new_datetime is None:
-                new_day = next(day_grids)
-                if new_day is not None:
-                    suffix = self.get_suffix(
-                        self, new_day)
+            try:
+                new_datetime = next(grids)
+                new_grid, self.file_list = po.get_grid(
+                    new_datetime, self.params,
+                    self.reference_grid, self.tmp_dir, self.file_list)
+            except StopIteration:
+                try:
+                    new_day = next(day_grids)
+                    suffix = self.get_suffix(new_day)
                     if suffix != self.old_suffix:
                         path = '/g/data/w40/esh563/reference_grids/'
                         path += 'reference_grid_{}{}.h5'.format(
@@ -233,26 +258,23 @@ class Tracks(object):
                         self.reference_grid = ACC.get_reference_grid(
                             path, self.params['REFERENCE_GRID_FORMAT'])
                         self.old_suffix = suffix
-                        import pdb; pdb.set_trace()
-                        new_grid, self.file_list = po.get_grid(
-                            new_day, self.params,
-                            self.reference_grid, self.tmp_dir, self.file_list)
-                        dt_list = extract_datetimes(self.file_list)
-                        grids = (day for day in dt_list)
-                        new_datetime = next(grids)
+                    new_grid, self.file_list = po.get_grid(
+                        new_day, self.params, self.reference_grid,
+                        self.tmp_dir, self.file_list)
+                    dt_list = sorted(extract_datetimes(self.file_list))
 
-                        new_grid, self.file_list = po.get_grid(
-                            new_datetime, self.params,
-                            self.reference_grid, self.tmp_dir, self.file_list)
-                        self.params['DT'] = np.argmax(
-                            np.bincount(
-                                (np.diff(np.array(dt_list))).astype(int)))
+                    grids = (day for day in dt_list)
+                    new_datetime = next(grids)
 
-            else:
-                new_grid, self.file_list = po.get_grid(
-                    new_datetime, self.params,
-                    self.reference_grid, self.tmp_dir, self.file_list)
-        return new_grid
+                    new_grid, self.file_list = po.get_grid(
+                        new_datetime, self.params,
+                        self.reference_grid, self.tmp_dir, self.file_list)
+                    self.params['DT'] = int(np.argmax(
+                        np.bincount((np.diff(np.array(dt_list))).astype(int)))/60)
+                except StopIteration:
+                    raise StopIteration
+
+        return new_grid, grids
 
     def get_next_grid(self, grid_obj2, grids, data_dic):
         """Find the next nonempty grid."""
@@ -265,7 +287,7 @@ class Tracks(object):
         while (
                 np.max(data_dic['refl']) > 30
                 and np.max(data_dic['refl_new']) == 0):
-            grid_obj2 = self.format_next_grid(grids)
+            grid_obj2, grids = self.format_next_grid(grids)
             data = extract_grid_data(
                 grid_obj2, self.field, self.grid_size, self.params)
             for i in range(len(data_names)):
@@ -312,9 +334,9 @@ class Tracks(object):
 
         if self.record is None:
             # tracks object being initialized
-            grid_obj2, day = self.format_next_grid(grids, day_grids=day_grids)
+            grid_obj2, grids = self.format_next_grid(grids, day_grids=day_grids)
             if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
-                old_suffix = self.update_reference_grid(grid_obj2)
+                self.old_suffix = self.update_reference_grid(grid_obj2)
             self.grid_size = get_grid_size(grid_obj2)
             self.radar_info = get_radar_info(grid_obj2)
             self.counter = Counter()
@@ -378,12 +400,12 @@ class Tracks(object):
             for n in data_names + ['frame']:
                 data_dic[n] = data_dic[n + '_new']
             try:
-                grid_obj2, day = self.format_next_grid(grids, day_grids)
+                grid_obj2, grids = self.format_next_grid(grids, day_grids)
                 grid_obj2, data_dic = self.get_next_grid(
                     grid_obj2, grids, data_dic)
                 if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
-                    old_suffix = self.update_reference_grid(
-                        grid_obj2, old_suffix)
+                    self.old_suffix = self.update_reference_grid(
+                        grid_obj2, self.old_suffix)
             except StopIteration:
                 grid_obj2 = None
 
@@ -495,10 +517,13 @@ class Tracks(object):
         if self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
             shutil.rmtree(self.tmp_dir)
 
-        self = post_tracks(self)
-        self = get_system_tracks(self)
-        self = classify_tracks(self)
-        self = get_exclusion_categories(self)
+        if len(self.tracks) > 0:
+            self = post_tracks(self)
+            self = get_system_tracks(self)
+            self = classify_tracks(self)
+            self = get_exclusion_categories(self)
+        else:
+            print('No objects found at any time! Confirm no errors.')
 
         self.__load()
         time_elapsed = datetime.datetime.now() - start_time
