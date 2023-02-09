@@ -125,39 +125,13 @@ class Tracks(object):
         self.reference_grid = None
         if self.params['INPUT_TYPE'] in ['ACCESS_DATETIMES', 'OPER_DATETIMES']:
             radar_num = self.params['REFERENCE_RADAR']
+            self.old_suffix = self.get_suffix(np.datetime64('2001-01-01'))
             if self.params['REMOTE']:
-                if self.params['REFERENCE_RADAR'] == 31:
-                    if datetime < np.datetime64('2011-12-01'):
-                        self.old_suffix = 'a'
-                    elif (
-                            datetime >= np.datetime64('2011-12-01')
-                            and datetime < np.datetime64('2019-05-14')):
-                        self.old_suffix = 'b'
-                    else:
-                        self.old_suffix = 'c'
-                elif self.params['REFERENCE_RADAR'] == 32:
-                    if datetime < np.datetime64('2019-12-28'):
-                        self.old_suffix = 'a'
-                    else:
-                        self.old_suffix = 'b'
-                elif self.params['REFERENCE_RADAR'] == 48:
-                    if datetime < np.datetime64('2014-04-23'):
-                        self.old_suffix = 'a'
-                    else:
-                        self.old_suffix = 'b'
-                elif self.params['REFERENCE_RADAR'] == 52:
-                    if datetime < np.datetime64('2016-04-05'):
-                        self.old_suffix = 'a'
-                    else:
-                        self.old_suffix = 'b'
-                else:
-                    self.old_suffix = ''
                 path = '/g/data/w40/esh563/reference_grids/'
-                path += 'reference_grid_{}{}.h5'.format(radar_num, self.old_suffix)
             else:
                 path = '/home/student.unimelb.edu.au/shorte1/Documents/'
-                path += 'CPOL_analysis/reference_grid_{}.h5'.format(
-                    radar_num)
+                path += 'CPOL_analysis/'
+            path += 'reference_grid_{}{}.h5'.format(radar_num, self.old_suffix)
             self.reference_grid = ACC.get_reference_grid(
                 path, params['REFERENCE_GRID_FORMAT'])
         if self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
@@ -185,31 +159,50 @@ class Tracks(object):
     def get_suffix(self, datetime):
         if self.params['REFERENCE_RADAR'] == 31:
             if datetime < np.datetime64('2011-12-01'):
-                suffix = 'a'
+                self.old_suffix = 'a'
             elif (
                     datetime >= np.datetime64('2011-12-01')
                     and datetime < np.datetime64('2019-05-14')):
-                suffix = 'b'
+                self.old_suffix = 'b'
             else:
-                suffix = 'c'
+                self.old_suffix = 'c'
         elif self.params['REFERENCE_RADAR'] == 32:
             if datetime < np.datetime64('2019-12-28'):
-                suffix = 'a'
+                self.old_suffix = 'a'
             else:
-                suffix = 'b'
+                self.old_suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 48:
             if datetime < np.datetime64('2014-04-23'):
-                suffix = 'a'
+                self.old_suffix = 'a'
             else:
-                suffix = 'b'
+                self.old_suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 52:
             if datetime < np.datetime64('2016-04-05'):
-                suffix = 'a'
+                self.old_suffix = 'a'
             else:
-                suffix = 'b'
+                self.old_suffix = 'b'
+        elif self.params['REFERENCE_RADAR'] == 2:
+            if datetime < np.datetime64('2007-07-31'):
+                self.old_suffix = 'a'
+            else:
+                self.old_suffix = 'b'
+        elif self.params['REFERENCE_RADAR'] == 3:
+            if datetime < np.datetime64('2011-02-09'):
+                self.old_suffix = 'a'
+            else:
+                self.old_suffix = 'b'
+        elif self.params['REFERENCE_RADAR'] == 8:
+            if datetime < np.datetime64('2007-08-27'):
+                self.old_suffix = 'a'
+            else:
+                self.old_suffix = 'b'
+        elif self.params['REFERENCE_RADAR'] == 14:
+            if datetime < np.datetime64('2004-02-03'):
+                self.old_suffix = 'a'
+            else:
+                self.old_suffix = 'b'
         else:
-            suffix = ''
-        return suffix
+            self.old_suffix = ''
 
     def update_reference_grid(self, grid):
         datetime = parse_grid_datetime(grid)
