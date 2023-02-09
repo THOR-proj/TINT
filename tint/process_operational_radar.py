@@ -38,7 +38,7 @@ def setup_ODIM_files(datetime, params, tmp_dir):
     if not params['REMOTE']:
         urllib.request.urlretrieve(origin_path, local_path)
 
-    print('Extracting radar data for {}-{}-{}.'.format(
+    print('Extracting radar data for {:04d}-{:02d}-{:02d}.'.format(
         components[0], components[1], components[2]))
     if not params['REMOTE']:
         zip_fh = zipfile.ZipFile(local_path)
