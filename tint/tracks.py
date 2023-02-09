@@ -159,50 +159,51 @@ class Tracks(object):
     def get_suffix(self, datetime):
         if self.params['REFERENCE_RADAR'] == 31:
             if datetime < np.datetime64('2011-12-01'):
-                self.old_suffix = 'a'
+                suffix = 'a'
             elif (
                     datetime >= np.datetime64('2011-12-01')
                     and datetime < np.datetime64('2019-05-14')):
-                self.old_suffix = 'b'
+                suffix = 'b'
             else:
-                self.old_suffix = 'c'
+                suffix = 'c'
         elif self.params['REFERENCE_RADAR'] == 32:
             if datetime < np.datetime64('2019-12-28'):
-                self.old_suffix = 'a'
+                suffix = 'a'
             else:
-                self.old_suffix = 'b'
+                suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 48:
             if datetime < np.datetime64('2014-04-23'):
-                self.old_suffix = 'a'
+                suffix = 'a'
             else:
-                self.old_suffix = 'b'
+                suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 52:
             if datetime < np.datetime64('2016-04-05'):
-                self.old_suffix = 'a'
+                suffix = 'a'
             else:
-                self.old_suffix = 'b'
+                suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 2:
             if datetime < np.datetime64('2007-07-31'):
-                self.old_suffix = 'a'
+                suffix = 'a'
             else:
-                self.old_suffix = 'b'
+                suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 3:
             if datetime < np.datetime64('2011-02-09'):
-                self.old_suffix = 'a'
+                suffix = 'a'
             else:
-                self.old_suffix = 'b'
+                suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 8:
             if datetime < np.datetime64('2007-08-27'):
-                self.old_suffix = 'a'
+                suffix = 'a'
             else:
-                self.old_suffix = 'b'
+                suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 14:
             if datetime < np.datetime64('2004-02-03'):
-                self.old_suffix = 'a'
+                suffix = 'a'
             else:
-                self.old_suffix = 'b'
+                suffix = 'b'
         else:
-            self.old_suffix = ''
+            suffix = ''
+        return suffix
 
     def update_reference_grid(self, grid):
         datetime = parse_grid_datetime(grid)
