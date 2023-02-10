@@ -263,10 +263,13 @@ class Tracks(object):
                     new_grid, self.file_list = po.get_grid(
                         new_datetime, self.params,
                         self.reference_grid, self.tmp_dir, self.file_list)
-                    self.params['DT'] = int(np.argmax(
-                        np.bincount((np.diff(np.array(dt_list))).astype(int)))/60)
+                    self.params['DT'] = int(np.argmax(np.bincount((np.diff(
+                        np.array(dt_list))).astype(int)))/60)
                     if self.params['DT'] < 7:
                         import pdb; pdb.set_trace()
+                        scale_factor = np.ceil(
+                            10/self.params['DT']).astype(int)
+                        self.params['DT'] = self.params['DT']*scale_factor
                 except StopIteration:
                     raise StopIteration
 
