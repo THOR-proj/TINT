@@ -145,7 +145,8 @@ def init_ERA5(grid, params):
     print('Getting interpolated ERA5 for next {} hours.'.format(
         params['AMBIENT_TIMESTEP']))
     ERA5_interp = interp_ERA_ds(
-        ERA5_all, grid, params, timedelta=np.timedelta64(10, 'm'))
+        ERA5_all, grid, params,
+        timedelta=np.timedelta64(params['DT'], 'm'))
     ERA5_interp.load()
     return ERA5_all, ERA5_interp
 
@@ -171,6 +172,7 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp):
         print('Getting interpolated ERA5 for next {} hours.'.format(
             params['AMBIENT_TIMESTEP']))
         ERA5_interp = interp_ERA_ds(
-            ERA5_all, grid, params, timedelta=np.timedelta64(10, 'm'))
+            ERA5_all, grid, params,
+            timedelta=np.timedelta64(params['DT'], 'm'))
         ERA5_interp.load()
     return ERA5_all, ERA5_interp

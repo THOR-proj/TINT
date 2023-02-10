@@ -265,6 +265,8 @@ class Tracks(object):
                         self.reference_grid, self.tmp_dir, self.file_list)
                     self.params['DT'] = int(np.argmax(
                         np.bincount((np.diff(np.array(dt_list))).astype(int)))/60)
+                    if self.params['DT'] < 7:
+                        import pdb; pdb.set_trace()
                 except StopIteration:
                     raise StopIteration
 
