@@ -266,10 +266,26 @@ class Tracks(object):
                     self.params['DT'] = int(np.argmax(np.bincount((np.diff(
                         np.array(dt_list))).astype(int)))/60)
                     if self.params['DT'] < 7:
-                        import pdb; pdb.set_trace()
                         scale_factor = np.ceil(
                             10/self.params['DT']).astype(int)
                         self.params['DT'] = self.params['DT']*scale_factor
+                        new_file_inds = [
+                            i for i in np.arange(0, len(dt_list))
+                            if dt_list[i].astype('<M8[m]') in
+                            np.arange(
+                                dt_list[0].astype('<M8[m]'),
+                                dt_list[i].astype('<M8[m]')+np.timedelta64(1, 'D'),
+                                np.timedelta64(self.params['DT'], 'm'))]
+                        new_file_list = [
+                            self.file_list[new_file_inds[i]]
+                            for i in np.arange(len(new_file_inds))]
+                        new_dt_list = [
+                            dt_list[new_file_inds[i]]
+                            for i in np.arange(len(new_file_inds))]
+                        self.file_list = new_file_list
+                        grids = (day for day in new_dt_list)
+                        new_datetime = next(grids)
+
                 except StopIteration:
                     raise StopIteration
 
@@ -333,7 +349,8 @@ class Tracks(object):
 
         if self.record is None:
             # tracks object being initialized
-            grid_obj2, grids = self.format_next_grid(grids, day_grids=day_grids)
+            grid_obj2, grids = self.format_next_grid(
+                grids, day_grids=day_grids)
             if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
                 self.old_suffix = self.update_reference_grid(grid_obj2)
             self.grid_size = get_grid_size(grid_obj2)
