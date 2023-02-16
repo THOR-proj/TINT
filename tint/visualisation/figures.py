@@ -126,10 +126,7 @@ def init_cross_section(
     if date_time is None:
         date_time = grid_time
 
-    central_lon = grid.origin_longitude['data'][0]
-    central_lat = grid.origin_latitude['data'][0]
-    projection = ccrs.AzimuthalEquidistant(
-        central_longitude=central_lon, central_latitude=central_lat)
+    projection = ccrs.PlateCarree()
     # Initialise fig and ax if not passed as arguments
     if fig is None:
         init_fonts(params)
@@ -172,7 +169,7 @@ def horizontal_cross_section(
 
     display.plot_grid(
         tracks.field, level=alt_ind, vmin=vmin, vmax=vmax, cmap=cmap,
-        transform=projection, ax=ax, colorbar_label='Reflectivity [DbZ]',
+        transform=ccrs.PlateCarree(), ax=ax, colorbar_label='Reflectivity [DbZ]',
         colorbar_flag=params['colorbar_flag'], zorder=1, axislabels_flag=False,
         lon_lines=[0], lat_lines=[0])
 
