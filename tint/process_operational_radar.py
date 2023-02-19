@@ -95,6 +95,8 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
             new_path, file_field_names=False,
             include_fields='reflectivity')
 
+        import pdb; pdb.set_trace()
+
         if pyart_radar.fields == {}:
             print('Data missing from file.')
             grid = reference_grid
