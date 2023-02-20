@@ -76,6 +76,20 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
         tmp_dir, params['REFERENCE_RADAR'], dt_str[:-2])
 
     bool_index = [(file_time_path in f) for f in file_list]
+
+    refl_count = np.nan
+
+    try:
+        lvl2_p = '/g/data/rq0/level_2/{0}/REFLECTIVITY/{0}_{1}_reflectivity.nc'
+        lvl2_p = lvl2_p.format(params['REFERENCE_RADAR'], dt_str.split('_')[0])
+        lvl2 = xr.open_dataset(lvl2_p)
+        lvl2 = lvl2.sel(time=datetime)
+        refl_count = len(np.argwhere(lvl2['reflectivity'].values > 30))
+    except FileNotFoundError:
+        print('Missing level 2 check file. Extracting level 1.')
+    except KeyError:
+        print('Grid time not in level 2 file. Extracting level 1.')
+
     if not np.any(bool_index):
         print('Missing file.')
         grid = reference_grid
@@ -85,17 +99,21 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
 
         grid.time['units'] = time
         grid.time['data'] = np.array([0.0], dtype=np.float32)
+    elif refl_count < 4:
+        print('Reflectivity < 30 dBZ. Skipping.')
+        grid = reference_grid
 
-        # import pdb; pdb.set_trace()
+        time = grid.time['units'][:14]
+        time += datetime.astype(str).split('.')[0] + 'Z'
 
+        grid.time['units'] = time
+        grid.time['data'] = np.array([0.0], dtype=np.float32)
     else:
         new_path = np.array(file_list)[bool_index][0]
 
         pyart_radar = pyart.aux_io.read_odim_h5(
             new_path, file_field_names=False,
             include_fields='reflectivity')
-
-        import pdb; pdb.set_trace()
 
         if pyart_radar.fields == {}:
             print('Data missing from file.')
