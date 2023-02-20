@@ -243,6 +243,7 @@ class Tracks(object):
                     self.reference_grid, self.tmp_dir, self.file_list)
             except StopIteration:
                 try:
+                    import pdb; pdb.set_trace()
                     new_day = next(day_grids)
                     suffix = self.get_suffix(new_day)
                     if suffix != self.old_suffix:
@@ -291,7 +292,7 @@ class Tracks(object):
 
         return new_grid, grids
 
-    def get_next_grid(self, grid_obj2, grids, data_dic):
+    def get_next_grid(self, grid_obj2, grids, data_dic, day_grids=None):
         """Find the next nonempty grid."""
         data = extract_grid_data(
             grid_obj2, self.field, self.grid_size, self.params)
@@ -302,12 +303,12 @@ class Tracks(object):
         while (
                 np.max(data_dic['refl']) > 30
                 and np.max(data_dic['refl_new']) == 0):
-            grid_obj2, grids = self.format_next_grid(grids)
+            grid_obj2, grids = self.format_next_grid(grids, day_grids)
             data = extract_grid_data(
                 grid_obj2, self.field, self.grid_size, self.params)
             for i in range(len(data_names)):
                 data_dic[data_names[i] + '_new'] = data[i]
-            print('Skipping erroneous grid.')
+            print('Skipping grid.')
         return grid_obj2, data_dic
 
     def get_boundary_inds(self, grid, b_path=None):
@@ -334,8 +335,7 @@ class Tracks(object):
         if new_day:
             self.grid_obj_day = grid_day1
             next_day_new = False
-            print('New day at {}. Resetting objects.'.format(
-                grid_day1))
+            print('New day at {}. Resetting objects.'.format(grid_day1))
 
         return next_day_new
 
@@ -416,9 +416,10 @@ class Tracks(object):
             for n in data_names + ['frame']:
                 data_dic[n] = data_dic[n + '_new']
             try:
-                grid_obj2, grids = self.format_next_grid(grids, day_grids)
+                grid_obj2, grids = self.format_next_grid(
+                    grids, day_grids=day_grids)
                 grid_obj2, data_dic = self.get_next_grid(
-                    grid_obj2, grids, data_dic)
+                    grid_obj2, grids, data_dic, day_grids=day_grids)
                 if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
                     self.old_suffix = self.update_reference_grid(
                         grid_obj2, self.old_suffix)
