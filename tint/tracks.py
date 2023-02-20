@@ -243,7 +243,6 @@ class Tracks(object):
                     self.reference_grid, self.tmp_dir, self.file_list)
             except StopIteration:
                 try:
-                    import pdb; pdb.set_trace()
                     new_day = next(day_grids)
                     suffix = self.get_suffix(new_day)
                     if suffix != self.old_suffix:
