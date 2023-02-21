@@ -99,7 +99,7 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
 
         grid.time['units'] = time
         grid.time['data'] = np.array([0.0], dtype=np.float32)
-    elif refl_count < 4:
+    elif refl_count < 8:
         print('Reflectivity < 30 dBZ. Skipping.')
         grid = reference_grid
 
