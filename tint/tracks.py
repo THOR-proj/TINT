@@ -387,7 +387,7 @@ class Tracks(object):
         # Get Ambient
         if self.params['AMBIENT'] == 'ERA5':
             ambient_all, ambient_interp = ERA5.init_ERA5(
-                grid_obj2, self.params)
+                grid_obj2, self.params, self.file_list)
             data_dic['ambient_interp'] = ambient_interp
         elif self.params['AMBIENT'] == 'WRF':
             ambient_all, ambient_interp = WRF.init_WRF(grid_obj2, self.params)
@@ -478,7 +478,8 @@ class Tracks(object):
             # Update ambient winds
             if self.params['AMBIENT'] == 'ERA5':
                 ambient_all, ambient_interp = ERA5.update_ERA5(
-                    grid_obj1, self.params, ambient_all, ambient_interp)
+                    grid_obj1, self.params, ambient_all,
+                    ambient_interp, self.file_list)
                 data_dic['ambient_interp'] = ambient_interp
             elif self.params['AMBIENT'] == 'WRF':
                 ambient_all, ambient_interp = WRF.update_WRF(

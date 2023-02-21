@@ -3,7 +3,7 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 import calendar
-from tint.grid_utils import parse_grid_datetime
+from tint.grid_utils import parse_grid_datetime, extract_datetimes
 
 
 def get_datetime_components(date_time):
@@ -79,24 +79,32 @@ def flexible_round(x, prec=2, base=.05, method=round):
     return round(base * method(float(x) / base), prec)
 
 
-def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
+def interp_ERA_ds(
+        ds_all, grid, params,
+        timedelta=np.timedelta64(10, 'm'), file_list=None):
     lon, lat = cartesian_to_geographic(
-        grid.x['data'].data, grid.y['data'].data, grid.get_projparams())
+        grid.x['data'].data, grid.y['data'].data,
+        grid.get_projparams())
     if params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
         alt = np.arange(0, 20000+500, 500)
     else:
         alt = grid.z['data'].data
 
-    min_lon = flexible_round(min(lon), prec=1, base=.2, method=np.floor)
-    max_lon = flexible_round(max(lon), prec=1, base=.2, method=np.ceil)
-    min_lat = flexible_round(min(lat), prec=2, base=.25, method=np.floor)
-    max_lat = flexible_round(max(lat), prec=2, base=.25, method=np.ceil)
+    min_lon = flexible_round(
+        min(lon), prec=1, base=.2, method=np.floor)
+    max_lon = flexible_round(
+        max(lon), prec=1, base=.2, method=np.ceil)
+    min_lat = flexible_round(
+        min(lat), prec=2, base=.25, method=np.floor)
+    max_lat = flexible_round(
+        max(lat), prec=2, base=.25, method=np.ceil)
 
     grid_time = parse_grid_datetime(grid)
     components = get_datetime_components(grid_time)
 
     if params['AMBIENT_TIMESTEP'] == 1:
-        start_time = np.datetime64(grid_time.replace(minute=0, second=0))
+        start_time = np.datetime64(
+            grid_time.replace(minute=0, second=0))
         end_time = start_time + np.timedelta64(1, 'h')
     else:
         new_hour = components[3] // params['AMBIENT_TIMESTEP']
@@ -104,7 +112,8 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
         dt_string = '{:04d}-{:02d}-{:02d}T{:02d}:00:00'.format(
             components[0], components[1], components[2], new_hour)
         start_time = np.datetime64(dt_string)
-        end_time = start_time + np.timedelta64(params['AMBIENT_TIMESTEP'], 'h')
+        end_time = start_time + np.timedelta64(
+            params['AMBIENT_TIMESTEP'], 'h')
 
     ds = ds_all.loc[dict(
         latitude=slice(max_lat+.25, min_lat-.25),
@@ -122,8 +131,17 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
     ds = ds.rename({'level': 'altitude'})
     ds = ds.drop_vars('z')
     ds = ds.loc[dict(altitude=slice(22000, 0))]
-    times = np.arange(start_time, end_time, timedelta)
-    ds = ds.interp(longitude=lon, latitude=lat, altitude=alt, time=times)
+
+    if params['INPUT_TYPE'] == 'OPER_DATETIMES':
+        dt_list = sorted(extract_datetimes(file_list))
+        times = np.array([
+            dt.astype('<M8[m]') for dt in dt_list if
+            (dt >= start_time and dt <= end_time)])
+    else:
+        times = np.arange(start_time, end_time, timedelta)
+
+    ds = ds.interp(
+        longitude=lon, latitude=lat, altitude=alt, time=times)
 
     # if params['AMBIENT_TIMESTEP'] != 1:
     #     start_time = np.datetime64(grid_time.replace(minute=0, second=0))
@@ -133,7 +151,7 @@ def interp_ERA_ds(ds_all, grid, params, timedelta=np.timedelta64(10, 'm')):
     return ds
 
 
-def init_ERA5(grid, params):
+def init_ERA5(grid, params, file_list=None):
     grid_datetime = parse_grid_datetime(grid)
     grid_datetime = np.datetime64(grid_datetime.replace(second=0))
     print('Getting ERA5 metadata.')
@@ -146,12 +164,13 @@ def init_ERA5(grid, params):
         params['AMBIENT_TIMESTEP']))
     ERA5_interp = interp_ERA_ds(
         ERA5_all, grid, params,
-        timedelta=np.timedelta64(params['DT'], 'm'))
+        timedelta=np.timedelta64(params['DT'], 'm'),
+        file_list=file_list)
     ERA5_interp.load()
     return ERA5_all, ERA5_interp
 
 
-def update_ERA5(grid, params, ERA5_all, ERA5_interp):
+def update_ERA5(grid, params, ERA5_all, ERA5_interp, file_list=None):
     grid_datetime = parse_grid_datetime(grid)
     grid_datetime = np.datetime64(grid_datetime.replace(second=0))
     grid_datetime_hour = parse_grid_datetime(grid)
@@ -173,6 +192,7 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp):
             params['AMBIENT_TIMESTEP']))
         ERA5_interp = interp_ERA_ds(
             ERA5_all, grid, params,
-            timedelta=np.timedelta64(params['DT'], 'm'))
+            timedelta=np.timedelta64(params['DT'], 'm'),
+            file_list=file_list)
         ERA5_interp.load()
     return ERA5_all, ERA5_interp
