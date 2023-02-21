@@ -121,6 +121,7 @@ class Tracks(object):
         self.ACCESS_refl = None
         self.grid_obj_day = None
         self.file_list = None
+        self.old_file_list = None
 
         self.reference_grid = None
         if self.params['INPUT_TYPE'] in ['ACCESS_DATETIMES', 'OPER_DATETIMES']:
@@ -157,37 +158,38 @@ class Tracks(object):
         self.current_objects = self.__saved_objects
 
     def get_suffix(self, datetime):
+        dt = np.datetime64(datetime)
         if self.params['REFERENCE_RADAR'] == 31:
-            if datetime < np.datetime64('2011-12-01'):
+            if dt < np.datetime64('2011-12-01'):
                 suffix = 'a'
             elif (
-                    datetime >= np.datetime64('2011-12-01')
-                    and datetime < np.datetime64('2019-05-14')):
+                    dt >= np.datetime64('2011-12-01')
+                    and dt < np.datetime64('2019-05-14')):
                 suffix = 'b'
             else:
                 suffix = 'c'
         elif self.params['REFERENCE_RADAR'] == 32:
-            if datetime < np.datetime64('2019-12-28'):
+            if dt < np.datetime64('2019-12-28'):
                 suffix = 'a'
             else:
                 suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 48:
-            if datetime < np.datetime64('2014-04-23'):
+            if dt < np.datetime64('2014-04-23'):
                 suffix = 'a'
             else:
                 suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 52:
-            if datetime < np.datetime64('2016-04-05'):
+            if dt < np.datetime64('2016-04-05'):
                 suffix = 'a'
             else:
                 suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 2:
-            if datetime < np.datetime64('2007-07-31'):
+            if dt < np.datetime64('2007-07-31'):
                 suffix = 'a'
             else:
                 suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 3:
-            if datetime < np.datetime64('2011-02-09'):
+            if dt < np.datetime64('2011-02-09'):
                 suffix = 'a'
             else:
                 suffix = 'b'
@@ -197,7 +199,7 @@ class Tracks(object):
             else:
                 suffix = 'b'
         elif self.params['REFERENCE_RADAR'] == 14:
-            if datetime < np.datetime64('2004-02-03'):
+            if dt < np.datetime64('2004-02-03'):
                 suffix = 'a'
             else:
                 suffix = 'b'
@@ -238,6 +240,7 @@ class Tracks(object):
         elif self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
             try:
                 new_datetime = next(grids)
+                self.old_file_list = self.file_list
                 new_grid, self.file_list = po.get_grid(
                     new_datetime, self.params,
                     self.reference_grid, self.tmp_dir, self.file_list)
@@ -252,6 +255,7 @@ class Tracks(object):
                         self.reference_grid = ACC.get_reference_grid(
                             path, self.params['REFERENCE_GRID_FORMAT'])
                         self.old_suffix = suffix
+                    self.old_file_list = self.file_list
                     new_grid, self.file_list = po.get_grid(
                         new_day, self.params, self.reference_grid,
                         self.tmp_dir, self.file_list)
@@ -420,8 +424,7 @@ class Tracks(object):
                 grid_obj2, data_dic = self.get_next_grid(
                     grid_obj2, grids, data_dic, day_grids=day_grids)
                 if self.params['REFERENCE_RADAR'] in [31, 32, 48, 52]:
-                    self.old_suffix = self.update_reference_grid(
-                        grid_obj2, self.old_suffix)
+                    self.old_suffix = self.update_reference_grid(grid_obj2)
             except StopIteration:
                 grid_obj2 = None
 
@@ -479,7 +482,7 @@ class Tracks(object):
             if self.params['AMBIENT'] == 'ERA5':
                 ambient_all, ambient_interp = ERA5.update_ERA5(
                     grid_obj1, self.params, ambient_all,
-                    ambient_interp, self.file_list)
+                    ambient_interp, self.old_file_list)
                 data_dic['ambient_interp'] = ambient_interp
             elif self.params['AMBIENT'] == 'WRF':
                 ambient_all, ambient_interp = WRF.update_WRF(
