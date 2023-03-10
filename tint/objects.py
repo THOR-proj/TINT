@@ -253,11 +253,14 @@ def get_object_prop(
         'center', 'com_x', 'com_y', 'grid_x', 'grid_y', 'proj_area',
         'lon', 'lat', 'field_max', 'max_height', 'volume',
         'level', 'touch_border', 'semi_major', 'semi_minor', 'orientation',
-        'eccentricity', 'mergers', 'parent', 'cells',
+        'eccentricity', #'mergers', 'parent', 'cells',
         'u_ambient_bottom', 'v_ambient_bottom',
         'u_ambient_mid', 'v_ambient_mid',
         'u_ambient_top', 'v_ambient_top',
-        'u_shift', 'v_shift']
+        'u_ambient_mean', 'v_ambient_mean',
+        'u_shift', 'v_shift', 'u_trop_shear', 'v_trop_shear', 'CAPE',
+        'trop_height', 'freezing_level', 'av_rh', 'av_ee', 'av_rh_bfl', 'av_ee_bfl',
+        'av_rh_afl', 'av_ee_afl']
     obj_prop = {p: [] for p in properties}
 
     nobj = np.max(data_dic['frames'])
@@ -276,9 +279,9 @@ def get_object_prop(
     raw3D = grid1.fields[field]['data'].data  # Complete dataset
     z_values = grid1.z['data']/1000
 
-    all_cells = identify_cells(
-        raw3D, data_dic['frames'], grid1, record, params,
-        data_dic['stein_class'])
+    #all_cells = identify_cells(
+    #    raw3D, data_dic['frames'], grid1, record, params,
+    #    data_dic['stein_class'])
 
     for i in range(levels):
 
@@ -288,8 +291,8 @@ def get_object_prop(
             data_dic['frames'][i], raw3D[z_min].astype(float), cache=False)
 
         for obj in np.arange(nobj) + 1:
-            obj_prop['mergers'].append(current_objects['mergers'][obj-1])
-            obj_prop['parent'].append(current_objects['parents'][obj-1])
+            #obj_prop['mergers'].append(current_objects['mergers'][obj-1])
+            #obj_prop['parent'].append(current_objects['parents'][obj-1])
             obj_prop['level'].append(i)
 
             # Get objects in images[i], i.e. the frame at i-th level
@@ -340,8 +343,67 @@ def get_object_prop(
             obj_prop['u_shift'].append(u_shift_obj)
             obj_prop['v_shift'].append(v_shift_obj)
 
+            grid_time = np.datetime64(record.time).astype('<M8[m]')
+
+            try:
+                # Get CAPE, tropopause height, average relative humidity, trop shear
+
+                CAPE = float(data_dic['ambient_interp']['cape'].sel(
+                    longitude=lon[0], latitude=lat[0], time=grid_time,
+                    method='nearest').values)
+                obj_prop['CAPE'].append(CAPE)
+                tp_idx = data_dic['ambient_interp']['tp_idx'].sel(
+                    longitude=lon[0], latitude=lat[0], time=grid_time,
+                    method='nearest').values
+                trop_height = float(data_dic['ambient_interp'].altitude[tp_idx].values)
+                obj_prop['trop_height'].append(trop_height)
+                t = data_dic['ambient_interp']['t'].sel(
+                    longitude=lon[0], latitude=lat[0], time=grid_time,
+                    method='nearest').values
+                r = data_dic['ambient_interp']['r'].sel(
+                    longitude=lon[0], latitude=lat[0], time=grid_time,
+                    method='nearest').values
+                ee = 100/r-1
+
+                lowest_alt_idx = np.argwhere(t>0).squeeze()[0]
+
+                fl_idx = np.argwhere(t<273.15).squeeze()[0]
+                freezing_level = float(data_dic['ambient_interp'].altitude[fl_idx].values)
+
+                # Note if fl_idx == lowest_alt_idx, _bfl means will be nan. Suitable.
+
+                av_rh = np.nanmean(r[:tp_idx])
+                av_rh_bfl = np.nanmean(r[:fl_idx])
+                av_rh_afl = np.nanmean(r[fl_idx:tp_idx])
+                av_ee = np.nanmean(ee[:tp_idx])
+                av_ee_bfl = np.nanmean(ee[:fl_idx])
+                av_ee_afl = np.nanmean(ee[fl_idx:tp_idx])
+
+                obj_prop['av_rh'] = av_rh
+                obj_prop['av_rh_bfl'] = av_rh_bfl
+                obj_prop['av_rh_afl'] = av_rh_afl
+                obj_prop['av_ee'] = av_ee
+                obj_prop['av_ee_bfl'] = av_ee_bfl
+                obj_prop['av_ee_afl'] = av_ee_afl
+
+                obj_prop['freezing_level'] = freezing_level
+
+                u = data_dic['ambient_interp']['u'].sel(
+                    longitude=lon[0], latitude=lat[0], time=grid_time,
+                    method='nearest').values
+                v = data_dic['ambient_interp']['v'].sel(
+                    longitude=lon[0], latitude=lat[0], time=grid_time,
+                    method='nearest').values
+                try:
+                    obj_prop['u_trop_shear'].append(u[tp_idx]-u[2])
+                    obj_prop['v_trop_shear'].append(v[tp_idx]-v[2])
+                except IndexError:
+                    print('Get lowest non-nan level')
+
+            except KeyError:
+                print('Missing key - check ERA5 data.')
+
             if params['AMBIENT'] is not None:
-                grid_time = np.datetime64(record.time).astype('<M8[m]')
 
                 interval = np.arange(
                     params['WIND_LEVELS'][i, 0],
@@ -356,6 +418,7 @@ def get_object_prop(
                         altitude=alt, method='nearest') for alt in altitudes]
                 ambients_u = [np.round(float(a.u.values), 5) for a in ambients]
                 ambients_v = [np.round(float(a.v.values), 5) for a in ambients]
+
                 suffix = ['bottom', 'mid', 'top']
                 [
                     obj_prop['u_ambient_'+suffix[j]].append(ambients_u[j])
@@ -363,8 +426,21 @@ def get_object_prop(
                 [
                     obj_prop['v_ambient_'+suffix[j]].append(ambients_v[j])
                     for j in range(len(ambients_v))]
+
+                obj_prop['u_ambient_mean'] = np.nanmean(np.array(ambients_u))
+                obj_prop['v_ambient_mean'] = np.nanmean(np.array(ambients_v))
+                #ambients_u = [
+                #    data_dic['ambient_interp']['u'].sel(
+                #        longitude=lon[0], latitude=lat[0], time=grid_time,
+                #        method='nearest').values
+                #ambients_v = [
+                #    data_dic['ambient_interp']['v'].sel(
+                #        longitude=lon[0], latitude=lat[0], time=grid_time,
+                #        method='nearest').values
+                #u_ambient_mean =
+                #v_ambient_mean =
             else:
-                suffix = ['bottom', 'mid', 'top']
+                suffix = ['bottom', 'mid', 'top', 'mean']
                 [obj_prop['u_ambient_'+s].append(np.nan) for s in suffix]
                 [obj_prop['v_ambient_'+s].append(np.nan) for s in suffix]
 
@@ -397,17 +473,17 @@ def get_object_prop(
 
             # Append reflectivity cells based on vertically
             # overlapping reflectivity maxima.
-            if i == 0:
-                all_cells_0 = [
-                    all_cells[i][0].tolist()
-                    for i in range(len(all_cells))]
-                cell_obj_inds = [
-                    i for i in range(len(all_cells_0))
-                    if all_cells_0[i][1:] in obj_index.tolist()]
-                cells_obj = [all_cells[i] for i in cell_obj_inds]
-                obj_prop['cells'].append(cells_obj)
-            else:
-                obj_prop['cells'].append([])
+            #if i == 0:
+            #    all_cells_0 = [
+            #        all_cells[i][0].tolist()
+            #        for i in range(len(all_cells))]
+            #    cell_obj_inds = [
+            #        i for i in range(len(all_cells_0))
+            #        if all_cells_0[i][1:] in obj_index.tolist()]
+            #    cells_obj = [all_cells[i] for i in cell_obj_inds]
+            #    obj_prop['cells'].append(cells_obj)
+            #else:
+            #    obj_prop['cells'].append([])
 
     if params['RAIN']:
         rain_props = get_object_rain_props(data_dic, current_objects)
@@ -520,7 +596,7 @@ def post_tracks(tracks_obj):
         tmp_tracks, left_index=True, right_index=True)
     tracks_obj.tracks = tracks_obj.tracks.sort_index()
 
-    tracks_obj = calc_mean_ambient_winds(tracks_obj)
+    #tracks_obj = calc_mean_ambient_winds(tracks_obj)
 
     tracks_obj.tracks['u_relative'] = np.round(
         tracks_obj.tracks['u_shift'] - tracks_obj.tracks['u_ambient_mean'], 5)
@@ -962,7 +1038,7 @@ def get_system_tracks(tracks_obj):
     # Get position and velocity at tracking level.
     system_tracks = tracks_obj.tracks[
         ['grid_x', 'grid_y', 'com_x', 'com_y', 'lon', 'lat', 'u', 'v',
-         'mergers', 'parent', 'u_shift', 'v_shift',
+         'u_shift', 'v_shift', #'mergers', 'parent',
          'u_relative', 'v_relative']]
     system_tracks = system_tracks.xs(
         tracks_obj.params['TRACK_INTERVAL'], level='level')
@@ -971,7 +1047,7 @@ def get_system_tracks(tracks_obj):
     # at lowest interval assuming this is first interval in list.
     for prop in [
             'semi_major', 'semi_minor', 'eccentricity',
-            'orientation', 'cells']:
+            'orientation']:#, 'cells']:
         prop_lvl_0 = tracks_obj.tracks[[prop]].xs(0, level='level')
         system_tracks = system_tracks.merge(
             prop_lvl_0, left_index=True, right_index=True)

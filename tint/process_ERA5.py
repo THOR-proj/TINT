@@ -24,7 +24,7 @@ def get_ERA5_daterange(year, month):
 
 
 def collect_ERA5_files(base_dir, year, range_str, files=[]):
-    for variable in ['z', 'u', 'v']:
+    for variable in ['z', 'u', 'v', 'r', 't']:
         fn = '{}/{}/{}/{}_era5_oper_pl_{}.nc'.format(
             base_dir, variable, year, variable, range_str)
         files.append(fn)
@@ -55,24 +55,32 @@ def get_ERA5_ds(
         np.timedelta64(1, 'M'))
 
     files = []
+    CAPE_files = []
     for month_dt in month_range:
         year, month = get_datetime_components(month_dt)[:2]
         range_str = get_ERA5_daterange(year, month)
         files = collect_ERA5_files(
             base_dir, year, range_str, files=files)
+        CAPE_files.append(
+            '{}/cape/{}/cape_era5_oper_sfc_{}.nc'.format(
+                base_dir.replace('pressure-levels', 'single-levels'),
+                year, range_str))
 
     era5_all = xr.open_mfdataset(
         files, chunks={'longitude': 180})
+    CAPE_all = xr.open_mfdataset(
+        CAPE_files, chunks={'longitude': 180})
     if base_timestep != 1:
         start_time = era5_all.time.values[0]
         end_time = era5_all.time.values[-1]
         timestep = np.timedelta64(base_timestep, 'h')
         times = np.arange(start_time, end_time, timestep)
         era5_all = era5_all.sel(time=times)
+        CAPE_all = CAPE_all.sel(time=times)
         print('Restricting ERA5 data to {} hour timestep'.format(
             base_timestep))
 
-    return era5_all
+    return era5_all, CAPE_all
 
 
 def flexible_round(x, prec=2, base=.05, method=round):
@@ -80,7 +88,7 @@ def flexible_round(x, prec=2, base=.05, method=round):
 
 
 def interp_ERA_ds(
-        ds_all, grid, params,
+        ds_all, CAPE_all, grid, params,
         timedelta=np.timedelta64(10, 'm'), file_list=None):
     lon, lat = cartesian_to_geographic(
         grid.x['data'].data, grid.y['data'].data,
@@ -119,6 +127,10 @@ def interp_ERA_ds(
         latitude=slice(max_lat+.25, min_lat-.25),
         longitude=slice(min_lon-.2, max_lon+.2),
         time=slice(start_time, end_time))]
+    CAPE_ds = CAPE_all.loc[dict(
+        latitude=slice(max_lat+.25, min_lat-.25),
+        longitude=slice(min_lon-.2, max_lon+.2),
+        time=slice(start_time, end_time))]
 
     # filename = params['SAVE_DIR'] + '/tmp_{:04d}{:02d}.nc'.format(
     #     components[0], components[1])
@@ -126,11 +138,49 @@ def interp_ERA_ds(
     # ds = xr.open_dataset(filename)
 
     ds['z'] = ds['z'] / 9.80665
-    altitude = ds['z'].mean(['longitude', 'latitude', 'time'])
-    ds = ds.assign_coords({'level': altitude})
-    ds = ds.rename({'level': 'altitude'})
-    ds = ds.drop_vars('z')
-    ds = ds.loc[dict(altitude=slice(22000, 0))]
+    ds.load()
+
+    u_int, v_int, r_int, t_int = [
+        np.zeros((len(ds.time), len(alt), len(ds.latitude), len(ds.longitude)))
+        for i in range(4)]
+
+    print('Interpolating altitudes. Please Wait.')
+    for i in range(len(ds.time)):
+        for j in range(len(ds.latitude)):
+            for k in range(len(ds.longitude)):
+                z_ds = ds['z'].isel(time=i, latitude=j, longitude=k).values
+
+                u_ds = ds['u'].isel(time=i, latitude=j, longitude=k).values
+                u_int[i,:,j,k] = np.interp(alt, z_ds[::-1],  u_ds[::-1], left=np.nan)
+                v_ds = ds['v'].isel(time=i, latitude=j, longitude=k).values
+                v_int[i,:,j,k] = np.interp(alt, z_ds[::-1], v_ds[::-1], left=np.nan)
+                r_ds = ds['r'].isel(time=i, latitude=j, longitude=k).values
+                r_int[i,:,j,k] = np.interp(alt, z_ds[::-1], r_ds[::-1], left=np.nan)
+                t_ds = ds['t'].isel(time=i, latitude=j, longitude=k).values
+                t_int[i,:,j,k] = np.interp(alt, z_ds[::-1], t_ds[::-1], left=np.nan)
+
+    u_ds = xr.DataArray(
+        u_int, dims=['time', 'altitude', 'latitude', 'longitude'],
+        coords={
+            'time': ds.time.values, 'altitude': alt,
+            'latitude': ds.latitude.values, 'longitude': ds.longitude.values})
+    v_ds = xr.DataArray(
+        v_int, dims=['time', 'altitude', 'latitude', 'longitude'],
+        coords={
+            'time': ds.time.values, 'altitude': alt,
+            'latitude': ds.latitude.values, 'longitude': ds.longitude.values})
+    t_ds = xr.DataArray(
+        t_int, dims=['time', 'altitude', 'latitude', 'longitude'],
+        coords={
+            'time': ds.time.values, 'altitude': alt,
+            'latitude': ds.latitude.values, 'longitude': ds.longitude.values})
+    r_ds = xr.DataArray(
+        r_int, dims=['time', 'altitude', 'latitude', 'longitude'],
+        coords={
+            'time': ds.time.values, 'altitude': alt,
+            'latitude': ds.latitude.values, 'longitude': ds.longitude.values})
+
+    ds = xr.Dataset({'u': u_ds, 'v': v_ds, 't': t_ds, 'r': r_ds})
 
     if params['INPUT_TYPE'] == 'OPER_DATETIMES':
         dt_list = sorted(extract_datetimes(file_list))
@@ -141,7 +191,21 @@ def interp_ERA_ds(
         times = np.arange(start_time, end_time, timedelta)
 
     ds = ds.interp(
-        longitude=lon, latitude=lat, altitude=alt, time=times)
+        longitude=lon, latitude=lat, time=times)
+    CAPE_ds = CAPE_ds.interp(
+        longitude=lon, latitude=lat, time=times)
+    ds = ds.load()
+    CAPE_ds = CAPE_ds.load()
+    ds = ds.assign(cape=(['time', 'latitude', 'longitude'], CAPE_ds['cape'].data))
+
+    # Get index of tropopause
+    lr = -10**3*ds['t'].diff(dim='altitude')
+    lr = lr/ds['t'].altitude.diff(dim='altitude')
+    cond1 = lr < 2
+    cond2 = lr.rolling(dim={'altitude': 4}, min_periods=1).max().shift({'altitude':-3}) < 2
+    cond = lr.where(np.logical_and(cond1, cond2))
+    tp_idx = np.argmax(cond.astype(int).values, axis=1)
+    ds = ds.assign(tp_idx=(['time', 'latitude', 'longitude'], tp_idx))
 
     # if params['AMBIENT_TIMESTEP'] != 1:
     #     start_time = np.datetime64(grid_time.replace(minute=0, second=0))
@@ -155,7 +219,7 @@ def init_ERA5(grid, params, file_list=None):
     grid_datetime = parse_grid_datetime(grid)
     grid_datetime = np.datetime64(grid_datetime.replace(second=0))
     print('Getting ERA5 metadata.')
-    ERA5_all = get_ERA5_ds(
+    ERA5_all, CAPE_all = get_ERA5_ds(
         grid_datetime,
         grid_datetime+np.timedelta64(params['AMBIENT_TIMESTEP'], 'h'),
         base_dir=params['AMBIENT_BASE_DIR'],
@@ -163,14 +227,13 @@ def init_ERA5(grid, params, file_list=None):
     print('Getting interpolated ERA5 for next {} hours.'.format(
         params['AMBIENT_TIMESTEP']))
     ERA5_interp = interp_ERA_ds(
-        ERA5_all, grid, params,
+        ERA5_all, CAPE_all, grid, params,
         timedelta=np.timedelta64(params['DT'], 'm'),
         file_list=file_list)
-    ERA5_interp.load()
-    return ERA5_all, ERA5_interp
+    return ERA5_all, CAPE_all, ERA5_interp
 
 
-def update_ERA5(grid, params, ERA5_all, ERA5_interp, file_list=None):
+def update_ERA5(grid, params, ERA5_all, CAPE_all, ERA5_interp, file_list=None):
     grid_datetime = parse_grid_datetime(grid)
     grid_datetime = np.datetime64(grid_datetime.replace(second=0))
     grid_datetime_hour = parse_grid_datetime(grid)
@@ -182,7 +245,7 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp, file_list=None):
             grid_datetime >= t_min
             and grid_datetime_hour + np.timedelta64(1, 'h') <= t_max):
         print('Getting ERA5 metadata.')
-        ERA5_all = get_ERA5_ds(
+        ERA5_all, CAPE_all = get_ERA5_ds(
             grid_datetime_hour,
             grid_datetime_hour+np.timedelta64(params['AMBIENT_TIMESTEP'], 'h'),
             base_dir=params['AMBIENT_BASE_DIR'],
@@ -191,8 +254,7 @@ def update_ERA5(grid, params, ERA5_all, ERA5_interp, file_list=None):
         print('Getting interpolated ERA5 for next {} hours.'.format(
             params['AMBIENT_TIMESTEP']))
         ERA5_interp = interp_ERA_ds(
-            ERA5_all, grid, params,
+            ERA5_all, CAPE_all, grid, params,
             timedelta=np.timedelta64(params['DT'], 'm'),
             file_list=file_list)
-        ERA5_interp.load()
-    return ERA5_all, ERA5_interp
+    return ERA5_all, CAPE_all, ERA5_interp

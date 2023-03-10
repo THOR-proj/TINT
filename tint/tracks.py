@@ -240,7 +240,6 @@ class Tracks(object):
         elif self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
             try:
                 new_datetime = next(grids)
-                self.old_file_list = self.file_list
                 new_grid, self.file_list = po.get_grid(
                     new_datetime, self.params,
                     self.reference_grid, self.tmp_dir, self.file_list)
@@ -255,12 +254,10 @@ class Tracks(object):
                         self.reference_grid = ACC.get_reference_grid(
                             path, self.params['REFERENCE_GRID_FORMAT'])
                         self.old_suffix = suffix
-                    self.old_file_list = self.file_list
                     new_grid, self.file_list = po.get_grid(
                         new_day, self.params, self.reference_grid,
                         self.tmp_dir, self.file_list)
                     dt_list = sorted(extract_datetimes(self.file_list))
-
                     grids = (day for day in dt_list)
                     new_datetime = next(grids)
 
@@ -390,7 +387,7 @@ class Tracks(object):
 
         # Get Ambient
         if self.params['AMBIENT'] == 'ERA5':
-            ambient_all, ambient_interp = ERA5.init_ERA5(
+            ambient_all, CAPE_all, ambient_interp = ERA5.init_ERA5(
                 grid_obj2, self.params, self.file_list)
             data_dic['ambient_interp'] = ambient_interp
         elif self.params['AMBIENT'] == 'WRF':
@@ -409,6 +406,7 @@ class Tracks(object):
         while grid_obj2 is not None:
             # Set current grid equal to new grid from last iteration.
             grid_obj1 = copy.deepcopy(grid_obj2)
+            self.old_file_list = copy.deepcopy(self.file_list)
             if not new_rain:
                 # Set old old frame equal to current frame from last iteration.
                 data_dic['frame_old'] = copy.deepcopy(data_dic['frame'])
@@ -480,8 +478,8 @@ class Tracks(object):
 
             # Update ambient winds
             if self.params['AMBIENT'] == 'ERA5':
-                ambient_all, ambient_interp = ERA5.update_ERA5(
-                    grid_obj1, self.params, ambient_all,
+                ambient_all, CAPE_all, ambient_interp = ERA5.update_ERA5(
+                    grid_obj1, self.params, ambient_all, CAPE_all,
                     ambient_interp, self.old_file_list)
                 data_dic['ambient_interp'] = ambient_interp
             elif self.params['AMBIENT'] == 'WRF':

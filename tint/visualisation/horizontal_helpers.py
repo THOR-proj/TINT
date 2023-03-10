@@ -385,7 +385,8 @@ def add_velocities(
     x = tmp_tracks_conv['grid_x'].iloc[0]
     y = tmp_tracks_conv['grid_y'].iloc[0]
 
-    dt = tracks.record.interval.total_seconds()
+    #dt = tracks.record.interval.total_seconds()
+    dt = tracks.params['DT']*60
 
     lgd_han = []
     for wind in system_winds:
@@ -434,6 +435,8 @@ def add_velocities(
 
     x_lim = ax.get_xlim()
     y_lim = ax.get_ylim()
+
+    #import pdb; pdb.set_trace()
 
     ax.arrow(
         lon[0], lat[0], new_lon[0]-lon[0], new_lat[0]-lat[0], color='w',
