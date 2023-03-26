@@ -264,8 +264,10 @@ class Tracks(object):
                     new_grid, self.file_list = po.get_grid(
                         new_datetime, self.params,
                         self.reference_grid, self.tmp_dir, self.file_list)
-                    self.params['DT'] = int(np.argmax(np.bincount((np.diff(
-                        np.array(dt_list))).astype(int)))/60)
+
+                    if len(dt_list)>=2:
+                        self.params['DT'] = int(np.argmax(np.bincount((np.diff(
+                            np.array(dt_list))).astype(int)))/60)
                     if self.params['DT'] < 7:
                         scale_factor = np.ceil(
                             10/self.params['DT']).astype(int)
@@ -535,7 +537,10 @@ class Tracks(object):
         if self.params['INPUT_TYPE'] == 'OPER_DATETIMES':
             shutil.rmtree(self.tmp_dir)
 
-        if len(self.tracks) > 0:
+        # Note post tracks will remove one entry,
+        # so ensure at least two entries, assuming
+        # 3 layers.
+        if len(self.tracks) > 3:
             self = post_tracks(self)
             self = get_system_tracks(self)
             self = classify_tracks(self)

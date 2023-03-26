@@ -259,8 +259,8 @@ def get_object_prop(
         'u_ambient_top', 'v_ambient_top',
         'u_ambient_mean', 'v_ambient_mean',
         'u_shift', 'v_shift', 'u_trop_shear', 'v_trop_shear', 'CAPE',
-        'trop_height', 'freezing_level', 'av_rh', 'av_ee', 'av_rh_bfl', 'av_ee_bfl',
-        'av_rh_afl', 'av_ee_afl']
+        'trop_height', 'freezing_level', 'av_rh', 'av_ee',
+        'av_rh_bfl', 'av_ee_bfl', 'av_rh_afl', 'av_ee_afl']
     obj_prop = {p: [] for p in properties}
 
     nobj = np.max(data_dic['frames'])
@@ -372,12 +372,20 @@ def get_object_prop(
 
                 # Note if fl_idx == lowest_alt_idx, _bfl means will be nan. Suitable.
 
-                av_rh = np.nanmean(r[:tp_idx])
-                av_rh_bfl = np.nanmean(r[:fl_idx])
-                av_rh_afl = np.nanmean(r[fl_idx:tp_idx])
-                av_ee = np.nanmean(ee[:tp_idx])
-                av_ee_bfl = np.nanmean(ee[:fl_idx])
-                av_ee_afl = np.nanmean(ee[fl_idx:tp_idx])
+                if trop_height > 7000:
+                    av_rh = np.nanmean(r[:tp_idx])
+                    av_rh_bfl = np.nanmean(r[:fl_idx])
+                    av_rh_afl = np.nanmean(r[fl_idx:tp_idx])
+                    av_ee = np.nanmean(ee[:tp_idx])
+                    av_ee_bfl = np.nanmean(ee[:fl_idx])
+                    av_ee_afl = np.nanmean(ee[fl_idx:tp_idx])
+                else:
+                    av_rh = np.nan
+                    av_rh_bfl = np.nan
+                    av_rh_afl = np.nan
+                    av_ee = np.nan
+                    av_ee_bfl = np.nan
+                    av_ee_afl = np.nan
 
                 obj_prop['av_rh'] = av_rh
                 obj_prop['av_rh_bfl'] = av_rh_bfl
@@ -394,11 +402,12 @@ def get_object_prop(
                 v = data_dic['ambient_interp']['v'].sel(
                     longitude=lon[0], latitude=lat[0], time=grid_time,
                     method='nearest').values
-                try:
+                if trop_height > 7000:
                     obj_prop['u_trop_shear'].append(u[tp_idx]-u[2])
                     obj_prop['v_trop_shear'].append(v[tp_idx]-v[2])
-                except IndexError:
-                    print('Get lowest non-nan level')
+                else:
+                    obj_prop['u_trop_shear'].append(np.nan)
+                    obj_prop['v_trop_shear'].append(np.nan)
 
             except KeyError:
                 print('Missing key - check ERA5 data.')

@@ -56,7 +56,6 @@ def setup_ODIM_files(datetime, params, tmp_dir):
 
 def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
 
-    # /home/student.unimelb.edu.au/shorte1/Documents/TINT_tracks/tmp_radar/63_20201001_000000.pvol.h5
     dt_str = datetime.astype(str).replace('-', '').replace('T', '_')
     dt_str = dt_str.replace(':', '').split('.')[0]
 
@@ -111,11 +110,17 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
     else:
         new_path = np.array(file_list)[bool_index][0]
 
-        pyart_radar = pyart.aux_io.read_odim_h5(
-            new_path, file_field_names=False,
-            include_fields='reflectivity')
+        bad_read = False
+        try:
+            pyart_radar = pyart.aux_io.read_odim_h5(
+                new_path, file_field_names=False,
+                include_fields='reflectivity')
+        except ValueError:
+            print('Bad ODIM file. Skipping.')
+            bad_read = True
+            pyart_radar = reference_grid
 
-        if pyart_radar.fields == {}:
+        if pyart_radar.fields == {} or bad_read:
             print('Data missing from file.')
             grid = reference_grid
 
