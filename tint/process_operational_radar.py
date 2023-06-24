@@ -120,6 +120,11 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
             bad_read = True
             pyart_radar = reference_grid
 
+        except OSError:
+            print('Bad ODIM file. Skipping.')
+            bad_read = True
+            pyart_radar = reference_grid
+
         if pyart_radar.fields == {} or bad_read:
             print('Data missing from file.')
             grid = reference_grid

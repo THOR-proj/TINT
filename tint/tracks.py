@@ -245,18 +245,25 @@ class Tracks(object):
                     self.reference_grid, self.tmp_dir, self.file_list)
             except StopIteration:
                 try:
-                    new_day = next(day_grids)
-                    suffix = self.get_suffix(new_day)
-                    if suffix != self.old_suffix:
-                        path = '/g/data/w40/esh563/reference_grids/'
-                        path += 'reference_grid_{}{}.h5'.format(
-                            self.params['REFERENCE_RADAR'], suffix)
-                        self.reference_grid = ACC.get_reference_grid(
-                            path, self.params['REFERENCE_GRID_FORMAT'])
-                        self.old_suffix = suffix
-                    new_grid, self.file_list = po.get_grid(
-                        new_day, self.params, self.reference_grid,
-                        self.tmp_dir, self.file_list)
+                    new_file_list = []
+                    while len(new_file_list)<6:
+                        new_day = next(day_grids)
+                        suffix = self.get_suffix(new_day)
+                        if suffix != self.old_suffix:
+                            path = '/g/data/w40/esh563/reference_grids/'
+                            path += 'reference_grid_{}{}.h5'.format(
+                                self.params['REFERENCE_RADAR'], suffix)
+                            self.reference_grid = ACC.get_reference_grid(
+                                path, self.params['REFERENCE_GRID_FORMAT'])
+                            self.old_suffix = suffix
+                        new_grid, new_file_list = po.get_grid(
+                            new_day, self.params, self.reference_grid,
+                            self.tmp_dir, self.file_list)
+                        if len(new_file_list) < 6:
+                            print('Fewer than six files in new day {}, skipping.'.format(
+                                new_day))
+
+                    self.file_list = new_file_list
                     dt_list = sorted(extract_datetimes(self.file_list))
                     grids = (day for day in dt_list)
                     new_datetime = next(grids)

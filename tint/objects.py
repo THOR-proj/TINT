@@ -387,14 +387,14 @@ def get_object_prop(
                     av_ee_bfl = np.nan
                     av_ee_afl = np.nan
 
-                obj_prop['av_rh'] = av_rh
-                obj_prop['av_rh_bfl'] = av_rh_bfl
-                obj_prop['av_rh_afl'] = av_rh_afl
-                obj_prop['av_ee'] = av_ee
-                obj_prop['av_ee_bfl'] = av_ee_bfl
-                obj_prop['av_ee_afl'] = av_ee_afl
+                obj_prop['av_rh'].append(av_rh)
+                obj_prop['av_rh_bfl'].append(av_rh_bfl)
+                obj_prop['av_rh_afl'].append(av_rh_afl)
+                obj_prop['av_ee'].append(av_ee)
+                obj_prop['av_ee_bfl'].append(av_ee_bfl)
+                obj_prop['av_ee_afl'].append(av_ee_afl)
 
-                obj_prop['freezing_level'] = freezing_level
+                obj_prop['freezing_level'].append(freezing_level)
 
                 u = data_dic['ambient_interp']['u'].sel(
                     longitude=lon[0], latitude=lat[0], time=grid_time,
@@ -436,18 +436,11 @@ def get_object_prop(
                     obj_prop['v_ambient_'+suffix[j]].append(ambients_v[j])
                     for j in range(len(ambients_v))]
 
-                obj_prop['u_ambient_mean'] = np.nanmean(np.array(ambients_u))
-                obj_prop['v_ambient_mean'] = np.nanmean(np.array(ambients_v))
-                #ambients_u = [
-                #    data_dic['ambient_interp']['u'].sel(
-                #        longitude=lon[0], latitude=lat[0], time=grid_time,
-                #        method='nearest').values
-                #ambients_v = [
-                #    data_dic['ambient_interp']['v'].sel(
-                #        longitude=lon[0], latitude=lat[0], time=grid_time,
-                #        method='nearest').values
-                #u_ambient_mean =
-                #v_ambient_mean =
+                obj_prop['u_ambient_mean'].append(
+                    np.nanmean(np.array(ambients_u)))
+                obj_prop['v_ambient_mean'].append(
+                    np.nanmean(np.array(ambients_v)))
+
             else:
                 suffix = ['bottom', 'mid', 'top', 'mean']
                 [obj_prop['u_ambient_'+s].append(np.nan) for s in suffix]
@@ -472,27 +465,14 @@ def get_object_prop(
                     for obj_slice in obj_slices]
 
             # Append maximum height
-            heights = [np.arange(raw3D_i.shape[0])[ind]
-                       for ind in filtered_slices]
+            heights = [
+                np.arange(raw3D_i.shape[0])[ind]
+                for ind in filtered_slices]
             obj_prop['max_height'].append(
                 np.max(np.concatenate(heights)) * unit_alt + z_values[z_min])
 
             # Note volume isn't necessarily consistent with proj_area.
             obj_prop['volume'].append(np.sum(filtered_slices) * unit_vol)
-
-            # Append reflectivity cells based on vertically
-            # overlapping reflectivity maxima.
-            #if i == 0:
-            #    all_cells_0 = [
-            #        all_cells[i][0].tolist()
-            #        for i in range(len(all_cells))]
-            #    cell_obj_inds = [
-            #        i for i in range(len(all_cells_0))
-            #        if all_cells_0[i][1:] in obj_index.tolist()]
-            #    cells_obj = [all_cells[i] for i in cell_obj_inds]
-            #    obj_prop['cells'].append(cells_obj)
-            #else:
-            #    obj_prop['cells'].append([])
 
     if params['RAIN']:
         rain_props = get_object_rain_props(data_dic, current_objects)

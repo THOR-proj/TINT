@@ -196,13 +196,16 @@ def interp_ERA_ds(
         longitude=lon, latitude=lat, time=times)
     ds = ds.load()
     CAPE_ds = CAPE_ds.load()
-    ds = ds.assign(cape=(['time', 'latitude', 'longitude'], CAPE_ds['cape'].data))
+    ds = ds.assign(
+        cape=(['time', 'latitude', 'longitude'],
+        CAPE_ds['cape'].data))
 
     # Get index of tropopause
     lr = -10**3*ds['t'].diff(dim='altitude')
     lr = lr/ds['t'].altitude.diff(dim='altitude')
     cond1 = lr < 2
-    cond2 = lr.rolling(dim={'altitude': 4}, min_periods=1).max().shift({'altitude':-3}) < 2
+    cond2 = lr.rolling(dim={'altitude': 4}, min_periods=1).max().shift(
+        {'altitude': -3}) < 2
     cond = lr.where(np.logical_and(cond1, cond2))
     tp_idx = np.argmax(cond.astype(int).values, axis=1)
     ds = ds.assign(tp_idx=(['time', 'latitude', 'longitude'], tp_idx))
