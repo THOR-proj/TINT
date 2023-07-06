@@ -10,6 +10,10 @@ import xarray as xr
 import pandas as pd
 import copy
 import matplotlib.ticker as mticker
+import cartopy.feature as cfeature
+from matplotlib.ticker import FormatStrFormatter
+import matplotlib.lines as mlines
+import matplotlib.patheffects as pe
 
 from tint.grid_utils import get_grid_alt, parse_grid_datetime
 import tint.visualisation.horizontal_helpers as hh
@@ -17,13 +21,19 @@ import tint.visualisation.vertical_helpers as vh
 
 
 def init_fonts(user_params):
-    # Initialise fonts
-    rcParams.update({'font.family': 'serif'})
-    rcParams.update({'font.serif': 'Liberation Serif'})
-    # rcParams.update({'font.serif': 'dejavuserif'})
-    rcParams.update({'mathtext.fontset': 'dejavuserif'})
-    rcParams.update({'font.size': user_params['fontsize']})
-
+    if user_params['fig_style'] == 'paper':
+        # Initialise fonts
+        rcParams.update({'font.family': 'serif'})
+        rcParams.update({'font.serif': 'Liberation Serif'})
+        # rcParams.update({'font.serif': 'dejavuserif'})
+        rcParams.update({'mathtext.fontset': 'dejavuserif'})
+        rcParams.update({'font.size': user_params['fontsize']})
+    else:
+        # Initialise fonts
+        rcParams.update({'font.family': 'sans-serif'})
+        rcParams.update({'font.serif': 'Liberation Sans Serif'})
+        rcParams.update({'mathtext.fontset': 'dejavusans'})
+        rcParams.update({'font.size': user_params['fontsize']})
 
 def check_params(user_params):
 
@@ -42,7 +52,7 @@ def check_params(user_params):
         'fontsize': 20, 'leg_loc': 2, 'system_winds': ['shift'],
         'label_mergers': False, 'screen': True, 'label_type': 'velocities',
         'exclusions': exclusions, 'boundary': True, 'exclude': True,
-        'gadi': False, 'label_cells': False}
+        'gadi': False, 'label_cells': False, 'fig_style': 'paper'}
     for p in user_params:
         if p in params:
             params[p] = user_params[p]
@@ -147,6 +157,21 @@ def init_cross_section(
 def horizontal_cross_section(
         tracks, grid, params={}, alt=None, fig=None, ax=None, date_time=None):
 
+    if params['fig_style'] == 'paper':
+        print('Paper style. Using defaults.')
+        plt.style.use('classic')
+        land_color = tuple(np.array([249.0, 246.0, 216.0])/(256))
+        sea_color = tuple(np.array([252.0, 252.0, 256.0])/(256))
+        coast_color = 'black'
+        leg_color = 'w'
+    else:
+        print('Dark Mode.')
+        plt.style.use("dark_background")
+        land_color = tuple(np.array([249.0, 246.0, 216.0])/(256*3.5))
+        sea_color = tuple(np.array([252.0, 252.0, 256.0])/(256*3.5))
+        coast_color = 'white'
+        leg_color = land_color
+
     if alt == 'col_max':
         col_max = np.ma.masked_invalid(
             grid.fields['reflectivity']['data'].data)
@@ -171,13 +196,12 @@ def horizontal_cross_section(
         tracks.field, level=alt_ind, vmin=vmin, vmax=vmax, cmap=cmap,
         transform=ccrs.PlateCarree(), ax=ax, colorbar_label='Reflectivity [DbZ]',
         colorbar_flag=params['colorbar_flag'], zorder=1, axislabels_flag=False,
-        lon_lines=[0], lat_lines=[0])
-
-#    import pdb; pdb.set_trace()
+        lon_lines=[0], lat_lines=[0], embelish=False)
 
     gridlines = ax.gridlines(
         crs=ccrs.PlateCarree(), draw_labels=True, x_inline=False,
-        y_inline=False, linewidth=2, color='gray', alpha=0.4, linestyle='--')
+        y_inline=False, linewidth=2, color='gray', alpha=0.4, linestyle='--',
+        xformatter=FormatStrFormatter('%.1f'), yformatter=FormatStrFormatter('%.1f'))
 
     gridlines.right_labels = False
     gridlines.top_labels = False
@@ -190,13 +214,33 @@ def horizontal_cross_section(
     gridlines.ylocator = mticker.FixedLocator(lat_lines)
 
     ax.text(
-        -0.2125, 0.55, 'Latitude', va='bottom', ha='center',
+        -0.1425, 0.55, 'Latitude', va='bottom', ha='center',
         rotation='vertical', rotation_mode='anchor',
         transform=ax.transAxes)
     ax.text(
         0.5, -0.1, 'Longitude', va='bottom', ha='center',
         rotation='horizontal', rotation_mode='anchor',
         transform=ax.transAxes)
+
+    ocean_10m = cfeature.NaturalEarthFeature(
+        'physical', 'ocean', '50m',
+        edgecolor='face',
+        facecolor=sea_color)
+    ax.add_feature(ocean_10m, zorder=0)
+
+    land_10m = cfeature.NaturalEarthFeature(
+        'physical', 'land', '50m',
+        edgecolor='face',
+        facecolor=land_color)
+    ax.add_feature(land_10m, zorder=0)
+
+    states_provinces_10m = cfeature.NaturalEarthFeature(
+        category='cultural',
+        name='admin_1_states_provinces_lines',
+        scale='10m',
+        facecolor='none')
+
+    ax.coastlines(resolution='10m', zorder=1, color=coast_color)
 
     if tracks.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
         if alt == 0:
@@ -232,12 +276,29 @@ def horizontal_cross_section(
         ax.set_xlim(box[2][0], box[2][1])
         ax.set_ylim(box[3][0], box[3][1])
 
-    if params['legend'] and date_time in tracks_times:
+    if params['fig_style'] == 'paper':
+        ell_c = 'black'
+        ell_w = 1.5
+    elif params['fig_style'] == 'presentation':
+        ell_c = 'w'
+        ell_w = 2.5
+
+    lgd_ellipse = mlines.Line2D(
+        [], [], color='w', linewidth=ell_w, label='Best Fit Ellipse',
+        linestyle='--',
+        path_effects=[pe.SimpleLineShadow(
+            shadow_color='k', alpha=.9, linewidth=ell_w+2), pe.Normal()])
+    lgd_han.append(lgd_ellipse)
+
+    if params['boundary']:
+        hh.add_boundary(ax, tracks, grid)
+
+    if params['legend']:
         legend = plt.legend(
             handles=lgd_han, loc='lower center', bbox_to_anchor=(1.175, -0.3),
-            ncol=3, fancybox=True, shadow=True)
+            ncol=3, fancybox=True, shadow=True, facecolor=leg_color)
         legend.get_frame().set_alpha(None)
-        legend.get_frame().set_facecolor((1, 1, 1, 1))
+        #legend.get_frame().set_facecolor((1, 1, 1, 1))
 
     # Save frame and cleanup
     if params['save_dir'] is not None:
@@ -258,11 +319,25 @@ def vertical_cross_section(
     [
         params, alt, fig, ax, date_time, display, alt_ind, cmap,
         vmin, vmax, projection] = init_cs
+    init_fonts(params)
     lon, lat, x, y = vh.get_center_coords(tracks, grid, params, date_time)
     x_lim = (x + np.array([-60000, 60000])) / 1000
     y_lim = (y + np.array([-60000, 60000])) / 1000
     lgd_han = []
     [dz, dy, dx] = tracks.record.grid_size
+
+    if params['fig_style'] == 'paper':
+        print('Paper style. Using defaults.')
+        plt.style.use('classic')
+        fc = 'w'
+        alpha = 1
+    else:
+        print('Dark Mode.')
+        plt.style.use("dark_background")
+        fc = 'k'
+        land_color = tuple(np.array([249.0, 246.0, 216.0])/(256*3.5*2))
+        leg_color = land_color
+        alpha = .7
 
     ds = vh.format_pyart(grid)
 
@@ -317,7 +392,10 @@ def vertical_cross_section(
             ds_plot.z[0] / 1000, ds_plot.z[-1] / 1000]
         cs = ax.imshow(
             ds_plot.reflectivity.values, vmin=vmin, vmax=vmax, cmap=cmap,
-            interpolation='none', origin='lower', extent=extent, zorder=1)
+            interpolation='none', origin='lower', extent=extent, zorder=1,
+            alpha=alpha)
+        # cs = ax.pcolormesh(
+        #     ds_plot.y, ds_plot.z, ds_plot.reflectivity.values)
 
         fig.colorbar(cs, ax=ax, label='Reflectivity [DbZ]')
         h_lim = y_lim
@@ -342,9 +420,9 @@ def vertical_cross_section(
     if params['legend']:
         legend = plt.legend(
             handles=lgd_han, loc='lower center', bbox_to_anchor=(0.5, -0.5),
-            ncol=2, fancybox=True, shadow=True)
+            ncol=2, fancybox=True, shadow=True, facecolor=leg_color)
         legend.get_frame().set_alpha(None)
-        legend.get_frame().set_facecolor((1, 1, 1, 1))
+        legend.get_frame().set_facecolor(leg_color)
 
     lim_1 = h_lim[0] - h_lim[0] % 10
     lim_2 = h_lim[1] - h_lim[1] % 10
@@ -365,7 +443,7 @@ def vertical_cross_section(
         plt.savefig(
             '{}/{}_cross_{}.png'.format(
                 params['save_dir'], params['direction'], date_time),
-            bbox_inches='tight', dpi=params['dpi'], facecolor='w')
+            bbox_inches='tight', dpi=params['dpi'], facecolor=fc, edgecolor=fc)
         plt.close()
 
     # Save frame and cleanup
@@ -379,9 +457,7 @@ def vertical_cross_section(
                 params['save_dir'], params['uid_ind'], date_time)
             ds.to_netcdf(fn)
 
-    del display
-
-    return
+    return fig, ax
 
 
 def save_tilt_data(
@@ -430,6 +506,21 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
     if date_time is None:
         date_time = grid_time
 
+    if params['fig_style'] == 'paper':
+        print('Paper style. Using defaults.')
+        plt.style.use('classic')
+        land_color = tuple(np.array([249.0, 246.0, 216.0])/(256))
+        sea_color = tuple(np.array([252.0, 252.0, 256.0])/(256))
+        coast_color = 'black'
+        leg_color = 'w'
+    else:
+        print('Dark Mode.')
+        plt.style.use("dark_background")
+        land_color = tuple(np.array([249.0, 246.0, 216.0])/(256*3.5))
+        sea_color = tuple(np.array([252.0, 252.0, 256.0])/(256*3.5))
+        coast_color = 'white'
+        leg_color = land_color
+
     init_fonts(params)
     central_lon = grid.origin_longitude['data'][0]
     central_lat = grid.origin_latitude['data'][0]
@@ -443,7 +534,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
 
     # Initialise figure
     fig = plt.figure(figsize=(22, 8))
-    suptitle = 'Convective and Stratiform Cloud at ' + str(grid_time)
+    suptitle = str(grid_time)
     fig.suptitle(suptitle)
 
     tmp_params = copy.deepcopy(params)
@@ -457,11 +548,13 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
 
     tmp_params['legend'] = False
     tmp_params['colorbar_flag'] = True
-    tmp_params['system_winds'] = ['shift']
+    tmp_params['system_winds'] = []
     ax = fig.add_subplot(1, 2, 2, projection=projection)
     horizontal_cross_section(
         tracks, grid, params=tmp_params, alt=alt2, fig=fig, ax=ax,
         date_time=date_time)
+
+    plt.subplots_adjust(wspace=-.1)
 
     # Save frame and cleanup
     if params['save_dir'] is not None:
@@ -602,7 +695,7 @@ def get_angle_props(angles, tracks_obj):
 
 def angle_correlation(
         sl_angles, so_angles, cond, save_path,
-        fig=None, ax=None, title='Angle Correlations'):
+        fig=None, ax=None, title='Angle Correlations', cross_color='gray'):
 
     params = {'fontsize': 12}
     if fig is None:
@@ -614,7 +707,7 @@ def angle_correlation(
     ax.plot([90, 90], [0, 180], '--', color='gray')
     ax.plot([0, 180], [90, 90], '--', color='gray')
     ax.scatter(
-        sl_angles[~cond], so_angles[~cond], marker='x', color='gray',
+        sl_angles[~cond], so_angles[~cond], marker='x', color=cross_color,
         s=40)
     ax.scatter(
         sl_angles[cond], so_angles[cond], marker='o', color='r', s=50,

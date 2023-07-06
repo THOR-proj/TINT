@@ -209,13 +209,24 @@ def add_streamplot(ds, ax, params):
         density = 1.5
     else:
         density = 2.5
+
+    if params['fig_style'] == 'paper':
+        arrow_col = 'k'
+        linewidth = 1
+    else:
+        arrow_col = 'w'
+        leg_color = tuple(np.array([249.0, 246.0, 216.0])/(256*3.5*2))
+        ax.patch.set_facecolor(leg_color)
+        linewidth = 1.5
+
     ax.streamplot(
         x[::2].values / 1000, ds.z.values[::2] / 1000, U[::2, ::2],
-        ds.W.values[::2, ::2], zorder=2, color='k', density=density,
-        linewidth=1)
+        ds.W.values[::2, ::2], zorder=2, color=arrow_col, density=density,
+        linewidth=linewidth)
+
     lgd_wind = mlines.Line2D(
-        [], [], color='k', linestyle='-', marker='>', linewidth=1,
-        label='Relative Streamlines')
+        [], [], color=arrow_col, markeredgecolor=arrow_col, linestyle='-',
+        marker='>', linewidth=linewidth, label='Relative Streamlines')
     return lgd_wind
 
 
@@ -250,6 +261,7 @@ def add_winds(ds, ax, tracks, grid, date_time, params):
     lon, lat, x, y = get_center_coords(tracks, grid, params, date_time)
     angle = None
     [dz, dy, dx] = get_grid_size(grid)
+
     if params['direction'] in ['lat', 'parallel']:
         tmp_ds = ds.sel(y=y, method='nearest').squeeze()
         if params['streamplot']:

@@ -40,12 +40,16 @@ def setup_ODIM_files(datetime, params, tmp_dir):
 
     print('Extracting radar data for {:04d}-{:02d}-{:02d}.'.format(
         components[0], components[1], components[2]))
-    if not params['REMOTE']:
-        zip_fh = zipfile.ZipFile(local_path)
-    else:
-        zip_fh = zipfile.ZipFile(origin_path)
-    zip_fh.extractall(path=tmp_dir)
-    zip_fh.close()
+    try:
+        if not params['REMOTE']:
+            zip_fh = zipfile.ZipFile(local_path)
+        else:
+            zip_fh = zipfile.ZipFile(origin_path)
+        zip_fh.extractall(path=tmp_dir)
+        zip_fh.close()
+    except FileNotFoundError:
+        print('Missing File.')
+        return []
 
     file_list = sorted(glob.glob(tmp_dir + '/*.h5'))
     if not params['REMOTE']:
@@ -74,7 +78,10 @@ def get_grid(datetime, params, reference_grid, tmp_dir, file_list=None):
     file_time_path = '{}/{}_{}'.format(
         tmp_dir, params['REFERENCE_RADAR'], dt_str[:-2])
 
-    bool_index = [(file_time_path in f) for f in file_list]
+    if file_list is not None:
+        bool_index = [(file_time_path in f) for f in file_list]
+    else:
+        bool_index = False
 
     refl_count = np.nan
 
