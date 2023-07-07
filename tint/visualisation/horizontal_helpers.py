@@ -101,9 +101,9 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
             lon = tmp_tracks_uid.xs(0, level='level')['lon'].iloc[0]
             lat = tmp_tracks_uid.xs(0, level='level')['lat'].iloc[0]
 
-            gen_embossed_text(
-                lon-.2, lat+0.2, ax, uid, transform=projection, fontsize=16,
-                linewidth=emb_lw, zorder=5)
+            #gen_embossed_text(
+            #    lon-.2, lat+0.2, ax, uid, transform=projection, fontsize=16,
+            #    linewidth=emb_lw, zorder=5)
 
         if not excluded and not int_border:
 
@@ -170,18 +170,18 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                 label_4 = label_dic[tmp_class_uid.xs(
                     0, level='level')['propagation_type'].values[0]]
 
-                """gen_embossed_text(
-                    lon+.1, lat-.2, ax, label_1, transform=projection,
+                gen_embossed_text(
+                    lon+.1, lat-.3, ax, label_1, transform=projection,
                     fontsize=type_fontsize, linewidth=emb_lw, zorder=5)
                 gen_embossed_text(
-                    lon+.35, lat-.2, ax, label_2, transform=projection,
+                    lon+.35, lat-.3, ax, label_2, transform=projection,
                     fontsize=type_fontsize, linewidth=emb_lw, zorder=5)
                 gen_embossed_text(
-                    lon+.1, lat-0.325, ax, label_3, transform=projection,
+                    lon+.1, lat-0.425, ax, label_3, transform=projection,
                     fontsize=type_fontsize, linewidth=emb_lw, zorder=5)
                 gen_embossed_text(
-                    lon+.35, lat-0.325, ax, label_4, transform=projection,
-                    fontsize=type_fontsize, linewidth=emb_lw, zorder=5)"""
+                    lon+.35, lat-0.425, ax, label_4, transform=projection,
+                    fontsize=type_fontsize, linewidth=emb_lw, zorder=5)
 
             non_linear = tmp_excl_uid.xs(0, level='level')['non_linear']
             if non_linear.values[0]:
@@ -201,8 +201,8 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
                     fontsize=12, linewidth=2, zorder=5)
 
         # Plot stratiform offset
-        #lgd_so = add_stratiform_offset(
-        #    ax, tracks, grid, uid, date_time, excluded)
+        lgd_so = add_stratiform_offset(
+            ax, tracks, grid, uid, date_time, excluded)
 
         # Plot velocities
         lgd_vel = add_velocities(
@@ -219,7 +219,7 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
 
         if tracks.params['RAIN']:
             add_rain()
-    #lgd_han.append(lgd_so)
+    lgd_han.append(lgd_so)
     [lgd_han.append(h) for h in lgd_vel]
     if params['label_cells']:
         lgd_han.append(lgd_cell)
@@ -389,6 +389,8 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time, excluded):
     lon_high = tmp_tracks.xs(num_levels-1, level='level')['lon'].iloc[0]
     lat_high = tmp_tracks.xs(num_levels-1, level='level')['lat'].iloc[0]
 
+    linewidth = 2
+
     # Check if boundary intersection
     tmp_excl = tracks.exclusions.xs(
         (date_time, uid, 0), level=('time', 'uid', 'level'))
@@ -399,13 +401,13 @@ def add_stratiform_offset(ax, tracks, grid, uid, date_time, excluded):
 
     if not excluded and not int_border:
         ax.plot(
-            [lon_low, lon_high], [lat_low, lat_high], '-w', linewidth=2,
+            [lon_low, lon_high], [lat_low, lat_high], '-w', linewidth=linewidth,
             zorder=4, transform=ccrs.PlateCarree(), path_effects=[
-                pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
+                pe.Stroke(linewidth=linewidth+5, foreground='b'), pe.Normal()])
     lgd_so = mlines.Line2D(
-        [], [], color='w', linestyle='-', linewidth=2,
+        [], [], color='w', linestyle='-', linewidth=linewidth,
         label='Stratiform Offset',
-        path_effects=[pe.Stroke(linewidth=6, foreground='b'), pe.Normal()])
+        path_effects=[pe.Stroke(linewidth=linewidth+5, foreground='b'), pe.Normal()])
     return lgd_so
 
 
@@ -465,12 +467,15 @@ def add_velocities(
     #dt = tracks.record.interval.total_seconds()
     dt = tracks.params['DT']*60
 
+    scale = 7
+    linewidth = 3
+
     lgd_han = []
     for wind in system_winds:
         u = tmp_tracks['u_' + wind].iloc[0]
         v = tmp_tracks['v_' + wind].iloc[0]
         [new_lon, new_lat] = cartesian_to_geographic(
-            x + 4 * u * dt, y + 4 * v * dt, projparams)
+            x + scale * u * dt, y + scale * v * dt, projparams)
 
         tmp_excl = tracks.exclusions.xs(
             (date_time, uid, 0), level=('time', 'uid', 'level'))
@@ -494,12 +499,12 @@ def add_velocities(
                 head_width=0.016, head_length=0.024, length_includes_head=True,
                 transform=ccrs.PlateCarree(),
                 path_effects=[
-                    pe.Stroke(linewidth=6, foreground=colour_dic[wind]),
+                    pe.Stroke(linewidth=linewidth+5, foreground=colour_dic[wind]),
                     pe.Normal()])
         lgd_line = mlines.Line2D(
             [], [], color='w', linestyle='-', label=label_dic[wind],
-            linewidth=2, path_effects=[
-                pe.Stroke(linewidth=6, foreground=colour_dic[wind]),
+            linewidth=linewidth, path_effects=[
+                pe.Stroke(linewidth=linewidth+5, foreground=colour_dic[wind]),
                 pe.Normal()])
         lgd_han.append(lgd_line)
 
@@ -508,7 +513,7 @@ def add_velocities(
     [lon, lat] = cartesian_to_geographic(arrow_x, arrow_y, projparams)
 
     [new_lon, new_lat] = cartesian_to_geographic(
-            arrow_x + 4 * 5 * dt, arrow_y, projparams)
+            arrow_x + scale * 5 * dt, arrow_y, projparams)
 
     x_lim = ax.get_xlim()
     y_lim = ax.get_ylim()
@@ -521,7 +526,7 @@ def add_velocities(
         length_includes_head=True,
         transform=ccrs.PlateCarree(), clip_on=False,
         path_effects=[
-            pe.Stroke(linewidth=6, foreground='red'),
+            pe.Stroke(linewidth=linewidth+5, foreground='red'),
             pe.Normal()])
     ax.text(
         new_lon[0]+.1, new_lat[0]-.025, '5 m/s',

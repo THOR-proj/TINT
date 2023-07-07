@@ -319,25 +319,11 @@ def vertical_cross_section(
     [
         params, alt, fig, ax, date_time, display, alt_ind, cmap,
         vmin, vmax, projection] = init_cs
-    init_fonts(params)
     lon, lat, x, y = vh.get_center_coords(tracks, grid, params, date_time)
     x_lim = (x + np.array([-60000, 60000])) / 1000
     y_lim = (y + np.array([-60000, 60000])) / 1000
     lgd_han = []
     [dz, dy, dx] = tracks.record.grid_size
-
-    if params['fig_style'] == 'paper':
-        print('Paper style. Using defaults.')
-        plt.style.use('classic')
-        fc = 'w'
-        alpha = 1
-    else:
-        print('Dark Mode.')
-        plt.style.use("dark_background")
-        fc = 'k'
-        land_color = tuple(np.array([249.0, 246.0, 216.0])/(256*3.5*2))
-        leg_color = land_color
-        alpha = .7
 
     ds = vh.format_pyart(grid)
 
@@ -392,10 +378,7 @@ def vertical_cross_section(
             ds_plot.z[0] / 1000, ds_plot.z[-1] / 1000]
         cs = ax.imshow(
             ds_plot.reflectivity.values, vmin=vmin, vmax=vmax, cmap=cmap,
-            interpolation='none', origin='lower', extent=extent, zorder=1,
-            alpha=alpha)
-        # cs = ax.pcolormesh(
-        #     ds_plot.y, ds_plot.z, ds_plot.reflectivity.values)
+            interpolation='none', origin='lower', extent=extent, zorder=1)
 
         fig.colorbar(cs, ax=ax, label='Reflectivity [DbZ]')
         h_lim = y_lim
@@ -420,9 +403,9 @@ def vertical_cross_section(
     if params['legend']:
         legend = plt.legend(
             handles=lgd_han, loc='lower center', bbox_to_anchor=(0.5, -0.5),
-            ncol=2, fancybox=True, shadow=True, facecolor=leg_color)
+            ncol=2, fancybox=True, shadow=True)
         legend.get_frame().set_alpha(None)
-        legend.get_frame().set_facecolor(leg_color)
+        legend.get_frame().set_facecolor((1, 1, 1, 1))
 
     lim_1 = h_lim[0] - h_lim[0] % 10
     lim_2 = h_lim[1] - h_lim[1] % 10
@@ -443,7 +426,7 @@ def vertical_cross_section(
         plt.savefig(
             '{}/{}_cross_{}.png'.format(
                 params['save_dir'], params['direction'], date_time),
-            bbox_inches='tight', dpi=params['dpi'], facecolor=fc, edgecolor=fc)
+            bbox_inches='tight', dpi=params['dpi'], facecolor='w')
         plt.close()
 
     # Save frame and cleanup
@@ -457,7 +440,9 @@ def vertical_cross_section(
                 params['save_dir'], params['uid_ind'], date_time)
             ds.to_netcdf(fn)
 
-    return fig, ax
+    del display
+
+    return
 
 
 def save_tilt_data(
@@ -695,7 +680,7 @@ def get_angle_props(angles, tracks_obj):
 
 def angle_correlation(
         sl_angles, so_angles, cond, save_path,
-        fig=None, ax=None, title='Angle Correlations', cross_color='gray'):
+        fig=None, ax=None, title='Angle Correlations'):
 
     params = {'fontsize': 12}
     if fig is None:
@@ -707,7 +692,7 @@ def angle_correlation(
     ax.plot([90, 90], [0, 180], '--', color='gray')
     ax.plot([0, 180], [90, 90], '--', color='gray')
     ax.scatter(
-        sl_angles[~cond], so_angles[~cond], marker='x', color=cross_color,
+        sl_angles[~cond], so_angles[~cond], marker='x', color='gray',
         s=40)
     ax.scatter(
         sl_angles[cond], so_angles[cond], marker='o', color='r', s=50,
