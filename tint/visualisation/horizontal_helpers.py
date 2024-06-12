@@ -4,18 +4,20 @@ import matplotlib.lines as mlines
 import matplotlib.patheffects as pe
 import xarray as xr
 from pyart.core.transforms import cartesian_to_geographic
+from pyart.core.transforms import geographic_to_cartesian
 import cartopy.crs as ccrs
+import pandas as pd
 
 from tint.grid_utils import get_grid_size, get_grid_alt
 
 
 def gen_embossed_text(
-        x, y, ax, label, transform, fontsize, linewidth, zorder):
+        x, y, ax, label, transform, fontsize, linewidth, zorder, color='k'):
     ax.text(
         x, y, label, transform=transform, fontsize=fontsize,
         zorder=zorder, fontweight='bold', color='w',
         path_effects=[
-            pe.Stroke(linewidth=linewidth, foreground='k'), pe.Normal()])
+            pe.Stroke(linewidth=linewidth, foreground=color), pe.Normal()])
 
 
 def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
@@ -219,10 +221,15 @@ def add_tracked_objects(tracks, grid, date_time, params, ax, alt):
 
         if tracks.params['RAIN']:
             add_rain()
+
+    add_reports(ax, tracks, uid, grid, date_time, params)
+
     lgd_han.append(lgd_so)
     [lgd_han.append(h) for h in lgd_vel]
     if params['label_cells']:
         lgd_han.append(lgd_cell)
+    #lgd_han.append(lgd_report)
+    #lgd_han.append(lgd_m_report)
 
     return lgd_han
 
@@ -237,6 +244,126 @@ def reduce_tracks(tracks, uid, date_time, alt):
     tmp_sys_tracks = tracks.tracks.xs(
         (date_time, uid), level=('time', 'uid'))
     return tmp_tracks, tmp_sys_tracks
+
+
+def add_reports(ax, tracks, uid, grid, datetime, params):
+
+    alt_lower = tracks.params['LEVELS'][0, 0]
+    alt_upper = tracks.params['LEVELS'][-1, 0]
+
+#    sub_tracks_lower = reduce_tracks(tracks, uid, datetime, alt_lower)[0]
+#    sub_tracks_upper = reduce_tracks(tracks, uid, datetime, alt_upper)[0]
+
+    excluded = tracks.exclusions[params['exclusions']]
+    excluded = np.any(excluded, 1)
+    tmp_tracks = tracks.tracks[np.logical_not(excluded)]
+
+    #import pdb; pdb.set_trace()
+
+    tests = [
+        (alt_lower >= level[0] and alt_lower < level[1])
+        for level in tracks.params['LEVELS']]
+    level = np.argwhere(tests)[0, 0]
+    sub_tracks_lower = tmp_tracks.xs(
+        (datetime, level), level=('time', 'level'))
+
+    tests = [
+        (alt_upper >= level[0] and alt_upper < level[1])
+        for level in tracks.params['LEVELS']]
+    level = np.argwhere(tests)[0, 0]
+    sub_tracks_upper = tmp_tracks.xs(
+        (datetime, level), level=('time', 'level'))
+
+    #import pdb; pdb.set_trace()
+
+    storms = pd.read_csv('~/CPOL_analysis/bom_storms_archive.csv')
+
+    storms['Date/Time'] = pd.to_datetime(storms['Date/Time'])
+    storms = storms.set_index('Event ID')
+    storms = storms.drop(labels=['Comments', 'Unnamed: 9'], axis=1).fillna(-9999)
+
+    midnight_cond = np.logical_or(storms['Date/Time'].dt.hour != 0, storms['Date/Time'].dt.minute != 0)
+    storms = storms[midnight_cond]
+
+    storms_lat = storms['Latitude'].values
+    storms_lon = storms['Longitude'].values
+
+    lat = tracks.radar_info['radar_lat']
+    lon = tracks.radar_info['radar_lon']
+
+    approx_radar_dis = np.sqrt((storms_lat-lat)**2 + (storms_lon-lon)**2)
+    loc_cond = (approx_radar_dis < 1.5)
+    storms_i = storms.iloc[loc_cond]
+
+    time_cond = np.logical_and(
+        storms_i['Date/Time'].dt.year == pd.DatetimeIndex([datetime]).year.values[0],
+        storms_i['Date/Time'].dt.month == pd.DatetimeIndex([datetime]).month.values[0])
+    storms_i = storms_i[time_cond]
+
+    #import pdb; pdb.set_trace()
+
+    if len(storms_i) == 0:
+        print('No reports near this radar this month!')
+        return
+
+    semi_minor_lower = sub_tracks_lower['semi_minor'].values*tracks.record.grid_size[1]/2
+    semi_major_lower = sub_tracks_lower['semi_major'].values*tracks.record.grid_size[1]/2
+    orientation_lower = sub_tracks_lower['orientation'].values
+    x_lower = sub_tracks_lower['grid_x'].values
+    y_lower = sub_tracks_lower['grid_y'].values
+
+    semi_minor_upper = sub_tracks_upper['semi_minor'].values*tracks.record.grid_size[1]/2
+    semi_major_upper = sub_tracks_upper['semi_major'].values*tracks.record.grid_size[1]/2
+    orientation_upper = sub_tracks_upper['orientation'].values
+    x_upper = sub_tracks_upper['grid_x'].values
+    y_upper = sub_tracks_upper['grid_y'].values
+
+    for i in range(len(storms_i)):
+        storm = storms_i.iloc[i]
+
+        storm_x, storm_y = geographic_to_cartesian(
+            storm['Longitude'], storm['Latitude'],
+            grid.get_projparams())
+
+        time_diff = (np.datetime64(storm['Date/Time'])-datetime).astype('timedelta64[s]').astype(float)
+        time_check = np.abs(time_diff/3600) <= 1
+        if time_check:
+
+            # Note the orientation refers to the rotation of the major axis from the x axis
+            loc_a_lower = (
+                np.cos(orientation_lower*np.pi/180)*(storm_x-x_lower)
+                +np.sin(orientation_lower*np.pi/180)*(storm_y-y_lower))**2/semi_major_lower**2
+            loc_b_lower = (
+                np.sin(orientation_lower*np.pi/180)*(storm_x-x_lower)
+                -np.cos(orientation_lower*np.pi/180)*(storm_y-y_lower))**2/semi_minor_lower**2
+            loc_check_lower = (loc_a_lower+loc_b_lower <= 1)
+
+            loc_a_upper = (
+                np.cos(orientation_upper*np.pi/180)*(storm_x-x_upper)
+                +np.sin(orientation_upper*np.pi/180)*(storm_y-y_upper))**2/semi_major_upper**2
+            loc_b_upper = (
+                np.sin(orientation_upper*np.pi/180)*(storm_x-x_upper)
+                -np.cos(orientation_upper*np.pi/180)*(storm_y-y_upper))**2/semi_minor_upper**2
+            loc_check_upper = (loc_a_upper+loc_b_upper <= 1)
+
+            match = np.any(time_check & (loc_check_lower | loc_check_upper))
+
+            if match:
+                color='r'
+            else:
+                color='k'
+
+            report_label = storms['Database'].iloc[0][:2] + ':' + str(storm['ID'])
+
+            ax.scatter(
+                storm['Longitude'], storm['Latitude'], marker='X', s=200, linewidth=2,
+                facecolor='w', zorder=4, edgecolors=color, transform=ccrs.PlateCarree())
+            gen_embossed_text(
+                storm['Longitude']+.075, storm['Latitude']+.075, label=report_label,
+                transform=ccrs.PlateCarree(), zorder=5, color=color, fontsize=18,
+                linewidth=4, ax=ax)
+
+    return
 
 
 def add_rain(ax, tracks, grid, uid, date_time):
@@ -287,49 +414,56 @@ def add_ellipses(ax, tracks, grid, uid, date_time, alt, params, excluded=False):
         ell_pe = []
         if params['fig_style'] == 'paper':
             ell_c = 'grey'
-            ell_w = 1.5
+            ell_w = 2.5
         elif params['fig_style'] == 'presentation':
             ell_c = 'grey'
             ell_w = 2.5
     else:
         if params['fig_style'] == 'paper':
             ell_c = 'black'
-            ell_w = 1.5
+            ell_w = 2.5
+            ell_shadow = 'grey'
         elif params['fig_style'] == 'presentation':
             ell_c = 'w'
+            ell_shadow = 'k'
             ell_w = 2.5
         ell_pe = [pe.SimpleLineShadow(
-            shadow_color='k', alpha=.9, linewidth=ell_w+2), pe.Normal()]
+            shadow_color=ell_shadow, alpha=.9, linewidth=ell_w+2), pe.Normal()]
 
     centroid = np.squeeze(tmp_tracks[['grid_x', 'grid_y']].values)
+    lon, lat = np.squeeze(tmp_tracks[['lon', 'lat']].values)
     orientation = tmp_tracks[['orientation']].values[0]
+    theta = orientation*np.pi/180
+    #import pdb; pdb.set_trace()
     major_axis = tmp_tracks[['semi_major']].values[0]
     minor_axis = tmp_tracks[['semi_minor']].values[0]
 
     # Convert axes into lat/lon units by approximating 1 degree lat or
     # lon = 110 km. This needs to be made more robust!
+
+    del_alpha = 2*np.pi/50
+    alpha = np.arange(0, 2*np.pi, del_alpha)
+
     [dz, dy, dx] = get_grid_size(grid)
-    major_axis = major_axis * dx / 1000 / 110
-    minor_axis = minor_axis * dx / 1000 / 110
+    semi_major = major_axis*dx/2
+    semi_minor = minor_axis*dx/2
 
-    lon, lat = cartesian_to_geographic(centroid[0], centroid[1], projparams)
+    ell_x = semi_major*np.cos(alpha)*np.cos(theta) - semi_minor*np.sin(alpha)*np.sin(theta)+centroid[0]
+    ell_y = semi_major*np.cos(alpha)*np.sin(theta) + semi_minor*np.sin(alpha)*np.cos(theta)+centroid[1]
 
-    ell = Ellipse(
-        tuple([lon, lat]), major_axis, minor_axis, orientation,
-        transform=projection,
-        linewidth=ell_w, fill=False, zorder=3, color=ell_c, linestyle='--',
-        path_effects=ell_pe)
+    ell_lon, ell_lat = cartesian_to_geographic(ell_x, ell_y, projparams)
+
     lgd_ellipse = mlines.Line2D(
-        [], [], color='w', linewidth=ell_w, label='Best Fit Ellipse',
+        [], [], color=ell_c, linewidth=ell_w, label='Best Fit Ellipse',
         linestyle='--',
-        path_effects=[pe.SimpleLineShadow(
-            shadow_color='k', alpha=.9, linewidth=ell_w+2), pe.Normal()])
+        path_effects=ell_pe)
 
-    ell.set_clip_box(ax.bbox)
     # ell.set_alpha(0.4)
     if not excluded:
-        #ax.add_artist(ell_e)
-        ax.add_artist(ell)
+        ax.plot(ell_lon, ell_lat,
+            transform=projection, linewidth=ell_w,
+            color=ell_c, linestyle='--',
+            path_effects=ell_pe, zorder=4)
     return
 
 
@@ -467,7 +601,7 @@ def add_velocities(
     #dt = tracks.record.interval.total_seconds()
     dt = tracks.params['DT']*60
 
-    scale = 7
+    scale = 4
     linewidth = 3
 
     lgd_han = []

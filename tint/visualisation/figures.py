@@ -161,16 +161,18 @@ def horizontal_cross_section(
         print('Paper style. Using defaults.')
         plt.style.use('classic')
         land_color = tuple(np.array([249.0, 246.0, 216.0])/(256))
-        sea_color = tuple(np.array([252.0, 252.0, 256.0])/(256))
+        sea_color = tuple(np.array([240.0, 240.0, 256.0])/(256))
         coast_color = 'black'
         leg_color = 'w'
     else:
         print('Dark Mode.')
         plt.style.use("dark_background")
         land_color = tuple(np.array([249.0, 246.0, 216.0])/(256*3.5))
-        sea_color = tuple(np.array([252.0, 252.0, 256.0])/(256*3.5))
+        sea_color = tuple(np.array([245.0, 245.0, 256.0])/(256*3.5))
         coast_color = 'white'
         leg_color = land_color
+
+    init_fonts(params)
 
     if alt == 'col_max':
         col_max = np.ma.masked_invalid(
@@ -213,10 +215,12 @@ def horizontal_cross_section(
     gridlines.xlocator = mticker.FixedLocator(lon_lines)
     gridlines.ylocator = mticker.FixedLocator(lat_lines)
 
-    ax.text(
-        -0.1425, 0.55, 'Latitude', va='bottom', ha='center',
-        rotation='vertical', rotation_mode='anchor',
-        transform=ax.transAxes)
+    if not params['colorbar_flag']:
+        ax.text(
+            -0.1425, 0.55, 'Latitude', va='bottom', ha='center',
+            rotation='vertical', rotation_mode='anchor',
+            transform=ax.transAxes)
+
     ax.text(
         0.5, -0.1, 'Longitude', va='bottom', ha='center',
         rotation='horizontal', rotation_mode='anchor',
@@ -244,16 +248,16 @@ def horizontal_cross_section(
 
     if tracks.params['INPUT_TYPE'] == 'ACCESS_DATETIMES':
         if alt == 0:
-            ax.set_title('Altitude 1000 m')
+            ax.set_title('Altitude 1000 m', fontsize=20)
         elif alt == 1:
-            ax.set_title('Column Maximum')
+            ax.set_title('Column Maximum', fontsize=20)
     elif tracks.params['INPUT_TYPE'] == 'OPER_DATETIMES':
         if alt == 15000:
-            ax.set_title('Column Maximum')
+            ax.set_title('Column Maximum', fontsize=20)
         else:
-            ax.set_title('Altitude {} m'.format(alt))
+            ax.set_title('Altitude {} m'.format(alt), fontsize=20)
     else:
-        ax.set_title('Altitude {} m'.format(alt))
+        ax.set_title('Altitude {} m'.format(alt), fontsize=20)
 
     box = get_bounding_box(tracks, grid, date_time, params)
     if params['crosshair']:
@@ -288,15 +292,31 @@ def horizontal_cross_section(
         linestyle='--',
         path_effects=[pe.SimpleLineShadow(
             shadow_color='k', alpha=.9, linewidth=ell_w+2), pe.Normal()])
+
     lgd_han.append(lgd_ellipse)
+
+    lgd_report = ax.scatter(
+        [], [], marker='X', s=200, linewidth=2,
+        facecolor='w', zorder=4, edgecolors='k',
+        label='Report')
+
+    lgd_han.append(lgd_report)
+
+    lgd_matched_report = ax.scatter(
+        [], [], marker='X', s=200, linewidth=2,
+        facecolor='w', zorder=4, edgecolors='r',
+        label='Matched Report')
+
+    lgd_han.append(lgd_matched_report)
 
     if params['boundary']:
         hh.add_boundary(ax, tracks, grid)
 
     if params['legend']:
         legend = plt.legend(
-            handles=lgd_han, loc='lower center', bbox_to_anchor=(1.175, -0.3),
-            ncol=3, fancybox=True, shadow=True, facecolor=leg_color)
+            handles=lgd_han, loc='lower center', bbox_to_anchor=(1.12, -0.3),
+            ncol=4, fancybox=True, shadow=True, facecolor=leg_color, fontsize=params['fontsize'],
+            scatterpoints=1)
         legend.get_frame().set_alpha(None)
         #legend.get_frame().set_facecolor((1, 1, 1, 1))
 
@@ -495,7 +515,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
         print('Paper style. Using defaults.')
         plt.style.use('classic')
         land_color = tuple(np.array([249.0, 246.0, 216.0])/(256))
-        sea_color = tuple(np.array([252.0, 252.0, 256.0])/(256))
+        sea_color = tuple(np.array([240.0, 240.0, 256.0])/(256))
         coast_color = 'black'
         leg_color = 'w'
     else:
@@ -520,7 +540,7 @@ def two_level(tracks, grid, params, date_time=None, alt1=None, alt2=None):
     # Initialise figure
     fig = plt.figure(figsize=(22, 8))
     suptitle = str(grid_time)
-    fig.suptitle(suptitle)
+    fig.suptitle(suptitle, fontsize=20)
 
     tmp_params = copy.deepcopy(params)
     tmp_params['colorbar_flag'] = False

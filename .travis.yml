@@ -15,4 +15,4 @@ matrix:
 # Create a test environment and install dependencies.
 install: source continuous_integration/install.sh
 # Command to run tests.
-script: eval xvfb-run pytest $PYTEST_ARGS
+script: eval pytest
